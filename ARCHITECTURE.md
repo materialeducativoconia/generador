@@ -650,7 +650,7 @@ pending ─▶ queued ─▶ generating ─▶ generated ─edit─▶ edited �
 ### 5.2d Despliegue en Vercel (frontend)
 
 - Proyecto de Vercel con *Root Directory* `frontend/`, framework Vite, comando `npm run build`, salida `dist/`.
-- `vercel.json`: el rewrite a la API va **antes** del fallback de la SPA. Vercel no interpola variables en `vercel.json`, así que la URL de la API está escrita en el archivo.
+- `frontend/vercel.json`: el rewrite a la API va **antes** del fallback de la SPA. Vercel no interpola variables en `vercel.json`, así que la URL de la API está escrita en el archivo.
 
 ```json
 {
@@ -746,12 +746,12 @@ generador/
 ├─ ARCHITECTURE.md
 ├─ docker-compose.yml          # solo desarrollo local: api + worker contra `supabase start`
 ├─ render.yaml                 # Blueprint de Render: api (web), worker, env group
-├─ vercel.json                 # build del frontend + rewrites /api/* y fallback SPA
 ├─ supabase/                   # Supabase CLI
 │  ├─ config.toml
 │  ├─ migrations/              # tablas, enums, RLS, trigger de profiles, publicación Realtime, bucket `exports`
 │  └─ seed.sql                 # usuario y serie de ejemplo para desarrollo local
 ├─ frontend/                   # Vite + React + TS
+│  ├─ vercel.json              # rewrites /api/* y fallback SPA (Root Directory de Vercel = frontend/)
 │  └─ src/{routes,components,api,lib/supabase.ts}/
 └─ backend/
    ├─ app/

@@ -1,0 +1,41 @@
+envVarGroups:
+  - name: generador-backend
+    envVars:
+      - key: DATABASE_URL # pooler de Supabase, session mode
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWKS_URL
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_RPM
+        value: "50"
+      - key: DEEPSEEK_MAX_INFLIGHT
+        value: "16"
+
+services:
+  - type: web
+    name: generador-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    region: frankfurt
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - fromGroup: generador-backend
+
+  - type: worker
+    name: generador-worker
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    dockerCommand: python -m app.worker
+    region: frankfurt
+    plan: standard
+    numInstances: 1 # el rate limiter de DeepSeek vive en memoria
+    envVars:
+      - fromGroup: generador-backend
