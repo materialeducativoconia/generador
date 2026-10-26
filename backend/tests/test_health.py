@@ -1,11 +1,14 @@
 import httpx
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.auth import TokenVerifier
 from app.main import create_app
 
 
 async def get_health(engine) -> httpx.Response:
-    app = create_app(engine=engine)
+    # Health never touches auth; the verifier only fetches keys when a token arrives.
+    verifier = TokenVerifier(jwks_url="http://127.0.0.1:1/jwks.json", issuer="unused")
+    app = create_app(engine=engine, verifier=verifier)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         return await client.get("/api/health")

@@ -6,3 +6,6 @@
 .env.keys
 .env.local
 .env.*.local
+
+# Local JWT signing key (ES256, like production). Regenerate with `supabase gen signing-key --algorithm ES256 > supabase/signing_keys.json`
+signing_keys.json

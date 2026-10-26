@@ -3,11 +3,9 @@ envVarGroups:
     envVars:
       - key: DATABASE_URL # pooler de Supabase, session mode
         sync: false
-      - key: SUPABASE_URL
+      - key: SUPABASE_URL # https://<ref>.supabase.co; el JWKS y el issuer se derivan de aquí
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
-      - key: SUPABASE_JWKS_URL
         sync: false
       - key: DEEPSEEK_API_KEY
         sync: false
@@ -22,7 +20,7 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    region: frankfurt
+    region: oregon # la misma región que Supabase (us-west-2)
     plan: starter
     healthCheckPath: /api/health
     envVars:
@@ -34,7 +32,7 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     dockerCommand: python -m app.worker
-    region: frankfurt
+    region: oregon # la misma región que Supabase (us-west-2)
     plan: standard
     numInstances: 1 # el rate limiter de DeepSeek vive en memoria
     envVars:

@@ -617,7 +617,7 @@ pending ─▶ queued ─▶ generating ─▶ generated ─edit─▶ edited �
   - *Transaction mode* (puerto 6543): no admite los prepared statements que usa asyncpg, y el `SELECT … FOR UPDATE SKIP LOCKED` + `UPDATE` del worker necesita una transacción en la misma conexión.
   - La conexión directa a la base: solo tiene IPv6, salvo que se contrate el add-on de IPv4.
 - Pools pequeños y fijos: API `pool_size=10`, worker `pool_size=5`. El worker no retiene la conexión mientras espera a DeepSeek: **toma el job y hace commit, llama a DeepSeek sin conexión abierta, y luego abre otra transacción para guardar el resultado.** Si no, 16 llamadas en vuelo de 90 s retendrían 16 conexiones.
-- Variables: `DATABASE_URL` (pooler, session mode), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (solo worker y API: Storage), `SUPABASE_JWKS_URL`. En el frontend (variables de Vercel) solo `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`, que son públicas por diseño y están protegidas por RLS. En proyectos con las API keys nuevas de Supabase, `VITE_SUPABASE_ANON_KEY` lleva la *publishable key* (`sb_publishable_…`) y `SUPABASE_SERVICE_ROLE_KEY` la *secret key* (`sb_secret_…`).
+- Variables: `DATABASE_URL` (pooler, session mode), `SUPABASE_URL` (de ella se derivan el issuer `…/auth/v1` y el JWKS `…/auth/v1/.well-known/jwks.json`), `SUPABASE_SERVICE_ROLE_KEY` (solo worker y API: Storage). En el frontend (variables de Vercel) solo `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`, que son públicas por diseño y están protegidas por RLS. En proyectos con las API keys nuevas de Supabase, `VITE_SUPABASE_ANON_KEY` lleva la *publishable key* (`sb_publishable_…`) y `SUPABASE_SERVICE_ROLE_KEY` la *secret key* (`sb_secret_…`).
 
 ### 5.2c Login con Google: configuración
 
@@ -679,8 +679,6 @@ envVarGroups:
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-      - key: SUPABASE_JWKS_URL
-        sync: false
       - key: DEEPSEEK_API_KEY
         sync: false
       - key: DEEPSEEK_RPM
@@ -694,7 +692,7 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    region: frankfurt              # la misma región que el proyecto de Supabase
+    region: oregon                 # la misma región que el proyecto de Supabase (us-west-2)
     plan: starter
     healthCheckPath: /api/health
     autoDeployTrigger: checksPass  # despliega solo si pasan los checks de GitHub (incluida la migración)
@@ -707,7 +705,7 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     dockerCommand: python -m app.worker
-    region: frankfurt
+    region: oregon
     plan: standard                 # más RAM: WeasyPrint + 16 llamadas en vuelo
     numInstances: 1                # OBLIGATORIO: el rate limiter de DeepSeek vive en memoria
     autoDeployTrigger: checksPass
