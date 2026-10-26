@@ -20,10 +20,10 @@ Un docente describe una serie (tema, nivel, nº de lecciones). La app genera pri
           DeepSeek API ◀───── │    Worker    │ ──┘ ◀─────────┘ (SKIP LOCKED)
       (rate limiter global)   │ (mismo código│ ───▶ WeasyPrint
                               │  que la API) │
-                              └──────────────┘          (API + worker: VPS, Docker Compose)
+                              └──────────────┘          (frontend: Vercel · API + worker: VPS, Docker Compose)
 ```
 
-**Stack:** React + Vite + TypeScript · **Supabase** (Postgres 16 con datos **y** cola de trabajos, Auth, Storage, Realtime) · FastAPI (Python 3.12) · un proceso worker asyncio · DeepSeek vía API directa (SDK `openai` con `base_url`) · WeasyPrint para PDF · API + worker en Docker Compose sobre un VPS.
+**Stack:** React + Vite + TypeScript · **Supabase** (Postgres 16 con datos **y** cola de trabajos, Auth, Storage, Realtime) · FastAPI (Python 3.12) · un proceso worker asyncio · DeepSeek vía API directa (SDK `openai` con `base_url`) · WeasyPrint para PDF · frontend estático en **Vercel** · API + worker en Docker Compose sobre un VPS.
 
 **Reparto de responsabilidades con Supabase** (decisión D13):
 
@@ -191,7 +191,7 @@ Las lecciones 2 a 10 aprovechan la caché de todo el prefijo. `generation_logs` 
 ### Convenciones
 
 - Base: `/api`, JSON UTF-8, IDs como UUID v7 (ordenables por tiempo).
-- Auth: **Supabase Auth con Google como único proveedor**. El frontend obtiene el access token con `supabase-js` y lo manda como `Authorization: Bearer <JWT>`. La API lo verifica **localmente** contra el JWKS del proyecto (`https://<ref>.supabase.co/auth/v1/.well-known/jwks.json`; el proyecto se configura con *signing keys* asimétricas), comprobando `exp`, `iss` y `aud = "authenticated"`. El `sub` del token es el `user_id`. Frontend y API comparten dominio (el proxy enruta `/api`), así que no hay CORS. Como no hay cookie de sesión, tampoco hay CSRF.
+- Auth: **Supabase Auth con Google como único proveedor**. El frontend obtiene el access token con `supabase-js` y lo manda como `Authorization: Bearer <JWT>`. La API lo verifica **localmente** contra el JWKS del proyecto (`https://<ref>.supabase.co/auth/v1/.well-known/jwks.json`; el proyecto se configura con *signing keys* asimétricas), comprobando `exp`, `iss` y `aud = "authenticated"`. El `sub` del token es el `user_id`. Frontend y API comparten dominio: un *rewrite* de Vercel envía `/api/*` a la API del VPS, así que no hay CORS. Como no hay cookie de sesión, tampoco hay CSRF.
 - Los endpoints que encolan trabajo responden **`202 Accepted`** con el job creado y aceptan el header `Idempotency-Key`.
 - Escrituras sobre recursos editables usan **concurrencia optimista**: el cliente envía `version`; si no coincide → `409 version_conflict`.
 - Error uniforme:
@@ -587,7 +587,7 @@ pending ─▶ queued ─▶ generating ─▶ generated ─edit─▶ edited �
 
 | Capa | Elección | Por qué *para este caso* |
 |---|---|---|
-| Frontend | React 19 + Vite + TypeScript, React Router, TanStack Query, Tailwind + shadcn/ui, dnd-kit (reordenar esquema), `@supabase/supabase-js` (solo Auth + Realtime) | Es una app detrás de login: no hay SEO ni páginas públicas que justifiquen SSR. TanStack Query cachea el estado del servidor y los eventos de Realtime simplemente invalidan sus queries. Se compila a estáticos y se sirve desde el proxy, sin un servidor Node en producción |
+| Frontend | React 19 + Vite + TypeScript, React Router, TanStack Query, Tailwind + shadcn/ui, dnd-kit (reordenar esquema), `@supabase/supabase-js` (solo Auth + Realtime) | Es una app detrás de login: no hay SEO ni páginas públicas que justifiquen SSR. TanStack Query cachea el estado del servidor y los eventos de Realtime simplemente invalidan sus queries. Se compila a estáticos y se sirve desde **Vercel** (CDN, previews por PR), sin un servidor Node en producción |
 | Auth | **Supabase Auth, proveedor Google únicamente** (el proveedor Email queda deshabilitado) | Un clic para registrarse y entrar: los docentes ya tienen cuenta de Google. Sin contraseñas que guardar, resetear o filtrar, y el email llega verificado por Google. La API solo verifica JWTs. Configuración en §5.2c |
 | Backend API | FastAPI + Pydantic v2 + SQLAlchemy 2 async (asyncpg) + PyJWT (verificación con JWKS) | **El motor de PDF elegido (WeasyPrint) es Python**, igual que el mejor tooling para validar la salida del LLM (Pydantic). Un solo lenguaje en servidor. FastAPI genera OpenAPI, de donde salen los tipos del frontend (`openapi-typescript`) |
 | Worker | Proceso Python asyncio (misma imagen y mismo código que la API, otro comando: `python -m app.worker`) | Comparte modelos, prompts y validación con la API. asyncio permite 16 llamadas lentas en vuelo en un solo proceso |
@@ -595,7 +595,7 @@ pending ─▶ queued ─▶ generating ─▶ generated ─edit─▶ edited �
 | Base de datos | **Supabase Postgres** (plan Pro en producción) | `jsonb` para `content_json`, transacciones que cubren dato + job, cola integrada. Backups diarios y pooler incluidos |
 | Tiempo real | **Supabase Realtime** (`postgres_changes` sobre `generation_jobs`) | El progreso aparece al instante sin websockets propios |
 | Almacenamiento de PDFs | **Supabase Storage**, bucket privado `exports` + URLs firmadas | Los PDFs no se guardan en la DB, y es un proveedor menos que con R2. El worker sube con el SDK `supabase-py` (service role) |
-| Despliegue | Supabase (gestionado) + Docker Compose en un VPS: `caddy` (TLS + estáticos + proxy `/api`), `api`, `worker` | 3 contenedores propios, sin estado: la base, los archivos y las cuentas viven en Supabase. Ver §7, D9 |
+| Despliegue | Supabase (gestionado) + **Vercel** (frontend) + Docker Compose en un VPS: `caddy` (TLS de `api.<dominio>`), `api`, `worker` | Vercel sirve los estáticos y reenvía `/api/*` al VPS (§5.2d). Los contenedores del VPS no tienen estado: la base, los archivos y las cuentas viven en Supabase. Ver §7, D9 |
 | Desarrollo local | `supabase start` (Supabase CLI en Docker: Postgres, Auth, Storage y Realtime locales) + `docker compose up api worker` | Mismo stack en local y en producción; las migraciones se prueban con `supabase db reset` |
 | Observabilidad | Logs JSON estructurados (con `job_id` y `series_id` en cada línea), Sentry (API + worker + frontend), métricas desde `generation_logs` | `generation_logs` *es* el dashboard de coste y latencia: es SQL, no hace falta otro sistema |
 
@@ -616,7 +616,7 @@ pending ─▶ queued ─▶ generating ─▶ generated ─edit─▶ edited �
   - *Transaction mode* (puerto 6543): no admite los prepared statements que usa asyncpg, y el `SELECT … FOR UPDATE SKIP LOCKED` + `UPDATE` del worker necesita una transacción en la misma conexión.
   - La conexión directa a la base: solo tiene IPv6, salvo que se contrate el add-on de IPv4.
 - Pools pequeños y fijos: API `pool_size=10`, worker `pool_size=5`. El worker no retiene la conexión mientras espera a DeepSeek: **toma el job y hace commit, llama a DeepSeek sin conexión abierta, y luego abre otra transacción para guardar el resultado.** Si no, 16 llamadas en vuelo de 90 s retendrían 16 conexiones.
-- Variables: `DATABASE_URL` (pooler, session mode), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (solo worker y API: Storage), `SUPABASE_JWKS_URL`. En el frontend solo `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`, que son públicas por diseño y están protegidas por RLS.
+- Variables: `DATABASE_URL` (pooler, session mode), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (solo worker y API: Storage), `SUPABASE_JWKS_URL`. En el frontend (variables de Vercel) solo `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`, que son públicas por diseño y están protegidas por RLS. En proyectos con las API keys nuevas de Supabase, `VITE_SUPABASE_ANON_KEY` lleva la *publishable key* (`sb_publishable_…`) y `SUPABASE_SERVICE_ROLE_KEY` la *secret key* (`sb_secret_…`).
 
 ### 5.2c Login con Google: configuración
 
@@ -646,6 +646,24 @@ pending ─▶ queued ─▶ generating ─▶ generated ─edit─▶ edited �
 - Se acepta cualquier dominio de Google. Si en el futuro un centro quisiera restringirlo, el hook *before user created* de Supabase Auth permite filtrar por dominio sin tocar la API.
 - La pantalla de consentimiento muestra "continuar a `<ref>.supabase.co`" salvo que se configure un **dominio personalizado en Supabase** (add-on de pago). Se recomienda activarlo antes del lanzamiento público, porque un dominio desconocido en el consentimiento reduce la confianza.
 
+### 5.2d Despliegue en Vercel (frontend)
+
+- Proyecto de Vercel con *Root Directory* `frontend/`, framework Vite, comando `npm run build`, salida `dist/`.
+- `vercel.json`: el rewrite a la API va **antes** del fallback de la SPA. Vercel no interpola variables en `vercel.json`, así que la URL de la API está escrita en el archivo.
+
+```json
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://api.<dominio>/api/:path*" },
+    { "source": "/((?!assets/).*)", "destination": "/index.html" }
+  ]
+}
+```
+
+- **Variables de entorno en Vercel**: solo las públicas del frontend (`VITE_*`, §5.2b). Vite las incrusta en el bundle **en el build**, así que un cambio exige redeploy. Ningún secreto va a Vercel.
+- **Previews:** cada PR tiene una URL `*.vercel.app`. Para que el login con Google funcione en ellas, en Supabase → Redirect URLs se añade el patrón `https://*-<equipo>.vercel.app/**`. Las previews apuntan al proyecto de Supabase de **staging**, no al de producción: las variables se definen por entorno (*Preview* / *Production*).
+- **No usar la integración Vercel ↔ Supabase del marketplace.** Crea variables con nombres de Next.js (`NEXT_PUBLIC_*`, que Vite no expone) y copia al proyecto de Vercel secretos como `SUPABASE_SERVICE_ROLE_KEY` y `POSTGRES_URL`, que aquí no deben estar.
+
 ### 5.3 Generación de PDF: **WeasyPrint**, no ReportLab
 
 Pipeline: `content_json` → plantilla **Jinja2** (`templates/pdf/classic/*.html.j2` + `classic.css`) → HTML → **WeasyPrint** → PDF.
@@ -663,7 +681,8 @@ Pipeline: `content_json` → plantilla **Jinja2** (`templates/pdf/classic/*.html
 ```
 generador/
 ├─ ARCHITECTURE.md
-├─ docker-compose.yml          # caddy, api, worker (Postgres/Auth/Storage = Supabase)
+├─ docker-compose.yml          # caddy, api, worker en el VPS (Postgres/Auth/Storage = Supabase)
+├─ vercel.json                 # build del frontend + rewrites /api/* y fallback SPA
 ├─ supabase/                   # Supabase CLI
 │  ├─ config.toml
 │  ├─ migrations/              # tablas, enums, RLS, trigger de profiles, publicación Realtime, bucket `exports`
@@ -722,7 +741,7 @@ generador/
 | D6 | Formato del contenido | JSON por bloques con schema | Markdown libre; HTML del LLM | Un mismo formato sirve al editor por bloques, a la regeneración de un bloque concreto, al solucionario separado y a la plantilla PDF. Además es validable y seguro (sin HTML del modelo) |
 | D7 | Progreso en la UI | Supabase Realtime (`postgres_changes` en `generation_jobs`) como **señal** + refetch de `/progress` | Polling cada 2 s; SSE propio; Realtime con el contenido completo en el evento | Con Supabase, el tiempo real no cuesta infraestructura propia. Usarlo solo como señal mantiene una única fuente de verdad (la API) y hace inofensivos los eventos perdidos (refetch al reconectar + polling de seguridad de 15 s) |
 | D8 | Auth | **Supabase Auth con Google OAuth como único método** (registro = primer login); la API verifica el JWT con JWKS | Email + contraseña (además o en lugar de Google); magic link; auth propio; Clerk/Auth0 | Los docentes ya tienen cuenta de Google, personal o del centro: registro y login en un clic, sin contraseñas que resetear ni emails de confirmación que se pierden en spam. Un solo método evita cuentas duplicadas (mismo email con contraseña y con Google). Coste aceptado: quien no tenga Google no puede entrar, y algunos centros bloquean apps externas (mitigado en §2.2). Verificar con JWKS es local (sin una llamada a Supabase por request). Coste aceptado: el token vive en `localStorage` (riesgo XSS), mitigado con CSP estricta y con que el LLM nunca produce HTML |
-| D9 | Hosting | Supabase gestionado + VPS con Docker Compose para API y worker | Todo en Supabase (Edge Functions); serverless (Vercel/Lambda) | Los jobs duran minutos y WeasyPrint necesita librerías del sistema (Pango): no caben en Edge Functions ni en serverless. Los contenedores propios no tienen estado, así que el VPS es reemplazable |
+| D9 | Hosting | Supabase gestionado + **Vercel solo para el frontend** + VPS con Docker Compose para API y worker | Todo en Supabase (Edge Functions); API y worker como Vercel Functions | Vercel es ideal para la SPA (CDN, previews por PR). Pero los jobs duran minutos, el worker es un proceso permanente y WeasyPrint necesita librerías del sistema (Pango): nada de eso cabe en funciones serverless. Los contenedores del VPS no tienen estado, así que el VPS es reemplazable |
 | D13 | Alcance de Supabase | Auth, Postgres, Storage, Realtime | Edge Functions para generación o PDF; frontend leyendo y escribiendo tablas con `supabase-js` | Edge Functions: runtime Deno (sin WeasyPrint ni Pydantic) y límites de tiempo por invocación, incompatibles con llamadas de 1–2 min y reintentos con backoff. El acceso directo a tablas desde el navegador repartiría la máquina de estados, las cuotas y el encolado entre políticas RLS y la API; con todas las escrituras en la API, las reglas viven en un único sitio y se testean en Python |
 | D14 | Conexión a la DB | Supavisor *session mode* | *Transaction mode*; conexión directa | Ver §5.2b: asyncpg + transacciones del worker; la conexión directa es solo IPv6 |
 | D15 | Migraciones | Supabase CLI (SQL) | Alembic | RLS, publicación de Realtime, buckets y el trigger sobre `auth.users` son SQL específico de Supabase que Alembic no modela. Una sola fuente de esquema; SQLAlchemy mapea tablas sin autogenerar migraciones |
