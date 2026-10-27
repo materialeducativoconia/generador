@@ -4,6 +4,7 @@ A handler never holds a DB connection while waiting on DeepSeek: claim + commit,
 model with no connection open, then a second transaction saves the result (ARCHITECTURE.md §5.2b).
 """
 
+import asyncio
 import json
 import logging
 import random
@@ -316,7 +317,8 @@ async def _illustration(deps: Deps, job: dict) -> None:
     feedback: dict[str, str] = {}
     for round_ in range(2):  # paint, then repaint only what failed, all together
         failed: list[ImageRequest] = []
-        for sheet in plan_sheets(todo):
+
+        async def paint(sheet):
             note = "; ".join(f"{r.ref}: {feedback[r.ref]}" for r in sheet.requests if r.ref in feedback) or None
             image = await deps.images.generate(sheet_prompt(sheet, plan, design, note), references=references,
                                                aspect_ratio=sheet.aspect,
@@ -332,6 +334,9 @@ async def _illustration(deps: Deps, job: dict) -> None:
                 else:
                     failed.append(r)
                     feedback[r.ref] = review.issues or "did not match the request"
+
+        # Sheets are independent: paint them side by side (at most 12 per tome, see MAX_IMAGES_PER_TOME).
+        await asyncio.gather(*(paint(sheet) for sheet in plan_sheets(todo)))
         if not failed:
             break
         todo = failed
