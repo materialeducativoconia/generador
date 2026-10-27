@@ -20,7 +20,8 @@ REAP_EVERY_SECONDS = 60
 SHUTDOWN_GRACE_SECONDS = 25  # Render waits 30 s after SIGTERM
 
 
-async def run() -> None:
+async def run(stop: asyncio.Event | None = None) -> None:
+    """Runs until `stop` is set; standalone (stop=None) it stops on SIGTERM/SIGINT."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     settings = Settings()
     engine = make_engine(settings.database_url, pool_size=5)
@@ -35,10 +36,11 @@ async def run() -> None:
     slots = asyncio.Semaphore(settings.deepseek_max_inflight + 4)
     running: set[asyncio.Task] = set()
 
-    stop = asyncio.Event()
     loop = asyncio.get_running_loop()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, stop.set)
+    if stop is None:
+        stop = asyncio.Event()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, stop.set)
 
     async def run_one(job):
         try:
