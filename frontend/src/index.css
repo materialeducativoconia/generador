@@ -345,7 +345,70 @@ a.sec-row { transition: background-color 160ms ease; }
 .sheet .lines { margin: 12px 0 20px; } .sheet .line { height: 34px; border-bottom: 1px solid #b9b4ae; }
 .sheet .page-break { border: 0; border-top: 1.5px dashed #d6d3cf; margin: 32px -8px; }
 
+/* Tomes as printed books: the cover agent's art with our type on top, like page one of the PDF. */
+.cards.books { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 28px 20px; }
+.book-card { display: grid; gap: 10px; text-decoration: none; color: inherit; border-radius: 10px; outline-offset: 4px;
+             transition: transform 160ms var(--ease-out); -webkit-tap-highlight-color: transparent; }
+.book-card:active { transform: scale(0.98); }
+.book-card .card-f { padding: 0 2px; }
+.book {
+  position: relative; aspect-ratio: 3 / 4; overflow: hidden; isolation: isolate;
+  border-radius: 4px 10px 10px 4px; background: var(--book-bg);
+  box-shadow: 0 1px 1px rgb(12 10 9 / 0.08), 0 2px 4px rgb(12 10 9 / 0.06), 0 14px 28px -14px rgb(12 10 9 / 0.35);
+  transition: transform 220ms var(--ease-out), box-shadow 220ms var(--ease-out);
+}
+/* Spine and a sheen along the binding so it reads as a book, not a thumbnail. */
+.book::after {
+  content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(90deg, rgb(0 0 0 / 0.22) 0, rgb(0 0 0 / 0.04) 3.5%, rgb(255 255 255 / 0.18) 4.5%, transparent 9%);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.06);
+}
+@media (hover: hover) and (pointer: fine) {
+  .book-card:hover .book { transform: translateY(-4px) rotate(-0.4deg);
+    box-shadow: 0 1px 1px rgb(12 10 9 / 0.08), 0 4px 8px rgb(12 10 9 / 0.06), 0 24px 40px -18px rgb(12 10 9 / 0.45); }
+}
+.book-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 400ms var(--ease-out); }
+.book-art.loaded { opacity: 1; }
+.book-art.placeholder { opacity: 1;
+  background: radial-gradient(120% 70% at 85% 100%, color-mix(in srgb, var(--book-accent) 38%, transparent), transparent 60%),
+              radial-gradient(90% 60% at 0% 80%, color-mix(in srgb, var(--book-ink) 14%, transparent), transparent 70%), var(--book-bg); }
+.book-art.painting::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / 0.45) 50%, transparent 65%);
+  background-size: 250% 100%; animation: shimmer 1.6s linear infinite;
+}
+.book-plate {
+  position: absolute; z-index: 2; top: 7%; left: 11%; right: 7%; display: grid; gap: 3px;
+  padding: 9px 11px 10px; border-radius: 9px; background: rgb(255 255 255 / 0.9); text-align: left;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+}
+.book-k { font-size: 9.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--book-accent); }
+.book-t { font-weight: 700; font-size: 14px; line-height: 1.2; letter-spacing: -0.015em; color: var(--book-ink); text-wrap: balance;
+          display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.book-a { font-size: 12px; color: var(--book-ink); opacity: 0.7; }
+.book.hero .book-plate { padding: 12px 14px 13px; border-radius: 11px; }
+.book.hero .book-t { font-size: 19px; -webkit-line-clamp: 4; }
+.book-badge {
+  position: absolute; z-index: 4; left: 50%; bottom: 10px; transform: translateX(-50%); white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+  background: rgb(28 25 23 / 0.78); color: #fff; font-size: 11px; font-weight: 500;
+}
+.book-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #fbbf24; animation: pulse 1.4s ease-in-out infinite; }
+
+.tome-h.with-cover { grid-template-columns: 1fr auto; align-items: center; gap: 24px; justify-items: stretch; }
+.tome-h-text { display: grid; gap: 10px; justify-items: start; }
+.cover-panel { display: grid; gap: 10px; justify-items: center; width: 200px; }
+.cover-panel .book { width: 100%; }
+@media (max-width: 640px) {
+  .tome-h.with-cover { grid-template-columns: 1fr; }
+  .cover-panel { width: 168px; justify-self: center; grid-row: 1; }
+  .book.hero .book-t { font-size: 16px; }
+  .book.hero .book-a { display: none; }
+  .cards.books { grid-template-columns: repeat(2, 1fr); gap: 22px 14px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .orb, .cards li, .outline-item, .pill.busy::before, .pipeline li.active .pl-dot { animation: none; }
-  .progress span, .chev, .card { transition: none; }
+  .orb, .cards li, .outline-item, .pill.busy::before, .pipeline li.active .pl-dot, .book-badge::before { animation: none; }
+  .book-art.painting::after { animation: none; }
+  .progress span, .chev, .card, .book, .book-card, .book-art { transition: none; }
 }

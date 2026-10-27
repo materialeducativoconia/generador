@@ -30,6 +30,17 @@
   .cover .name { position: absolute; bottom: 34mm; left: 24mm; font: 600 12pt "Nunito"; border-top: 1.5pt solid var(--ink); padding-top: 3mm; width: 110mm; }
   .cover .by { position: absolute; bottom: 24mm; left: 24mm; font: 500 10pt "Nunito"; color: var(--muted); }
 
+  .cover.art { padding: 0; background: {{ (tome.palette or ["#fff"])[0] }}; }
+  .cover-art { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+  .cover-plate { position: absolute; top: 18mm; left: 16mm; right: 16mm; padding: 9mm 11mm 8mm; border-radius: 6mm;
+                 background: rgba(255, 255, 255, .9); }
+  .cover.art .kicker { color: {{ (tome.palette or [0, 0, "#4f46e5"])[2] }}; }
+  .cover.art h1 { color: {{ (tome.palette or [0, "#1c1917"])[1] }}; margin: 4mm 0 3mm; }
+  .cover.art .audience { color: {{ (tome.palette or [0, "#1c1917"])[1] }}; opacity: .75; }
+  .cover.art .name, .cover.art .by { background: rgba(255, 255, 255, .9); padding: 2.5mm 4mm; border-radius: 3mm; border: 0; }
+  .cover.art .name { bottom: 30mm; left: 16mm; }
+  .cover.art .by { bottom: 18mm; left: 16mm; }
+
   .toc { page-break-after: always; }
   .toc h2 { font: 900 22pt "Nunito"; margin: 0 0 8mm; }
   .toc a { display: block; color: var(--ink); text-decoration: none; padding: 2.4mm 0; border-bottom: .5pt solid var(--line); font: 600 11pt "Nunito"; }
@@ -99,10 +110,20 @@
 </head>
 <body>
 
+{% if tome.cover_data_uri %}
+<div class="cover art">
+  <img class="cover-art" src="{{ tome.cover_data_uri }}" alt="">
+  <div class="cover-plate">
+    <div class="kicker">{{ GENRE_LABEL.get(tome.genre, "Material educativo") }}</div>
+    <h1>{{ tome.title }}</h1>
+    <div class="audience">{{ tome.audience }}</div>
+  </div>
+{% else %}
 <div class="cover">
   <div class="kicker">{{ GENRE_LABEL.get(tome.genre, "Material educativo") }}</div>
   <h1>{{ tome.title }}</h1>
   <div class="audience">{{ tome.audience }}</div>
+{% endif %}
   <div class="name">Nombre:</div>
   {% if tome.author %}<div class="by">Elaborado por {{ tome.author }}</div>{% endif %}
 </div>

@@ -2,11 +2,14 @@
 
 import asyncio
 import json
+import logging
 
 from sqlalchemy import text
 
 from app.content import SectionContent
 from app.render import Tome, TomeSection, render_pdf
+
+log = logging.getLogger("worker")
 
 
 async def run_export(deps, job: dict) -> None:
@@ -23,6 +26,14 @@ async def run_export(deps, job: dict) -> None:
         await conn.execute(text("update public.exports set status = 'running' where id = :e"), {"e": export_id})
 
     options = _json(export["options"])
+    cover_image, media_type = None, "image/png"
+    if series["cover_key"]:
+        try:
+            cover_image = await deps.storage.download(series["cover_key"])
+            media_type = "image/webp" if series["cover_key"].endswith(".webp") else (
+                "image/png" if series["cover_key"].endswith(".png") else "image/jpeg")
+        except Exception:  # a missing cover must not cost the user their PDF
+            log.exception("cover %s unavailable, exporting with the plain cover", series["cover_key"])
     audience = (_json(series["audience"]) or {}).get("label", "")
     tome = Tome(
         title=series["title"] or series["topic"], genre=series["genre"] or "lesson_series", audience=audience,
@@ -30,6 +41,8 @@ async def run_export(deps, job: dict) -> None:
         sections=[TomeSection(position=lesson["position"], title=lesson["title"],
                               content=SectionContent.model_validate(_json(lesson["content_json"])))
                   for lesson in lessons if lesson["content_json"]],
+        cover_image=cover_image, cover_media_type=media_type,
+        palette=(_json(series["cover"]) or {}).get("palette"),
     )
     # WeasyPrint is CPU-bound; keep the event loop free for the other jobs in flight.
     pdf, pages = await asyncio.wait_for(

@@ -13,11 +13,15 @@ from uuid6 import uuid7
 from app.api.deps import current_user_id
 from app.content import OutlineSection
 from app.errors import ApiError
+from app.jobs import enqueue_cover
 
 router = APIRouter()
 UserId = Annotated[uuid.UUID, Depends(current_user_id)]
 
 ACTIVE = ("pending", "queued", "generating")
+COVERS_PER_DAY = 10
+COVER_STATUS_SQL = """(select j.status::text from public.generation_jobs j where j.series_id = s.id and j.kind = 'cover'
+                         order by j.created_at desc limit 1) as cover_status"""
 
 
 class NewTome(BaseModel):
@@ -76,19 +80,20 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
 async def list_series(request: Request, user_id: UserId):
     async with request.app.state.engine.connect() as conn:
         rows = (await conn.execute(text(
-            """select s.id, s.title, s.topic, s.genre, s.status, s.lesson_count, s.created_at, s.updated_at,
-                      count(l.id) filter (where l.status in ('generated','edited','approved')) as done
-                 from public.series s left join public.lessons l on l.series_id = s.id
-                where s.user_id = :u
-                group by s.id order by s.created_at desc limit 100"""
+            f"""select s.id, s.title, s.topic, s.genre, s.status, s.lesson_count, s.created_at, s.updated_at,
+                       s.cover_key, s.cover, {COVER_STATUS_SQL},
+                       count(l.id) filter (where l.status in ('generated','edited','approved')) as done
+                  from public.series s left join public.lessons l on l.series_id = s.id
+                 where s.user_id = :u
+                 group by s.id order by s.created_at desc limit 100"""
         ), {"u": user_id})).mappings().all()
-    return {"series": [_jsonable(r) for r in rows]}
+    return {"series": [_with_cover(_jsonable(r), request) for r in rows]}
 
 
 @router.get("/api/series/{series_id}")
 async def get_series(series_id: uuid.UUID, request: Request, user_id: UserId):
     async with request.app.state.engine.connect() as conn:
-        return await _series_detail(conn, series_id, user_id)
+        return await _series_detail(conn, series_id, user_id, request)
 
 
 @router.get("/api/series/{series_id}/progress")
@@ -151,7 +156,7 @@ async def edit_outline(series_id: uuid.UUID, body: OutlineEdit, request: Request
             """update public.series set version = version + 1, lesson_count = :n,
                       title = coalesce(:title, title) where id = :s"""
         ), {"s": series_id, "n": len(body.lessons), "title": body.title})
-        return await _series_detail(conn, series_id, user_id)
+        return await _series_detail(conn, series_id, user_id, request)
 
 
 @router.post("/api/series/{series_id}/outline/regenerate", status_code=202)
@@ -167,6 +172,26 @@ async def regenerate_outline(series_id: uuid.UUID, body: Regenerate, request: Re
                values (:id, :u, :s, 'outline', 'queued', cast(:payload as jsonb))"""
         ), {"id": job_id, "u": user_id, "s": series_id, "payload": json.dumps({"instructions": body.instructions})})
         return await _created(conn, series_id, job_id)
+
+
+@router.post("/api/series/{series_id}/cover", status_code=202)
+async def request_cover(series_id: uuid.UUID, request: Request, user_id: UserId):
+    async with request.app.state.engine.begin() as conn:
+        series = await _own_series(conn, series_id, user_id, lock=True)
+        if not series["title"]:
+            raise ApiError(409, "invalid_state", "La portada se crea cuando el esquema está listo.")
+        busy = (await conn.execute(text(
+            "select 1 from public.generation_jobs where series_id = :s and kind = 'cover'"
+            " and status in ('queued', 'running')"), {"s": series_id})).first()
+        if busy:
+            raise ApiError(409, "cover_in_progress", "Ya estamos creando una portada para este tomo.")
+        today = (await conn.execute(text(
+            "select count(*) from public.generation_jobs where user_id = :u and kind = 'cover'"
+            " and created_at > now() - interval '1 day'"), {"u": user_id})).scalar_one()
+        if today >= COVERS_PER_DAY:
+            raise ApiError(429, "quota_exceeded", f"Puedes crear hasta {COVERS_PER_DAY} portadas al día.")
+        await enqueue_cover(conn, user_id, series_id)
+    return {"cover_status": "queued"}
 
 
 @router.post("/api/series/{series_id}/lessons/generate", status_code=202)
@@ -238,7 +263,16 @@ async def _own_series(conn, series_id, user_id, lock=False):
     return row
 
 
-async def _series_detail(conn, series_id, user_id):
+def _with_cover(out: dict, request: Request) -> dict:
+    """Swaps the storage key for a public URL and exposes the palette the UI uses for placeholders."""
+    key, cover = out.pop("cover_key", None), out.pop("cover", None) or {}
+    storage = request.app.state.storage
+    out["cover_url"] = storage.public_url(key) if key and storage else None
+    out["cover_palette"] = cover.get("palette")
+    return out
+
+
+async def _series_detail(conn, series_id, user_id, request: Request):
     series = await _own_series(conn, series_id, user_id)
     lessons = (await conn.execute(text(
         """select id, position, title, objectives, key_points, status, last_error, content_version, updated_at
@@ -250,9 +284,12 @@ async def _series_detail(conn, series_id, user_id):
             " order by created_at desc limit 1"), {"s": series_id})).scalar_one_or_none()
     out = _jsonable(series)
     out.pop("user_id", None)
+    out["cover_status"] = (await conn.execute(text(
+        "select status::text from public.generation_jobs where series_id = :s and kind = 'cover'"
+        " order by created_at desc limit 1"), {"s": series_id})).scalar_one_or_none()
     out["lessons"] = [_jsonable(lesson) for lesson in lessons]
     out["outline_error"] = outline_error
-    return out
+    return _with_cover(out, request)
 
 
 async def _created(conn, series_id, job_id):
@@ -271,7 +308,7 @@ def _jsonable(row) -> dict:
             v = str(v)
         elif hasattr(v, "isoformat"):
             v = v.isoformat()
-        elif isinstance(v, str) and k in ("objectives", "key_points", "audience", "plan", "last_error", "error",
+        elif isinstance(v, str) and k in ("objectives", "key_points", "audience", "plan", "last_error", "error", "cover",
                                           "options", "content_json", "pending_content_json"):
             v = json.loads(v)
         out[k] = v

@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { AppShell, StatusPill } from '../components/AppShell'
-import { GENRE_LABEL } from '../lib/labels'
+import { BookCover } from '../components/BookCover'
 import { ApiError } from '../lib/api'
 import { api } from '../lib/apiClient'
 import { useMe, useSeriesList } from '../lib/queries'
@@ -121,12 +121,11 @@ function Library() {
   return (
     <section className="library">
       <h2 className="section-h">Tus tomos</h2>
-      <ul className="cards">
+      <ul className="cards books">
         {data.map((s, i) => (
           <li key={s.id} style={{ '--i': i } as React.CSSProperties}>
-            <Link to={`/app/tomos/${s.id}`} className="card">
-              <span className="card-k">{s.genre ? GENRE_LABEL[s.genre] : 'Nuevo tomo'}</span>
-              <span className="card-t">{s.title ?? s.topic}</span>
+            <Link to={`/app/tomos/${s.id}`} className="book-card" aria-label={`Abrir ${s.title ?? s.topic}`}>
+              <BookCover title={s.title ?? s.topic} genre={s.genre} cover_url={s.cover_url} cover_status={s.cover_status} cover_palette={s.cover_palette} />
               <span className="card-f">
                 <StatusPill status={s.status} />
                 {s.lesson_count > 0 && ['generating', 'ready', 'needs_attention'].includes(s.status) && (

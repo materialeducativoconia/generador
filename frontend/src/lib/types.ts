@@ -3,7 +3,16 @@ export type LessonStatus = 'pending' | 'queued' | 'generating' | 'generated' | '
 export type Genre = 'coloring_book' | 'worksheets' | 'tutorial' | 'lesson_series'
 export type ApiErrorBody = { code: string; message: string }
 
-export type SeriesSummary = {
+export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+
+/** The cover agent's output: a public image plus the palette placeholders reuse while it paints. */
+export type CoverFields = {
+  cover_url: string | null
+  cover_status: JobStatus | null
+  cover_palette: [string, string, string] | null
+}
+
+export type SeriesSummary = CoverFields & {
   id: string
   title: string | null
   topic: string
@@ -24,7 +33,7 @@ export type LessonSummary = {
   last_error: ApiErrorBody | null
 }
 
-export type Series = {
+export type Series = CoverFields & {
   id: string
   title: string | null
   topic: string

@@ -2,7 +2,7 @@ import { QueryClient, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { api, type Me } from './apiClient'
 import { supabase } from './supabase'
-import type { Export, Lesson, Progress, Series, SeriesSummary } from './types'
+import type { CoverFields, Export, Lesson, Progress, Series, SeriesSummary } from './types'
 
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, retry: 1, refetchOnWindowFocus: false } },
@@ -10,10 +10,23 @@ export const queryClient = new QueryClient({
 
 export const useMe = () => useQuery({ queryKey: ['me'], queryFn: () => api.get<Me>('/api/me') })
 
-export const useSeriesList = () =>
-  useQuery({ queryKey: ['series'], queryFn: async () => (await api.get<{ series: SeriesSummary[] }>('/api/series')).series })
+/** A cover takes ~20–60 s to paint; poll only while one is on its way. */
+export const coverPending = (s: CoverFields & { status: string }) =>
+  s.status === 'outlining' || s.cover_status === 'queued' || s.cover_status === 'running'
 
-export const useSeries = (id: string) => useQuery({ queryKey: ['series', id], queryFn: () => api.get<Series>(`/api/series/${id}`) })
+export const useSeriesList = () =>
+  useQuery({
+    queryKey: ['series'],
+    queryFn: async () => (await api.get<{ series: SeriesSummary[] }>('/api/series')).series,
+    refetchInterval: (q) => (q.state.data?.some(coverPending) ? 5000 : false),
+  })
+
+export const useSeries = (id: string) =>
+  useQuery({
+    queryKey: ['series', id],
+    queryFn: () => api.get<Series>(`/api/series/${id}`),
+    refetchInterval: (q) => (q.state.data && coverPending(q.state.data) ? 5000 : false),
+  })
 
 export const useLesson = (id: string) => useQuery({ queryKey: ['lesson', id], queryFn: () => api.get<Lesson>(`/api/lessons/${id}`) })
 

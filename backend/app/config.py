@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     deepseek_model: str = "deepseek-chat"
     deepseek_rpm: int = 50
     deepseek_max_inflight: int = 16
+    openrouter_api_key: str = ""
+    openrouter_image_model: str = "google/gemini-nano-banana-2.1"
     run_worker: bool = False  # run the job loop inside the API process (Render free plan has no workers)
 
     @property

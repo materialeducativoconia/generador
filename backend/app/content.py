@@ -160,3 +160,12 @@ class Outline(BaseModel):
     @classmethod
     def _strip(cls, v: str) -> str:
         return v.strip()
+
+
+class CoverPlan(BaseModel):
+    """Art direction from the cover agent; the image model paints, our template sets the type."""
+
+    concept: str = Field(min_length=3, max_length=400)
+    search_queries: list[str] = Field(min_length=1, max_length=3)
+    illustration_prompt: str = Field(min_length=20, max_length=1500)
+    palette: list[Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")]] = Field(min_length=3, max_length=3)

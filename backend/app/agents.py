@@ -1,4 +1,4 @@
-"""Phase-1 agents: the Architect plans the tome, the Writer fills one section.
+"""Agents: the Architect plans the tome, the Writer fills one section, the Cover director art-directs the cover.
 
 Each agent is a bounded step: fixed prompt, JSON output validated with Pydantic, and at most
 one repair round where the validation error goes back to the model.
@@ -10,12 +10,12 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from app.content import Outline, SectionContent
+from app.content import CoverPlan, Outline, SectionContent
 from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@1", "writer": "writer@1"}
+PROMPT_VERSION = {"architect": "architect@1", "writer": "writer@1", "cover": "cover@1"}
 
 
 @dataclass
@@ -129,6 +129,32 @@ async def writer(llm: LLM, brief: Brief, outline: Outline, position: int) -> Age
                                     f"Puntos clave: {'; '.join(section.key_points)}"},
     ]
     return await _json_call(llm, messages, SectionContent, temperature=1.0, max_tokens=8000)
+
+
+COVER_SYSTEM = """Eres directora de arte de portadas de material educativo impreso (cuadernillos, métodos, libros
+para colorear). Tus portadas parecen de editorial real, nunca genéricas: un concepto visual concreto ligado al
+tema y al público, un personaje o escena protagonista, composición clara y una paleta con carácter.
+
+Responde solo con json:
+{"concept": "idea visual en una frase, en español",
+ "search_queries": ["1 a 3 búsquedas para encontrar portadas reales de libros educativos parecidos; la primera en inglés"],
+ "illustration_prompt": "prompt en inglés para un modelo de imagen: sujeto, escena, estilo (p. ej. flat vector, watercolor, crayon), iluminación, encuadre",
+ "palette": ["#fondo claro", "#tinta oscura para el título", "#acento"]}
+
+Reglas del illustration_prompt:
+- La ilustración NO lleva texto, letras, números ni logos: el título lo compone la maqueta.
+- Deja el tercio superior despejado y sencillo (cielo, fondo liso) para que el título se lea encima.
+- Ajusta el estilo al público: preescolar = formas grandes, amables, colores alegres; adultos = más sobrio.
+- Para libros de colorear sugiere un estilo de línea limpia con algo de color, como su portada típica."""
+
+
+async def cover_director(llm: LLM, brief: Brief, title: str, genre: str, sections: list[str]) -> AgentResult[CoverPlan]:
+    messages = [
+        {"role": "system", "content": COVER_SYSTEM},
+        {"role": "user", "content": f"Título del tomo: {title}\nTipo: {genre}\n{brief.describe()}\n"
+                                    f"Secciones: {'; '.join(sections) or '(sin secciones aún)'}"},
+    ]
+    return await _json_call(llm, messages, CoverPlan, temperature=1.0, max_tokens=1200)
 
 
 async def _json_call(llm: LLM, messages: list[dict], model: type[T], *, temperature: float,

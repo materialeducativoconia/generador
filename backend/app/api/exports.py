@@ -37,6 +37,7 @@ async def create_export(series_id: uuid.UUID, body: ExportOptions, request: Requ
         ), {"s": series_id})).all()
         content_hash = hashlib.sha256(json.dumps({
             "title": series["title"], "lessons": [[str(i), v] for i, v in versions], "options": body.model_dump(),
+            "cover": series["cover_key"],
         }, sort_keys=True).encode()).hexdigest()
         existing = (await conn.execute(text(
             """select * from public.exports where series_id = :s and content_hash = :h and status <> 'failed'

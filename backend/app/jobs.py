@@ -7,15 +7,18 @@ model with no connection open, then a second transaction saves the result (ARCHI
 import json
 import logging
 import random
+import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.agents import PROMPT_VERSION, AgentFailed, Attempt, Brief, architect, writer
+from app.agents import PROMPT_VERSION, AgentFailed, Attempt, Brief, architect, cover_director, writer
 from app.content import Outline, OutlineSection
 from app.llm import LLM, UpstreamAuthError, UpstreamError
+from app.references import find_covers
 
 log = logging.getLogger("worker")
 
@@ -24,7 +27,9 @@ log = logging.getLogger("worker")
 class Deps:
     engine: AsyncEngine
     llm: LLM
-    storage: Any  # app.storage.Storage; only pdf_export uses it
+    storage: Any  # app.storage.Storage; pdf_export and cover use it
+    images: Any = None  # app.images.OpenRouterImages; None when OPENROUTER_API_KEY is unset
+    references: Callable[..., Awaitable[list]] = find_covers
 
 
 class JobFailed(Exception):
@@ -61,7 +66,7 @@ async def reap_stale_jobs(engine: AsyncEngine, lease_seconds: int = 600) -> int:
 
 
 async def process_job(deps: Deps, job: dict) -> None:
-    handler = {"outline": _outline, "lesson": _lesson, "pdf_export": _pdf_export}[job["kind"]]
+    handler = {"outline": _outline, "lesson": _lesson, "pdf_export": _pdf_export, "cover": _cover}[job["kind"]]
     try:
         await handler(deps, job)
     except UpstreamError as exc:
@@ -72,7 +77,7 @@ async def process_job(deps: Deps, job: dict) -> None:
             await _fail(deps.engine, job, exc.code, str(exc))
     except UpstreamAuthError as exc:
         # Wrong key or no balance: don't burn attempts, park the job and shout for the operator.
-        log.error("DeepSeek auth/billing error, job %s parked: %s", job["id"], exc)
+        log.error("upstream auth/billing error, job %s parked: %s", job["id"], exc)
         await _requeue(deps.engine, job, 300, count_attempt=False)
     except (AgentFailed, JobFailed) as exc:
         await _fail(deps.engine, job, exc.code, str(exc))
@@ -116,6 +121,7 @@ async def _outline(deps: Deps, job: dict) -> None:
                       status = 'outline_ready', version = version + 1 where id = :s"""
         ), {"s": job["series_id"], "t": outline.title, "g": outline.genre, "n": len(outline.sections),
             "plan": json.dumps({"genre": outline.genre, "style_notes": outline.style_notes})})
+        await enqueue_cover(conn, job["user_id"], job["series_id"])
         await _succeed(conn, job)
 
 
@@ -152,6 +158,57 @@ async def _lesson(deps: Deps, job: dict) -> None:
                       content_version = content_version + 1, last_error = null where id = :l"""
         ), {"l": job["lesson_id"], "c": result.value.model_dump_json()})
         await conn.execute(text("select public.refresh_series_status(:s)"), {"s": job["series_id"]})
+        await _succeed(conn, job)
+
+
+COVER_RULES = """Book cover illustration for a printed educational workbook, portrait 3:4, full bleed.
+Absolutely NO text, letters, numbers, words, logos or watermarks anywhere in the image.
+Keep the top third calm and simple (plain sky or soft background) so a title can sit on top.
+Palette: {palette}.
+The attached images are covers of real published educational books, given only as references for
+quality, genre conventions and composition. Do NOT copy their characters, artwork, layout or branding:
+create an original illustration that would sit proudly next to them on a bookstore shelf."""
+
+
+async def enqueue_cover(conn, user_id, series_id) -> uuid.UUID:
+    job_id = uuid.uuid4()
+    await conn.execute(text(
+        """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, max_attempts)
+           values (:j, :u, :s, 'cover', 'queued', '{}', 3)"""), {"j": job_id, "u": user_id, "s": series_id})
+    return job_id
+
+
+async def _cover(deps: Deps, job: dict) -> None:
+    async with deps.engine.connect() as conn:
+        series = await _series(conn, job["series_id"])
+        sections = (await conn.execute(text(
+            "select title from public.lessons where series_id = :s order by position"),
+            {"s": job["series_id"]})).scalars().all()
+    if deps.images is None:
+        raise JobFailed("not_configured", "Falta OPENROUTER_API_KEY para generar portadas.")
+    brief = _brief(series, None)
+    try:
+        result = await cover_director(deps.llm, brief, series["title"] or series["topic"], series["genre"] or "",
+                                      list(sections))
+    except AgentFailed as exc:
+        await _log_attempts(deps.engine, job, "cover", exc.attempts)
+        raise
+    await _log_attempts(deps.engine, job, "cover", result.attempts)  # a retry below must not redo this log
+    plan = result.value
+    references = await deps.references(plan.search_queries, limit=4)
+    image = await deps.images.generate(
+        f"{plan.illustration_prompt}\n\n{COVER_RULES.format(palette=', '.join(plan.palette))}",
+        references=[r.data for r in references], aspect_ratio="3:4")
+    ext = {"image/png": "png", "image/webp": "webp"}.get(image.media_type, "jpg")
+    key = f"{job['user_id']}/{job['series_id']}/{job['id']}.{ext}"
+    await deps.storage.upload(key, image.data, image.media_type, bucket="covers")
+    cover = {"concept": plan.concept, "palette": plan.palette, "model": image.model, "cost_usd": image.cost_usd,
+             "references": [{"title": r.title, "source_url": r.source_url, "image_url": r.image_url}
+                            for r in references]}
+    async with deps.engine.begin() as conn:
+        await conn.execute(text(
+            "update public.series set cover_key = :k, cover = cast(:c as jsonb) where id = :s"
+        ), {"s": job["series_id"], "k": key, "c": json.dumps(cover)})
         await _succeed(conn, job)
 
 

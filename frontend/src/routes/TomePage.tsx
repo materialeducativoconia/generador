@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { AppShell, StatusPill } from '../components/AppShell'
+import { BookCover } from '../components/BookCover'
 import { GENRE_LABEL } from '../lib/labels'
 import { ApiError } from '../lib/api'
 import { api } from '../lib/apiClient'
@@ -23,10 +24,13 @@ export function TomePage() {
   return (
     <AppShell>
       <Link to="/app" className="back">← Tus tomos</Link>
-      <header className="tome-h">
-        <p className="eyebrow">{s.genre ? GENRE_LABEL[s.genre] : 'Nuevo tomo'} · {s.audience.label}</p>
-        <h1 className="display sm">{s.title ?? s.topic}</h1>
-        <StatusPill status={status} />
+      <header className="tome-h with-cover">
+        <div className="tome-h-text">
+          <p className="eyebrow">{s.genre ? GENRE_LABEL[s.genre] : 'Nuevo tomo'} · {s.audience.label}</p>
+          <h1 className="display sm">{s.title ?? s.topic}</h1>
+          <StatusPill status={status} />
+        </div>
+        {s.title && <CoverPanel series={s} />}
       </header>
 
       <Pipeline status={status} progress={progress.data} />
@@ -41,6 +45,24 @@ export function TomePage() {
         </>
       )}
     </AppShell>
+  )
+}
+
+function CoverPanel({ series: s }: { series: Series }) {
+  const qc = useQueryClient()
+  const repaint = useMutation({
+    mutationFn: () => api.post(`/api/series/${s.id}/cover`),
+    onSettled: () => Promise.all([qc.invalidateQueries({ queryKey: ['series', s.id] }), qc.invalidateQueries({ queryKey: ['series'], exact: true })]),
+  })
+  const busy = s.cover_status === 'queued' || s.cover_status === 'running' || repaint.isPending
+  return (
+    <div className="cover-panel">
+      <BookCover size="hero" title={s.title ?? s.topic} genre={s.genre} audience={s.audience.label} cover_url={s.cover_url} cover_status={s.cover_status} cover_palette={s.cover_palette} />
+      <button className="ghost small" onClick={() => repaint.mutate()} disabled={busy}>
+        {busy ? 'Pintando…' : s.cover_url ? 'Otra portada' : s.cover_status === 'failed' ? 'Reintentar portada' : 'Crear portada'}
+      </button>
+      {repaint.error && <p className="error small">{errorText(repaint.error, 'No se pudo pedir otra portada.')}</p>}
+    </div>
   )
 }
 

@@ -97,3 +97,32 @@ async def run_next_with_storage(engine, storage):
     job = await claim_job(engine, "test-worker")
     await process_job(Deps(engine=engine, llm=None, storage=storage), job)
     return job
+
+
+async def test_export_puts_the_generated_cover_on_page_one(raw_db, google_user, client_with_storage, key, engine,
+                                                          storage):
+    import io
+
+    from pypdf import PdfReader
+
+    from tests.test_covers import PNG
+
+    client = client_with_storage
+    user = await google_user()
+    sid = await ready_tome(client, key, user, engine)
+    before = await client.post(f"/api/series/{sid}/exports", json={}, headers=bearer(key, user))
+    cover_key = f"{user}/{sid}/test-cover.png"
+    await storage.upload(cover_key, PNG, "image/png", bucket="covers")
+    await raw_db.execute("""update public.series set cover_key = $2, cover = '{"palette": ["#FFF4E0", "#1E3A5F", "#F2994A"]}'
+                             where id = $1""", sid, cover_key)
+
+    created = await client.post(f"/api/series/{sid}/exports", json={}, headers=bearer(key, user))
+    await run_next_with_storage(engine, storage)  # the export queued before the cover
+    await run_next_with_storage(engine, storage)
+
+    assert created.json()["export"]["id"] != before.json()["export"]["id"]  # a new cover is new content
+    status = (await client.get(f"/api/exports/{created.json()['export']['id']}", headers=bearer(key, user))).json()
+    link = (await client.get(f"/api/exports/{status['id']}/file", headers=bearer(key, user))).json()["url"]
+    async with httpx.AsyncClient() as http:
+        pdf = (await http.get(link)).content
+    assert PdfReader(io.BytesIO(pdf)).pages[0].images

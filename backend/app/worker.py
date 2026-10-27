@@ -11,6 +11,7 @@ import socket
 from app.config import Settings
 from app.db import make_engine
 from app.jobs import Deps, claim_job, process_job, reap_stale_jobs
+from app.images import OpenRouterImages
 from app.llm import DeepSeek
 from app.storage import Storage
 
@@ -30,6 +31,8 @@ async def run(stop: asyncio.Event | None = None) -> None:
         llm=DeepSeek(settings.deepseek_api_key, settings.deepseek_model, settings.deepseek_rpm,
                      settings.deepseek_max_inflight),
         storage=Storage(settings.supabase_url, settings.supabase_service_role_key),
+        images=OpenRouterImages(settings.openrouter_api_key, settings.openrouter_image_model)
+        if settings.openrouter_api_key else None,
     )
     worker_id = f"{socket.gethostname()}:{id(deps)}"
     # More jobs in flight than LLM slots: PDF exports and waits on the limiter shouldn't block the queue.

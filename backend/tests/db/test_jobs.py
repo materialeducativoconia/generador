@@ -4,6 +4,7 @@ import json
 import uuid
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.jobs import Deps, claim_job, process_job, reap_stale_jobs
@@ -37,10 +38,14 @@ async def engine():
     await engine.dispose()
 
 
-async def run_next(engine, llm):
+async def run_next(engine, llm, *, covers=False, **deps):
+    if not covers:  # the cover agent runs alongside; most tests are about the text pipeline
+        async with engine.begin() as conn:
+            await conn.execute(text("update public.generation_jobs set status = 'cancelled'"
+                                    " where kind = 'cover' and status = 'queued'"))
     job = await claim_job(engine, "test-worker")
     assert job is not None
-    await process_job(Deps(engine=engine, llm=llm, storage=None), job)
+    await process_job(Deps(engine=engine, llm=llm, storage=deps.pop("storage", None), **deps), job)
     return job
 
 
@@ -166,6 +171,8 @@ async def test_sections_finishing_at_once_still_finish_the_tome(raw_db, google_u
     sid = await new_tome(client, key, user)
     await run_next(engine, ScriptedLLM(json.dumps(OUTLINE)))
     await client.post(f"/api/series/{sid}/lessons/generate", json={}, headers=bearer(key, user))
+    async with engine.begin() as conn:
+        await conn.execute(text("update public.generation_jobs set status = 'cancelled' where kind = 'cover'"))
     jobs = [await claim_job(engine, "test-worker") for _ in range(3)]
     barrier = asyncio.Barrier(3)
 

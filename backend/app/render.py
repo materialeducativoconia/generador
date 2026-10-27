@@ -4,6 +4,7 @@ Exact drawings (piano keys, tracing letters, letter grids) are generated here as
 because image models get them wrong and code doesn't.
 """
 
+import base64
 import html
 import random
 import re
@@ -38,6 +39,15 @@ class Tome:
     audience: str
     author: str | None
     sections: list[TomeSection]
+    cover_image: bytes | None = None
+    cover_media_type: str = "image/png"
+    palette: list[str] | None = None  # [background, ink, accent] from the cover agent
+
+    @property
+    def cover_data_uri(self) -> str | None:
+        if not self.cover_image:
+            return None
+        return f"data:{self.cover_media_type};base64,{base64.b64encode(self.cover_image).decode()}"
 
 
 def inline(value: str) -> Markup:
@@ -129,11 +139,11 @@ def _asset_fetcher():
 
     class AssetFetcher(URLFetcher):
         def fetch(self, url, headers=None):
-            if not url.startswith(ASSETS.as_uri() + "/"):
+            if not (url.startswith(ASSETS.as_uri() + "/") or url.startswith("data:image/")):
                 raise ValueError(f"blocked resource: {url}")
             return super().fetch(url, headers)
 
-    return AssetFetcher(allowed_protocols=["file"])
+    return AssetFetcher(allowed_protocols=["file", "data"])
 
 
 def render_pdf(tome: Tome, *, paper: str, include_answer_key: bool) -> tuple[bytes, int]:
