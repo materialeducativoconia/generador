@@ -59,3 +59,16 @@ def test_pdf_renders_with_embedded_fonts():
     fonts = {font["/BaseFont"] for page in PdfReader(io.BytesIO(pdf)).pages
              for font in page["/Resources"].get("/Font", {}).values()}
     assert any("Andika" in f for f in fonts) and any("Nunito" in f for f in fonts)
+
+
+def test_illustrated_image_blocks_print_the_picture():
+    from tests.test_covers import PNG
+
+    t = tome({"id": "b1", "type": "image", "kind": "line_art", "subject": "una vaca", "size": "full", "asset_id": "a1"},
+             {"id": "b2", "type": "image", "kind": "illustration", "subject": "un granero", "size": "half"})
+    t.images = {"a1": (PNG, "image/png")}
+
+    html = render_html(t, paper="A4", include_answer_key=False)
+
+    assert html.count('class="figure full line_art"') == 1 and "data:image/png;base64," in html
+    assert 'class="image half"' in html  # not illustrated yet: placeholder

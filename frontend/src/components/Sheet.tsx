@@ -1,12 +1,22 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { themeVars, useThemeFonts } from '../lib/themes'
 import type { Block, Design } from '../lib/types'
+import { AssetsContext } from '../lib/assets'
 import { Blocks } from './BlockView'
 
-type Props = { design: Design | null | undefined; position: number; title: string; blocks?: Block[]; children?: ReactNode; className?: string }
+type Props = {
+  design: Design | null | undefined
+  position: number
+  title: string
+  blocks?: Block[]
+  assets?: Record<string, string>
+  painting?: boolean
+  children?: ReactNode
+  className?: string
+}
 
 /** A printed page in the tome's theme: same opener, fonts and palette as the PDF. */
-export function Sheet({ design, position, title, blocks, children, className = '' }: Props) {
+export function Sheet({ design, position, title, blocks, assets = {}, painting = false, children, className = '' }: Props) {
   useThemeFonts(design)
   const { theme, ornament, style } = themeVars(design)
   const label = theme.opener === 'blob' ? String(position) : theme.opener === 'numeral' ? String(position).padStart(2, '0') : `Sección ${position}`
@@ -18,7 +28,7 @@ export function Sheet({ design, position, title, blocks, children, className = '
         <span className="num">{label}</span>
         <h1 className="sheet-title">{title}</h1>
       </header>
-      {blocks ? <Blocks blocks={blocks} /> : children}
+      <AssetsContext.Provider value={{ urls: assets, painting }}>{blocks ? <Blocks blocks={blocks} /> : children}</AssetsContext.Provider>
     </article>
   )
 }

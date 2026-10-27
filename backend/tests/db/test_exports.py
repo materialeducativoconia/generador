@@ -126,3 +126,25 @@ async def test_export_puts_the_generated_cover_on_page_one(raw_db, google_user, 
     async with httpx.AsyncClient() as http:
         pdf = (await http.get(link)).content
     assert PdfReader(io.BytesIO(pdf)).pages[0].images
+
+
+async def test_export_prints_the_illustrations(raw_db, google_user, client_with_storage, key, engine, storage):
+    import io
+
+    from pypdf import PdfReader
+
+    from tests.db.test_illustrations import LINE_ART, SECTION, FakeImages, FakeVision, written_tome
+
+    client = client_with_storage
+    await raw_db.execute("delete from public.assets where subject_norm = 'vaca feliz'")
+    user = await google_user()
+    sid = await written_tome(client, key, user, engine, {**SECTION, "blocks": [SECTION["blocks"][1]]})
+    await run_next(engine, None, images=FakeImages(LINE_ART), vision=FakeVision(), storage=storage)
+
+    created = await client.post(f"/api/series/{sid}/exports", json={}, headers=bearer(key, user))
+    await run_next_with_storage(engine, storage)
+
+    link = (await client.get(f"/api/exports/{created.json()['export']['id']}/file", headers=bearer(key, user))).json()
+    async with httpx.AsyncClient() as http:
+        pdf = PdfReader(io.BytesIO((await http.get(link["url"])).content))
+    assert any(page.images for page in pdf.pages[1:])

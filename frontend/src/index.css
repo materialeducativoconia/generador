@@ -342,6 +342,12 @@ a.sec-row { transition: background-color 160ms ease; }
 .sheet .img-ph.full { min-height: 420px; } .sheet .img-ph.half { min-height: 220px; } .sheet .img-ph.small { min-height: 140px; max-width: 60%; }
 .sheet .img-k { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .sheet .img-ph small { color: #a8a29e; }
+.sheet .img-ph.painting { border-style: solid; border-color: transparent;
+  background: linear-gradient(90deg, #f5f3f0 0%, #ebe8e4 50%, #f5f3f0 100%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+.sheet .fig { margin: 18px auto; text-align: center; }
+.sheet .fig img { display: block; margin: 0 auto; max-width: 100%; object-fit: contain; }
+.sheet .fig.full img { max-height: 760px; } .sheet .fig.half img { max-height: 360px; } .sheet .fig.small img { max-height: 200px; }
+.sheet .fig:not(.line_art) img { border-radius: var(--t-radius, 12px); }
 .sheet .lines { margin: 12px 0 20px; } .sheet .line { height: 34px; border-bottom: 1px solid #b9b4ae; }
 .sheet .page-break { border: 0; border-top: 1.5px dashed #d6d3cf; margin: 32px -8px; }
 
@@ -453,7 +459,7 @@ a.sec-row { transition: background-color 160ms ease; }
 
 @media (prefers-reduced-motion: reduce) {
   .orb, .cards li, .outline-item, .pill.busy::before, .pipeline li.active .pl-dot, .book-badge::before { animation: none; }
-  .book-art.painting::after, .thumb-item, .thumb.placeholder span { animation: none; }
+  .book-art.painting::after, .thumb-item, .thumb.placeholder span, .sheet .img-ph.painting { animation: none; }
   .thumb, .thumb-link { transition: none; }
   .progress span, .chev, .card, .book, .book-card, .book-art { transition: none; }
 }

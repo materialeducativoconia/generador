@@ -29,7 +29,7 @@ export function SectionPage() {
     <AppShell>
       <Link to={`/app/tomos/${lesson.series_id}`} className="back">← Volver al tomo</Link>
       <div className="section-layout">
-        <Sheet design={series.data?.design} position={lesson.position} title={lesson.title} blocks={lesson.content_json?.blocks}>
+        <Sheet design={series.data?.design} position={lesson.position} title={lesson.title} blocks={lesson.content_json?.blocks} assets={lesson.assets}>
           <p className="muted">Esta sección aún no tiene contenido.</p>
         </Sheet>
         <aside className="side">

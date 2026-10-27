@@ -13,6 +13,7 @@ from app.db import make_engine
 from app.jobs import Deps, claim_job, process_job, reap_stale_jobs
 from app.images import OpenRouterImages
 from app.llm import DeepSeek
+from app.vision import OpenRouterVision
 from app.storage import Storage
 
 log = logging.getLogger("worker")
@@ -32,6 +33,8 @@ async def run(stop: asyncio.Event | None = None) -> None:
                      settings.deepseek_max_inflight),
         storage=Storage(settings.supabase_url, settings.supabase_service_role_key),
         images=OpenRouterImages(settings.openrouter_api_key, settings.openrouter_image_model)
+        if settings.openrouter_api_key else None,
+        vision=OpenRouterVision(settings.openrouter_api_key, settings.openrouter_review_model)
         if settings.openrouter_api_key else None,
     )
     worker_id = f"{socket.gethostname()}:{id(deps)}"

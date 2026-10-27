@@ -42,7 +42,7 @@ export function TomePage() {
       {['generating', 'needs_attention', 'ready'].includes(status) && progress.data && (
         <>
           <Sections series={s} progress={progress.data} />
-          {status === 'ready' && <ExportPanel seriesId={s.id} latest={progress.data.latest_export} />}
+          {status === 'ready' && <ExportPanel key={progress.data.images.done} seriesId={s.id} latest={progress.data.latest_export} images={progress.data.images} />}
         </>
       )}
     </AppShell>
@@ -245,7 +245,7 @@ function Sections({ series, progress }: { series: Series; progress: Progress }) 
             <li key={l.id} className={`thumb-item ${l.status}`} style={{ '--i': i } as React.CSSProperties}>
               {ready && blocks ? (
                 <Link to={`/app/secciones/${l.id}`} className="thumb-link" aria-label={`Abrir sección ${l.position}: ${l.title}`}>
-                  <PageThumb design={series.design} position={l.position} title={l.title} blocks={blocks} />
+                  <PageThumb design={series.design} position={l.position} title={l.title} blocks={blocks} assets={series.assets} painting={progress.images.active > 0} />
                   {caption}
                 </Link>
               ) : (
@@ -268,10 +268,12 @@ function Sections({ series, progress }: { series: Series; progress: Progress }) 
   )
 }
 
-function ExportPanel({ seriesId, latest }: { seriesId: string; latest: Progress['latest_export'] }) {
+function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: Progress['latest_export']; images: Progress['images'] }) {
   const [paper, setPaper] = useState<'A4' | 'Letter'>('A4')
   const [answers, setAnswers] = useState(true)
-  const [exportId, setExportId] = useState<string | null>(latest?.status === 'failed' ? null : (latest?.id ?? null))
+  // A PDF made before the last pictures arrived would miss them: start a fresh one instead.
+  const [exportId, setExportId] = useState<string | null>(latest && latest.status !== 'failed' && !latest.stale ? latest.id : null)
+  const illustrating = images.active > 0
   const current = useExport(exportId)
   const create = useMutation({
     mutationFn: () => api.post<{ export: Export }>(`/api/series/${seriesId}/exports`, { paper, include_answer_key: answers }),
@@ -288,7 +290,11 @@ function ExportPanel({ seriesId, latest }: { seriesId: string; latest: Progress[
     <section className="panel export">
       <div>
         <h2 className="section-h">Exportar PDF</h2>
-        <p className="muted small">Portada, índice, secciones{answers ? ' y solucionario' : ''}, listo para imprimir.</p>
+        <p className="muted small">
+          {illustrating
+            ? `Ilustrando ${images.done} de ${images.total} imágenes… el PDF estará listo al terminar.`
+            : `Portada, índice, secciones${images.total ? ', ilustraciones' : ''}${answers ? ' y solucionario' : ''}, listo para imprimir.`}
+        </p>
       </div>
       <div className="export-opts">
         <div className="segmented" role="radiogroup" aria-label="Tamaño de papel">
@@ -306,8 +312,8 @@ function ExportPanel({ seriesId, latest }: { seriesId: string; latest: Progress[
             Descargar PDF · {current.data.page_count} págs.
           </button>
         ) : (
-          <button className="primary" onClick={() => create.mutate()} disabled={busy}>
-            {busy ? <><span className="spinner" /> Maquetando…</> : 'Generar PDF'}
+          <button className="primary" onClick={() => create.mutate()} disabled={busy || illustrating}>
+            {busy ? <><span className="spinner" /> Maquetando…</> : illustrating ? <><span className="spinner" /> Ilustrando…</> : 'Generar PDF'}
           </button>
         )}
       </div>

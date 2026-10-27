@@ -18,7 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.agents import PROMPT_VERSION, AgentFailed, Attempt, Brief, architect, cover_director, designer, writer
 from app.content import Design, Outline, OutlineSection
 from app.llm import LLM, UpstreamAuthError, UpstreamError
+from app.illustrator import ASPECT, illustration_prompt, line_art_coverage, normalize_subject, prepare_image, style_key
 from app.references import find_covers
+from app.vision import Review
 
 log = logging.getLogger("worker")
 
@@ -29,6 +31,7 @@ class Deps:
     llm: LLM
     storage: Any  # app.storage.Storage; pdf_export and cover use it
     images: Any = None  # app.images.OpenRouterImages; None when OPENROUTER_API_KEY is unset
+    vision: Any = None  # app.vision.OpenRouterVision, the image Reviewer; None skips the visual review
     references: Callable[..., Awaitable[list]] = find_covers
 
 
@@ -66,7 +69,8 @@ async def reap_stale_jobs(engine: AsyncEngine, lease_seconds: int = 600) -> int:
 
 
 async def process_job(deps: Deps, job: dict) -> None:
-    handler = {"outline": _outline, "lesson": _lesson, "pdf_export": _pdf_export, "cover": _cover}[job["kind"]]
+    handler = {"outline": _outline, "lesson": _lesson, "pdf_export": _pdf_export, "cover": _cover,
+               "illustration": _illustration}[job["kind"]]
     try:
         await handler(deps, job)
     except UpstreamError as exc:
@@ -158,6 +162,13 @@ async def _lesson(deps: Deps, job: dict) -> None:
                       content_version = content_version + 1, last_error = null where id = :l"""
         ), {"l": job["lesson_id"], "c": result.value.model_dump_json()})
         await conn.execute(text("select public.refresh_series_status(:s)"), {"s": job["series_id"]})
+        pictures = [b for b in result.value.blocks if b.type == "image" and not b.asset_id]
+        for block in pictures[:MAX_IMAGES_PER_SECTION]:
+            await conn.execute(text(
+                """insert into public.generation_jobs (user_id, series_id, lesson_id, kind, status, payload, max_attempts)
+                   values (:u, :s, :l, 'illustration', 'queued', cast(:p as jsonb), 3)"""
+            ), {"u": job["user_id"], "s": job["series_id"], "l": job["lesson_id"],
+                "p": json.dumps({"block_id": block.id})})
         await _succeed(conn, job)
 
 
@@ -224,6 +235,98 @@ async def _cover(deps: Deps, job: dict) -> None:
             "update public.series set cover_key = :k, cover = cast(:c as jsonb) where id = :s"
         ), {"s": job["series_id"], "k": key, "c": json.dumps(cover)})
         await _succeed(conn, job)
+
+
+MAX_IMAGES_PER_SECTION = 12
+MAX_PAINTS = 2  # first try plus one retry with the Reviewer's notes
+CURATOR_MIN_SIMILARITY = 0.6
+
+
+async def _illustration(deps: Deps, job: dict) -> None:
+    block_id = job["payload"]["block_id"]
+    async with deps.engine.connect() as conn:
+        series = await _series(conn, job["series_id"])
+        content = _json((await conn.execute(text("select content_json from public.lessons where id = :l"),
+                                            {"l": job["lesson_id"]})).scalar_one_or_none())
+    block = next((b for b in (content or {}).get("blocks", []) if b["id"] == block_id), None)
+    if block is None or block.get("asset_id"):  # the section was rewritten, or the picture is already there
+        async with deps.engine.begin() as conn:
+            await _succeed(conn, job)
+        return
+    design = Design.model_validate(_json(series["design"])) if series["design"] else None
+    kind, subject = block["kind"], block["subject"]
+    key, norm = style_key(kind, design), normalize_subject(subject)
+
+    async with deps.engine.begin() as conn:  # Curator: the shared library first
+        reused = (await conn.execute(text(
+            """update public.assets set use_count = use_count + 1
+                where id = (select id from public.assets
+                             where kind = :k and style_key = :st and coalesce((review->>'ok')::boolean, true)
+                               and extensions.similarity(subject_norm, :n) >= :min
+                             order by extensions.similarity(subject_norm, :n) desc, use_count desc limit 1)
+            returning id"""), {"k": kind, "st": key, "n": norm, "min": CURATOR_MIN_SIMILARITY})).scalar_one_or_none()
+        if reused:
+            await _attach_image(conn, job, block_id, reused)
+            await _succeed(conn, job)
+            return
+
+    if deps.images is None:
+        raise JobFailed("not_configured", "Falta OPENROUTER_API_KEY para ilustrar.")
+    feedback, cost = None, 0.0
+    for attempt in range(1, MAX_PAINTS + 1):
+        image = await deps.images.generate(illustration_prompt(kind, subject, design, feedback),
+                                           aspect_ratio=ASPECT.get(block.get("size", "full"), "3:4"))
+        cost += image.cost_usd or 0
+        data, media_type = prepare_image(image.data, kind)
+        review = await _review_image(deps, data, kind, subject)
+        if review.ok:
+            break
+        feedback = review.issues or "The image did not match the request."
+
+    asset_id = uuid.uuid4()
+    storage_key = f"{asset_id}.{'png' if media_type == 'image/png' else 'jpg'}"
+    await deps.storage.upload(storage_key, data, media_type, bucket="images")
+    async with deps.engine.begin() as conn:
+        await conn.execute(text(
+            """insert into public.assets (id, kind, subject, subject_norm, style_key, storage_key, media_type, model,
+                                          cost_usd, review, created_by)
+               values (:id, :k, :subj, :n, :st, :key, :mt, :model, :cost, cast(:review as jsonb), :u)"""
+        ), {"id": asset_id, "k": kind, "subj": subject, "n": norm, "st": key, "key": storage_key, "mt": media_type,
+            "model": image.model, "cost": cost, "u": job["user_id"],
+            "review": json.dumps({"ok": review.ok, "has_text": review.has_text, "issues": review.issues,
+                                  "attempts": attempt})})
+        await _attach_image(conn, job, block_id, asset_id)
+        await _succeed(conn, job)
+
+
+async def _review_image(deps: Deps, data: bytes, kind: str, subject: str) -> Review:
+    """Cheap deterministic checks first; the vision model only sees pictures that pass them."""
+    if kind == "line_art":
+        coverage = line_art_coverage(data)
+        if coverage < 0.005:
+            return Review(ok=False, issues="The page came out blank: draw the subject with thick black outlines.")
+        if coverage > 0.5:
+            return Review(ok=False, issues="Too much solid black: use outlines only and leave white areas to color.")
+    if deps.vision is None:
+        return Review(ok=True)
+    try:
+        return await deps.vision.review(data, kind=kind, subject=subject)
+    except (UpstreamError, UpstreamAuthError) as exc:  # a reviewer outage must not block the tome
+        log.warning("image review skipped: %s", exc)
+        return Review(ok=True, issues="sin revisar")
+
+
+async def _attach_image(conn, job: dict, block_id: str, asset_id) -> None:
+    # Row lock: a section's images finish in parallel and each rewrites the same content_json.
+    content = _json((await conn.execute(text("select content_json from public.lessons where id = :l for update"),
+                                        {"l": job["lesson_id"]})).scalar_one_or_none())
+    for block in (content or {}).get("blocks", []):
+        if block["id"] == block_id:
+            block["asset_id"] = str(asset_id)
+            await conn.execute(text(
+                """update public.lessons set content_json = cast(:c as jsonb), content_version = content_version + 1
+                    where id = :l"""), {"l": job["lesson_id"], "c": json.dumps(content)})
+            return
 
 
 async def _pdf_export(deps: Deps, job: dict) -> None:

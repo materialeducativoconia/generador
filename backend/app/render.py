@@ -8,7 +8,7 @@ import base64
 import html
 import random
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -44,6 +44,13 @@ class Tome:
     cover_media_type: str = "image/png"
     palette: list[str] | None = None  # [background, ink, accent] from the cover agent
     design: Design | None = None  # the Designer's theme; None means the classic theme
+    images: dict[str, tuple[bytes, str]] = field(default_factory=dict)  # asset id -> (bytes, media type)
+
+    def image_uri(self, asset_id: str | None) -> str | None:
+        if not asset_id or asset_id not in self.images:
+            return None
+        data, media_type = self.images[asset_id]
+        return f"data:{media_type};base64,{base64.b64encode(data).decode()}"
 
     @property
     def cover_data_uri(self) -> str | None:

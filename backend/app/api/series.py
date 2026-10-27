@@ -104,12 +104,16 @@ async def get_progress(series_id: uuid.UUID, request: Request, user_id: UserId):
             "select id, position, title, status, last_error as error, updated_at from public.lessons"
             " where series_id = :s order by position"), {"s": series_id})).mappings().all()
         export = (await conn.execute(text(
-            "select id, status from public.exports where series_id = :s order by created_at desc limit 1"
+            """select e.id, e.status, e.created_at < (select max(l.updated_at) from public.lessons l
+                                                        where l.series_id = e.series_id) as stale
+                 from public.exports e where e.series_id = :s order by e.created_at desc limit 1"""
         ), {"s": series_id})).mappings().one_or_none()
+        images = await _image_progress(conn, series_id)
     counts = {k: 0 for k in ("pending", "queued", "generating", "generated", "failed", "edited", "approved")}
     for lesson in lessons:
         counts[lesson["status"]] += 1
-    active = series["status"] in ("outlining", "generating") or counts["queued"] + counts["generating"] > 0
+    active = (series["status"] in ("outlining", "generating") or counts["queued"] + counts["generating"] > 0
+              or images["active"] > 0)
     return {
         "series_id": str(series_id),
         "status": series["status"],
@@ -117,6 +121,7 @@ async def get_progress(series_id: uuid.UUID, request: Request, user_id: UserId):
         "counts": {"total": len(lessons), **counts},
         "lessons": [_jsonable(lesson) for lesson in lessons],
         "latest_export": _jsonable(export) if export else None,
+        "images": images,
         "poll_after_ms": 15000 if active else None,
     }
 
@@ -255,6 +260,29 @@ async def _check_quota(conn, user_id, wanted: int):
                        {"remaining_today": remaining})
 
 
+async def _image_progress(conn, series_id) -> dict:
+    blocks = (await conn.execute(text(
+        """select l.id::text as lesson_id, b->>'id' as block_id, b->>'asset_id' as asset_id
+             from public.lessons l, jsonb_array_elements(l.content_json->'blocks') b
+            where l.series_id = :s and b->>'type' = 'image'"""), {"s": series_id})).mappings().all()
+    jobs = (await conn.execute(text(
+        """select distinct on (lesson_id, payload->>'block_id') lesson_id::text, payload->>'block_id' as block_id,
+                  status::text from public.generation_jobs
+            where series_id = :s and kind = 'illustration'
+            order by lesson_id, payload->>'block_id', created_at desc"""), {"s": series_id})).all()
+    latest = {(lesson, block): status for lesson, block, status in jobs}
+    out = {"total": len(blocks), "done": 0, "active": 0, "failed": 0}
+    for b in blocks:
+        status = latest.get((b["lesson_id"], b["block_id"]))
+        if b["asset_id"]:
+            out["done"] += 1
+        elif status in ("queued", "running"):
+            out["active"] += 1
+        elif status == "failed":
+            out["failed"] += 1
+    return out
+
+
 async def _own_series(conn, series_id, user_id, lock=False):
     sql = "select * from public.series where id = :s and user_id = :u" + (" for update" if lock else "")
     row = (await conn.execute(text(sql), {"s": series_id, "u": user_id})).mappings().one_or_none()
@@ -289,6 +317,7 @@ async def _series_detail(conn, series_id, user_id, request: Request):
         "select status::text from public.generation_jobs where series_id = :s and kind = 'cover'"
         " order by created_at desc limit 1"), {"s": series_id})).scalar_one_or_none()
     out["lessons"] = [_jsonable(lesson) for lesson in lessons]
+    out["assets"] = await _asset_urls(conn, request, out["lessons"])
     out["outline_error"] = outline_error
     return _with_cover(out, request)
 
@@ -319,7 +348,25 @@ def _jsonable(row) -> dict:
 @router.get("/api/lessons/{lesson_id}")
 async def get_lesson(lesson_id: uuid.UUID, request: Request, user_id: UserId):
     async with request.app.state.engine.connect() as conn:
-        return _jsonable(await _own_lesson(conn, lesson_id, user_id))
+        out = _jsonable(await _own_lesson(conn, lesson_id, user_id))
+        out["assets"] = await _asset_urls(conn, request, [out])
+    return out
+
+
+def _image_blocks(lessons) -> list[dict]:
+    return [b for lesson in lessons for b in ((lesson.get("content_json") or {}).get("blocks") or [])
+            if b.get("type") == "image"]
+
+
+async def _asset_urls(conn, request: Request, lessons) -> dict[str, str]:
+    """Image blocks carry an asset id; the page needs a URL for each (public `images` bucket)."""
+    ids = list({b["asset_id"] for b in _image_blocks(lessons) if b.get("asset_id")})
+    storage = request.app.state.storage
+    if not ids or storage is None:
+        return {}
+    rows = (await conn.execute(text("select id::text, storage_key from public.assets where id = any(cast(:ids as uuid[]))"),
+                               {"ids": ids})).all()
+    return {i: storage.public_url(k, bucket="images") for i, k in rows}
 
 
 @router.post("/api/lessons/{lesson_id}/regenerate", status_code=202)

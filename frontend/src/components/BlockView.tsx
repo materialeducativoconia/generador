@@ -1,4 +1,5 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useContext, type ReactNode } from 'react'
+import { AssetsContext } from '../lib/assets'
 import type { Block } from '../lib/types'
 
 /** **bold** and *italic* only, as React nodes: model output never becomes HTML. */
@@ -13,6 +14,26 @@ export function Inline({ text }: { text: string }) {
   }
   parts.push(text.slice(last))
   return <>{parts}</>
+}
+
+function ImageBlock({ block }: { block: Extract<Block, { type: 'image' }> }) {
+  const { urls, painting } = useContext(AssetsContext)
+  const url = block.asset_id ? urls[block.asset_id] : undefined
+  if (url) {
+    return (
+      <figure className={`fig ${block.size} ${block.kind}`}>
+        <img src={url} alt={block.subject} loading="lazy" />
+        {block.caption && <figcaption>{block.caption}</figcaption>}
+      </figure>
+    )
+  }
+  return (
+    <figure className={`img-ph ${block.size}${painting ? ' painting' : ''}`}>
+      <span className="img-k">{block.kind === 'line_art' ? 'Dibujo para colorear' : 'Ilustración'}</span>
+      <span>{block.subject}</span>
+      <small>{painting ? 'Ilustrando…' : 'Sin ilustración'}</small>
+    </figure>
+  )
 }
 
 const WHITE = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
@@ -141,13 +162,7 @@ export function BlockView({ block, index }: { block: Block; index: number }) {
         </div>
       )
     case 'image':
-      return (
-        <figure className={`img-ph ${block.size}`}>
-          <span className="img-k">{block.kind === 'line_art' ? 'Dibujo para colorear' : 'Ilustración'}</span>
-          <span>{block.subject}</span>
-          <small>Las imágenes llegan en la próxima fase</small>
-        </figure>
-      )
+      return <ImageBlock block={block} />
     case 'writing_lines':
       return (
         <div className="lines">

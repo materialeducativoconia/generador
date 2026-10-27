@@ -116,6 +116,10 @@
            align-items: center; justify-content: center; text-align: center; color: var(--muted);
            font: 600 10pt {{ head|safe }}; margin: 4mm auto; padding: 6mm; page-break-inside: avoid; }
   .image.full { height: 190mm; width: 100%; } .image.half { height: 85mm; width: 100%; } .image.small { height: 50mm; width: 60%; }
+  .figure { margin: 4mm auto; text-align: center; page-break-inside: avoid; }
+  .figure img { max-width: 100%; object-fit: contain; }
+  .figure.full img { height: 200mm; } .figure.half img { height: 88mm; } .figure.small img { height: 50mm; }
+  .figure.illustration img, .figure.photo img, .figure.diagram img { border-radius: {{ th.radius_mm }}mm; }
   .image .k { font: 800 8pt {{ head|safe }}; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 2mm; }
 
   .lines .label { font: 700 10pt {{ head|safe }}; }
@@ -208,6 +212,9 @@
       <div class="grid" style="grid-template-columns: repeat({{ b.cols }}, 1fr); --cell: {{ (150 / b.cols)|round(1) }}mm">
         {% for c, _ in letter_grid_cells(b) %}<span>{{ c }}</span>{% endfor %}
       </div>
+    {% elif b.type == "image" and tome.image_uri(b.asset_id) %}
+      <div class="figure {{ b.size }} {{ b.kind }}"><img src="{{ tome.image_uri(b.asset_id) }}" alt="{{ b.subject }}"></div>
+      {% if b.caption %}<div class="figcap" style="text-align:center">{{ b.caption }}</div>{% endif %}
     {% elif b.type == "image" %}
       <div class="image {{ b.size }}"><div class="k">{{ "Dibujo para colorear" if b.kind == "line_art" else "Ilustración" }}</div>{{ b.subject }}</div>
       {% if b.caption %}<div class="figcap" style="text-align:center">{{ b.caption }}</div>{% endif %}

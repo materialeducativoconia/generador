@@ -75,7 +75,7 @@ export function useProgress(id: string) {
 
   // When the tome's state moves on (outline ready, sections done), the detail view is stale too.
   useEffect(() => {
-    const v = query.data ? `${query.data.status}:${query.data.version}:${query.data.counts.generated}:${query.data.counts.failed}` : null
+    const v = query.data ? `${query.data.status}:${query.data.version}:${query.data.counts.generated}:${query.data.counts.failed}:${query.data.images.done}` : null
     if (v && lastState.current !== null && lastState.current !== v) {
       void qc.invalidateQueries({ queryKey: ['series', id] })
       void qc.invalidateQueries({ queryKey: ['series'], exact: true })

@@ -44,6 +44,7 @@ export type LessonSummary = {
 
 export type Series = CoverFields & {
   design: Design | null
+  assets: Record<string, string>
   id: string
   title: string | null
   topic: string
@@ -60,7 +61,8 @@ export type Progress = {
   version: number
   counts: Record<LessonStatus | 'total', number>
   lessons: { id: string; position: number; title: string; status: LessonStatus; error: ApiErrorBody | null }[]
-  latest_export: { id: string; status: ExportStatus } | null
+  latest_export: { id: string; status: ExportStatus; stale: boolean } | null
+  images: { total: number; done: number; active: number; failed: number }
   poll_after_ms: number | null
 }
 
@@ -88,11 +90,12 @@ export type Block =
   | { id: string; type: 'keyboard'; start: string; octaves: number; highlight: string[]; show_labels: boolean; caption?: string | null }
   | { id: string; type: 'tracing'; text: string; repeat: number; instruction?: string | null }
   | { id: string; type: 'letter_grid'; targets: string[]; distractors: string[]; rows: number; cols: number; instruction?: string | null }
-  | { id: string; type: 'image'; kind: 'line_art' | 'illustration' | 'photo' | 'diagram'; subject: string; caption?: string | null; size: 'full' | 'half' | 'small' }
+  | { id: string; type: 'image'; kind: 'line_art' | 'illustration' | 'photo' | 'diagram'; subject: string; caption?: string | null; size: 'full' | 'half' | 'small'; asset_id?: string | null }
   | { id: string; type: 'writing_lines'; lines: number; label?: string | null }
   | { id: string; type: 'page_break' }
 
 export type Lesson = LessonSummary & {
   series_id: string
+  assets: Record<string, string>
   content_json: { schema_version: 1; summary: string; blocks: Block[] } | null
 }
