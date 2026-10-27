@@ -61,6 +61,40 @@ async def test_find_covers_keeps_books_with_covers_and_downloads_them():
     assert refs[0].data == PNG and refs[0].source_url == "https://openlibrary.org/works/OL1W"
 
 
+async def test_find_covers_skips_unrelated_books_and_cover_words():
+    asked = []
+
+    def handler(request: httpx.Request):
+        if request.url.host == "openlibrary.org":
+            asked.append(request.url.params["q"])
+            return httpx.Response(200, json={"docs": [
+                {"title": "American Film", "cover_i": 1, "key": "/works/A"},
+                {"title": "My First Piano Adventure", "cover_i": 2, "key": "/works/B"},
+            ]})
+        return httpx.Response(200, content=PNG)
+
+    refs = await find_covers(["preschool piano method book cover"], transport=httpx.MockTransport(handler))
+
+    assert [r.title for r in refs] == ["My First Piano Adventure"]
+    assert asked == ["preschool piano method"]
+
+
+async def test_find_covers_retries_a_flaky_connection():
+    calls = []
+
+    def handler(request: httpx.Request):
+        if request.url.host == "openlibrary.org":
+            calls.append(1)
+            if len(calls) == 1:
+                raise httpx.ConnectError("reset")
+            return httpx.Response(200, json={"docs": [{"title": "Piano for Kids", "cover_i": 1, "key": "/works/A"}]})
+        return httpx.Response(200, content=PNG)
+
+    refs = await find_covers(["piano for kids"], transport=httpx.MockTransport(handler))
+
+    assert [r.title for r in refs] == ["Piano for Kids"] and len(calls) == 2
+
+
 async def test_find_covers_is_best_effort_when_the_site_is_down():
     refs = await find_covers(["x"], transport=httpx.MockTransport(lambda r: httpx.Response(503)))
 

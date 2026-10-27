@@ -15,7 +15,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@1", "writer": "writer@1", "cover": "cover@1"}
+PROMPT_VERSION = {"architect": "architect@1", "writer": "writer@1", "cover": "cover@2"}
 
 
 @dataclass
@@ -137,7 +137,7 @@ tema y al público, un personaje o escena protagonista, composición clara y una
 
 Responde solo con json:
 {"concept": "idea visual en una frase, en español",
- "search_queries": ["1 a 3 búsquedas para encontrar portadas reales de libros educativos parecidos; la primera en inglés"],
+ "search_queries": ["1 a 3 búsquedas de 2 a 4 palabras, como el título de un libro real parecido (p. ej. \"piano for kids\", \"libro para colorear animales\"); la primera en inglés; sin las palabras cover, book ni portada"],
  "illustration_prompt": "prompt en inglés para un modelo de imagen: sujeto, escena, estilo (p. ej. flat vector, watercolor, crayon), iluminación, encuadre",
  "palette": ["#fondo claro", "#tinta oscura para el título", "#acento"]}
 

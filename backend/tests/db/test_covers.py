@@ -67,7 +67,7 @@ async def test_cover_job_paints_with_references_and_stores_the_cover(raw_db, goo
     assert call["references"] == [PNG] and "no text" in call["prompt"].lower()
     assert PLAN["illustration_prompt"] in call["prompt"]
     log = await raw_db.fetchval("select prompt_version from public.generation_logs where job_id = $1", job["id"])
-    assert log == "cover@1"
+    assert log == "cover@2"
 
     client._transport.app.state.storage = storage
     listed = (await client.get("/api/series", headers=bearer(key, user))).json()["series"][0]
