@@ -145,6 +145,7 @@ async def _lesson(deps: Deps, job: dict) -> None:
         await _log_attempts(deps.engine, job, "writer", exc.attempts)
         raise
     async with deps.engine.begin() as conn:
+        await _lock_series(conn, job)
         await _insert_logs(conn, job, "writer", result.attempts)
         await conn.execute(text(
             """update public.lessons set content_json = cast(:c as jsonb), status = 'generated',
@@ -163,6 +164,12 @@ async def _pdf_export(deps: Deps, job: dict) -> None:
 # ---------------------------------------------------------------------------
 # Queue state transitions
 # ---------------------------------------------------------------------------
+
+
+async def _lock_series(conn, job: dict) -> None:
+    # Serializes parallel section saves so refresh_series_status counts every committed lesson;
+    # without it the last two writers can each miss the other and leave the tome "generating".
+    await conn.execute(text("select 1 from public.series where id = :s for update"), {"s": job["series_id"]})
 
 
 async def _succeed(conn, job: dict) -> None:
@@ -193,6 +200,7 @@ async def _fail(engine: AsyncEngine, job: dict, code: str, message: str) -> None
             await conn.execute(text("update public.series set status = 'outline_failed' where id = :s"),
                                {"s": job["series_id"]})
         elif job["kind"] == "lesson":
+            await _lock_series(conn, job)
             await conn.execute(text(
                 "update public.lessons set status = 'failed', last_error = cast(:e as jsonb) where id = :l"
             ), {"l": job["lesson_id"], "e": error})

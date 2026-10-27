@@ -156,3 +156,25 @@ async def test_someone_elses_section_is_404(raw_db, google_user, client, key, en
     lesson_id = await raw_db.fetchval("select id from public.lessons where series_id = $1 limit 1", sid)
 
     assert (await client.get(f"/api/lessons/{lesson_id}", headers=bearer(key, pedro))).status_code == 404
+
+
+async def test_sections_finishing_at_once_still_finish_the_tome(raw_db, google_user, client, key, engine):
+    # Writers run in parallel; each save must see the others' commits or the tome stays "generating".
+    import asyncio
+
+    user = await google_user()
+    sid = await new_tome(client, key, user)
+    await run_next(engine, ScriptedLLM(json.dumps(OUTLINE)))
+    await client.post(f"/api/series/{sid}/lessons/generate", json={}, headers=bearer(key, user))
+    jobs = [await claim_job(engine, "test-worker") for _ in range(3)]
+    barrier = asyncio.Barrier(3)
+
+    class TogetherLLM(ScriptedLLM):
+        async def complete(self, *args, **kwargs):
+            await barrier.wait()
+            return await super().complete(*args, **kwargs)
+
+    await asyncio.gather(*(process_job(Deps(engine=engine, llm=TogetherLLM(json.dumps(SECTION)), storage=None), j)
+                           for j in jobs))
+
+    assert await raw_db.fetchval("select status from public.series where id = $1", sid) == "ready"
