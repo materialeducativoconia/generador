@@ -2,14 +2,15 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { AppShell, StatusPill } from '../components/AppShell'
-import { Blocks } from '../components/BlockView'
+import { Sheet } from '../components/Sheet'
 import { ApiError } from '../lib/api'
 import { api } from '../lib/apiClient'
-import { useLesson } from '../lib/queries'
+import { useLesson, useSeries } from '../lib/queries'
 
 export function SectionPage() {
   const { id = '' } = useParams()
   const { data: lesson, isPending, error } = useLesson(id)
+  const series = useSeries(lesson?.series_id ?? '')
   const [instructions, setInstructions] = useState('')
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -28,11 +29,9 @@ export function SectionPage() {
     <AppShell>
       <Link to={`/app/tomos/${lesson.series_id}`} className="back">← Volver al tomo</Link>
       <div className="section-layout">
-        <article className="sheet">
-          <p className="eyebrow">Sección {lesson.position}</p>
-          <h1 className="sheet-title">{lesson.title}</h1>
-          {lesson.content_json ? <Blocks blocks={lesson.content_json.blocks} /> : <p className="muted">Esta sección aún no tiene contenido.</p>}
-        </article>
+        <Sheet design={series.data?.design} position={lesson.position} title={lesson.title} blocks={lesson.content_json?.blocks}>
+          <p className="muted">Esta sección aún no tiene contenido.</p>
+        </Sheet>
         <aside className="side">
           <StatusPill status={lesson.status} />
           {lesson.objectives.length > 0 && (

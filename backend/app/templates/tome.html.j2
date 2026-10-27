@@ -7,85 +7,104 @@
   @font-face { font-family: "Andika"; src: url("{{ fonts }}/Andika-Regular.ttf"); }
   @font-face { font-family: "Andika"; font-weight: 700; src: url("{{ fonts }}/Andika-Bold.ttf"); }
   @font-face { font-family: "Nunito"; font-weight: 200 1000; src: url("{{ fonts }}/Nunito-Variable.ttf"); }
+  {% for family, file in theme_fonts %}
+  @font-face { font-family: "{{ family }}"; font-weight: 100 1000; src: url("{{ fonts }}/{{ file }}"); }
+  {% endfor %}
 
   @page {
     size: {{ "letter" if paper == "Letter" else "A4" }};
     margin: 20mm 18mm 22mm;
-    @top-left { content: string(tome-title); font: 600 8pt "Nunito"; color: #8a8580; }
-    @top-right { content: string(section-title); font: 600 8pt "Nunito"; color: #8a8580; }
-    @bottom-center { content: counter(page); font: 700 9pt "Nunito"; color: #57534e; }
+    @top-left { content: string(tome-title); font: 600 8pt {{ head|safe }}; color: #8a8580; }
+    @top-right { content: string(section-title); font: 600 8pt {{ head|safe }}; color: #8a8580; }
+    @bottom-center { content: counter(page); font: 700 9pt {{ head|safe }}; color: #57534e; }
   }
   @page cover { margin: 0; @top-left { content: none } @top-right { content: none } @bottom-center { content: none } }
 
-  :root { --ink: #1c1917; --muted: #6b6560; --line: #d9d4cf; --soft: #f5f3f0; --accent: #4f46e5; }
+  :root { --ink: {{ c.ink }}; --muted: {{ c.muted }}; --line: {{ c.line }}; --soft: {{ c.soft }}; --accent: {{ c.accent }}; --tint: {{ c.tint }}; }
   * { box-sizing: border-box; }
-  body { font: 11.5pt/1.55 "Andika", sans-serif; color: var(--ink); margin: 0; }
-  h1, h2, h3, .ui { font-family: "Nunito", sans-serif; }
+  body { font: {{ th.body_size_pt }}pt/1.55 {{ body|safe }}, sans-serif; color: var(--ink); margin: 0; }
+  h1, h2, h3, .ui { font-family: {{ head|safe }}, sans-serif; }
 
   .cover { page: cover; height: {{ "279mm" if paper == "Letter" else "297mm" }}; position: relative; padding: 34mm 24mm; display: flex; flex-direction: column;
-           background: linear-gradient(160deg, #eef2ff 0%, #fdf2f8 55%, #fff7ed 100%); }
-  .cover .kicker { font: 800 10pt "Nunito"; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
-  .cover h1 { font: 900 40pt/1.05 "Nunito"; margin: 8mm 0 6mm; letter-spacing: -.02em; string-set: tome-title content(); }
-  .cover .audience { font: 600 14pt "Nunito"; color: var(--muted); }
-  .cover .name { position: absolute; bottom: 34mm; left: 24mm; font: 600 12pt "Nunito"; border-top: 1.5pt solid var(--ink); padding-top: 3mm; width: 110mm; }
-  .cover .by { position: absolute; bottom: 24mm; left: 24mm; font: 500 10pt "Nunito"; color: var(--muted); }
+           background: linear-gradient(160deg, {{ c.tint }} 0%, {{ c.soft }} 60%, #ffffff 100%); }
+  .cover .kicker { font: 800 10pt {{ head|safe }}; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+  .cover h1 { font: {{ th.head_weight }} 40pt/1.05 {{ head|safe }}; margin: 8mm 0 6mm; letter-spacing: -.02em; string-set: tome-title content(); }
+  .cover .audience { font: 600 14pt {{ head|safe }}; color: var(--muted); }
+  .cover .name { position: absolute; bottom: 34mm; left: 24mm; font: 600 12pt {{ head|safe }}; border-top: 1.5pt solid var(--ink); padding-top: 3mm; width: 110mm; }
+  .cover .by { position: absolute; bottom: 24mm; left: 24mm; font: 500 10pt {{ head|safe }}; color: var(--muted); }
 
-  .cover.art { padding: 0; background: {{ (tome.palette or ["#fff"])[0] }}; }
+  .cover.art { padding: 0; background: {{ c.tint }}; }
   .cover-art { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
   .cover-plate { position: absolute; top: 18mm; left: 16mm; right: 16mm; padding: 9mm 11mm 8mm; border-radius: 6mm;
                  background: rgba(255, 255, 255, .9); }
-  .cover.art .kicker { color: {{ (tome.palette or [0, 0, "#4f46e5"])[2] }}; }
-  .cover.art h1 { color: {{ (tome.palette or [0, "#1c1917"])[1] }}; margin: 4mm 0 3mm; }
-  .cover.art .audience { color: {{ (tome.palette or [0, "#1c1917"])[1] }}; opacity: .75; }
+  .cover.art .kicker { color: {{ c.accent }}; }
+  .cover.art h1 { color: {{ c.ink }}; margin: 4mm 0 3mm; }
+  .cover.art .audience { color: {{ c.ink }}; opacity: .75; }
   .cover.art .name, .cover.art .by { background: rgba(255, 255, 255, .9); padding: 2.5mm 4mm; border-radius: 3mm; border: 0; }
   .cover.art .name { bottom: 30mm; left: 16mm; }
   .cover.art .by { bottom: 18mm; left: 16mm; }
 
   .toc { page-break-after: always; }
-  .toc h2 { font: 900 22pt "Nunito"; margin: 0 0 8mm; }
-  .toc a { display: block; color: var(--ink); text-decoration: none; padding: 2.4mm 0; border-bottom: .5pt solid var(--line); font: 600 11pt "Nunito"; }
+  .toc h2 { font: {{ th.head_weight }} 22pt {{ head|safe }}; margin: 0 0 8mm; }
+  .toc a { display: block; color: var(--ink); text-decoration: none; padding: 2.4mm 0; border-bottom: .5pt solid var(--line); font: 600 11pt {{ head|safe }}; }
   .toc a::after { content: target-counter(attr(href url), page); float: right; color: var(--muted); }
   .toc .n { color: var(--accent); display: inline-block; width: 10mm; }
 
   section.sec { page-break-before: always; }
-  section.sec > h2.title { font: 900 22pt/1.15 "Nunito"; margin: 0 0 6mm; string-set: section-title attr(data-title); letter-spacing: -.01em; }
-  section.sec > h2.title .n { display: block; font: 800 9pt "Nunito"; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 1.5mm; }
-  h2.b { font: 800 15pt "Nunito"; margin: 7mm 0 2mm; }
-  h3.b { font: 800 12.5pt "Nunito"; margin: 5mm 0 1.5mm; }
+  .op { position: relative; margin: 0 0 7mm; }
+  .op h2.title { font: {{ th.head_weight }} 24pt/1.12 {{ head|safe }}; margin: 0; string-set: section-title attr(data-title);
+                 letter-spacing: -.01em; text-transform: {{ th.title_case }}; color: var(--ink); }
+  .op .num { display: block; font: 800 9pt {{ head|safe }}; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 1.5mm; }
+  .op .orn { position: absolute; top: 0; right: 0; width: 13mm; height: 13mm; }
+  .opener-blob .op { background: var(--soft); border-radius: 8mm; padding: 7mm 22mm 7mm 8mm; }
+  .opener-blob .op .num { width: 12mm; height: 12mm; border-radius: 6mm; background: var(--accent); color: #fff; text-align: center;
+                          font: {{ th.head_weight }} 16pt/12mm {{ head|safe }}; letter-spacing: 0; margin-bottom: 3mm; }
+  .opener-blob .op .orn { top: 6mm; right: 7mm; }
+  .opener-tape .op { padding-bottom: 3mm; border-bottom: 1.4pt dashed var(--accent); }
+  .opener-tape .op .num { display: inline-block; background: var(--tint); color: var(--ink); padding: 1.2mm 6mm; transform: rotate(-2deg);
+                          font: 400 13pt {{ head|safe }}; letter-spacing: .02em; text-transform: none; margin-bottom: 3mm; }
+  .opener-tape .op h2.title { font-size: 28pt; }
+  .opener-numeral .op .num { font: 300 56pt/1 {{ head|safe }}; letter-spacing: -.02em; margin-bottom: 2mm; }
+  .opener-numeral .op h2.title { border-top: .8pt solid var(--ink); padding-top: 3mm; }
+  .opener-badge .op .num { display: inline-block; background: var(--accent); color: #fff; border-radius: 10mm; padding: 1.4mm 5mm; margin-bottom: 3mm; }
+  .opener-badge .op { padding-bottom: 4mm; border-bottom: 2.4pt solid var(--tint); }
+  .opener-bar .op { border-left: 3mm solid var(--accent); padding: 1mm 18mm 1mm 6mm; }
+  h2.b { font: {{ th.head_weight }} 15pt {{ head|safe }}; margin: 7mm 0 2mm; color: var(--ink); }
+  h3.b { font: {{ th.head_weight }} 12.5pt {{ head|safe }}; margin: 5mm 0 1.5mm; }
   p { margin: 0 0 3mm; }
   ul, ol { margin: 0 0 3mm; padding-left: 6mm; }
   ul.check { list-style: none; padding-left: 0; }
-  ul.check li::before { content: "☐ "; font-family: "Nunito"; }
+  ul.check li::before { content: "☐ "; font-family: {{ head|safe }}; }
 
-  .callout { border-radius: 4mm; padding: 4mm 5mm; margin: 4mm 0; background: var(--soft); page-break-inside: avoid; }
-  .callout .t { font: 800 10pt "Nunito"; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 1mm; }
-  .callout.key_idea { background: #eef2ff; } .callout.key_idea .t { color: #4338ca; }
+  .callout { border-radius: {{ th.radius_mm }}mm; padding: 4mm 5mm; margin: 4mm 0; background: var(--soft); page-break-inside: avoid; }
+  .callout .t { font: 800 10pt {{ head|safe }}; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 1mm; }
+  .callout.key_idea { background: var(--soft); } .callout.key_idea .t { color: var(--accent); }
   .callout.tip { background: #ecfdf5; } .callout.tip .t { color: #047857; }
   .callout.warning { background: #fff7ed; } .callout.warning .t { color: #c2410c; }
   .callout.fun_fact { background: #fdf2f8; } .callout.fun_fact .t { color: #be185d; }
 
   table { border-collapse: collapse; width: 100%; margin: 3mm 0 5mm; font-size: 10.5pt; page-break-inside: avoid; }
-  th { font: 800 9.5pt "Nunito"; text-align: left; background: var(--soft); }
+  th { font: 800 9.5pt {{ head|safe }}; text-align: left; background: var(--soft); }
   th, td { border: .6pt solid var(--line); padding: 2mm 2.5mm; }
-  caption { caption-side: top; text-align: left; font: 700 9.5pt "Nunito"; color: var(--muted); padding-bottom: 1.5mm; }
+  caption { caption-side: top; text-align: left; font: 700 9.5pt {{ head|safe }}; color: var(--muted); padding-bottom: 1.5mm; }
 
   .example { border-left: 2.5pt solid var(--accent); padding: 1mm 0 1mm 4mm; margin: 4mm 0; }
-  .example .t { font: 800 10.5pt "Nunito"; }
+  .example .t { font: 800 10.5pt {{ head|safe }}; }
 
-  .activity { border: 1pt solid var(--ink); border-radius: 4mm; padding: 4mm 5mm; margin: 5mm 0; page-break-inside: avoid; }
-  .activity .t { font: 900 12pt "Nunito"; display: flex; justify-content: space-between; }
-  .activity .d { font: 700 9pt "Nunito"; color: var(--muted); }
+  .activity { border: 1pt solid var(--ink); border-radius: {{ th.radius_mm }}mm; padding: 4mm 5mm; margin: 5mm 0; page-break-inside: avoid; }
+  .activity .t { font: 900 12pt {{ head|safe }}; display: flex; justify-content: space-between; }
+  .activity .d { font: 700 9pt {{ head|safe }}; color: var(--muted); }
   .activity .m { font-size: 10pt; color: var(--muted); }
 
   .exercise { margin: 4mm 0 5mm; page-break-inside: avoid; }
   .exercise .q { font-weight: 700; }
-  .exercise .q .n { display: inline-block; min-width: 7mm; font-family: "Nunito"; font-weight: 900; color: var(--accent); }
+  .exercise .q .n { display: inline-block; min-width: 7mm; font-family: {{ head|safe }}; font-weight: 900; color: var(--accent); }
   .exercise .opts { list-style: none; padding-left: 7mm; }
-  .exercise .opts li::before { content: "○  "; font-family: "Nunito"; }
+  .exercise .opts li::before { content: "○  "; font-family: {{ head|safe }}; }
   .blank-line { border-bottom: .6pt solid #a8a29e; height: 9mm; }
 
   .keyboard-wrap { margin: 4mm 0; text-align: center; page-break-inside: avoid; }
-  .figcap { font: 600 9pt "Nunito"; color: var(--muted); margin-top: 1.5mm; }
+  .figcap { font: 600 9pt {{ head|safe }}; color: var(--muted); margin-top: 1.5mm; }
 
   .tracing-wrap { margin: 3mm 0 5mm; page-break-inside: avoid; }
 
@@ -95,16 +114,16 @@
 
   .image { border: 1.4pt dashed #a8a29e; border-radius: 5mm; display: flex; flex-direction: column;
            align-items: center; justify-content: center; text-align: center; color: var(--muted);
-           font: 600 10pt "Nunito"; margin: 4mm auto; padding: 6mm; page-break-inside: avoid; }
+           font: 600 10pt {{ head|safe }}; margin: 4mm auto; padding: 6mm; page-break-inside: avoid; }
   .image.full { height: 190mm; width: 100%; } .image.half { height: 85mm; width: 100%; } .image.small { height: 50mm; width: 60%; }
-  .image .k { font: 800 8pt "Nunito"; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 2mm; }
+  .image .k { font: 800 8pt {{ head|safe }}; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 2mm; }
 
-  .lines .label { font: 700 10pt "Nunito"; }
+  .lines .label { font: 700 10pt {{ head|safe }}; }
   .page-break { page-break-after: always; }
 
   #solucionario { page-break-before: always; }
-  #solucionario h2 { font: 900 22pt "Nunito"; margin: 0 0 6mm; }
-  #solucionario h3 { font: 800 12pt "Nunito"; margin: 5mm 0 2mm; }
+  #solucionario h2 { font: 900 22pt {{ head|safe }}; margin: 0 0 6mm; }
+  #solucionario h3 { font: 800 12pt {{ head|safe }}; margin: 5mm 0 2mm; }
   #solucionario p { font-size: 10.5pt; }
 </style>
 </head>
@@ -139,8 +158,12 @@
 {% endif %}
 
 {% for s in tome.sections %}
-<section class="sec" id="s{{ s.position }}">
-  <h2 class="title" data-title="{{ s.title }}"><span class="n">Sección {{ s.position }}</span>{{ s.title }}</h2>
+<section class="sec opener-{{ th.opener }}" id="s{{ s.position }}">
+  <header class="op">
+    {% if ornament %}<div class="orn"><svg width="48" height="48" viewBox="0 0 24 24" fill="{{ c.accent }}" stroke="{{ c.accent }}">{{ ornament|safe }}</svg></div>{% endif %}
+    <span class="num">{{ s.position if th.opener == "blob" else ("%02d"|format(s.position) if th.opener == "numeral" else "Sección " ~ s.position) }}</span>
+    <h2 class="title" data-title="{{ s.title }}">{{ s.title }}</h2>
+  </header>
   {% set ex = namespace(n=0) %}
   {% for b in s.content.blocks %}
     {% if b.type == "heading" %}
@@ -177,7 +200,7 @@
         {% for _ in range(b.answer_space_lines or (3 if b.kind == "open" else 0)) %}<div class="blank-line"></div>{% endfor %}
       </div>
     {% elif b.type == "keyboard" %}
-      <div class="keyboard-wrap">{{ keyboard_svg(b) }}{% if b.caption %}<div class="figcap">{{ b.caption }}</div>{% endif %}</div>
+      <div class="keyboard-wrap">{{ keyboard_svg(b, c.tint, c.accent) }}{% if b.caption %}<div class="figcap">{{ b.caption }}</div>{% endif %}</div>
     {% elif b.type == "tracing" %}
       <div class="tracing-wrap">{% if b.instruction %}<p><strong>{{ b.instruction }}</strong></p>{% endif %}{{ tracing_svg(b) }}</div>
     {% elif b.type == "letter_grid" %}

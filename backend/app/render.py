@@ -14,7 +14,8 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
-from app.content import Keyboard, LetterGrid, SectionContent, Tracing
+from app.themes import DEFAULT_PALETTE, ORNAMENTS, THEMES, mix
+from app.content import Design, Keyboard, LetterGrid, SectionContent, Tracing
 
 ASSETS = Path(__file__).parent / "assets"
 TEMPLATES = Path(__file__).parent / "templates"
@@ -42,6 +43,7 @@ class Tome:
     cover_image: bytes | None = None
     cover_media_type: str = "image/png"
     palette: list[str] | None = None  # [background, ink, accent] from the cover agent
+    design: Design | None = None  # the Designer's theme; None means the classic theme
 
     @property
     def cover_data_uri(self) -> str | None:
@@ -58,7 +60,7 @@ def inline(value: str) -> Markup:
     return Markup(escaped)
 
 
-def keyboard_svg(block: Keyboard) -> Markup:
+def keyboard_svg(block: Keyboard, lit_white: str = "#c7d2fe", lit_black: str = "#4f46e5") -> Markup:
     octave = int(block.start[-1])
     start_index = WHITE_NOTES.index(block.start[0])
     whites = []
@@ -69,7 +71,7 @@ def keyboard_svg(block: Keyboard) -> Markup:
     w, h, bw, bh = 34, 150, 20, 92
     parts = []
     for i, note in enumerate(whites):
-        cls, fill = ("white on", "#c7d2fe") if note in lit else ("white", "#ffffff")
+        cls, fill = ("white on", lit_white) if note in lit else ("white", "#ffffff")
         parts.append(f'<rect class="{cls}" x="{i * w}" y="0" width="{w}" height="{h}" rx="3" fill="{fill}" '
                      f'stroke="#1c1917" stroke-width="1.4"/>')
         if block.show_labels:
@@ -79,7 +81,7 @@ def keyboard_svg(block: Keyboard) -> Markup:
     for i, note in enumerate(whites[:-1]):
         if note[0] in "CDFGA":
             sharp = f"{note[0]}#{note[1:]}"
-            cls, fill = ("black on", "#4f46e5") if sharp in lit else ("black", "#1c1917")
+            cls, fill = ("black on", lit_black) if sharp in lit else ("black", "#1c1917")
             parts.append(f'<rect class="{cls}" x="{(i + 1) * w - bw / 2}" y="0" width="{bw}" height="{bh}" rx="2" '
                          f'fill="{fill}"/>')
     width = len(whites) * w
@@ -128,8 +130,16 @@ def render_html(tome: Tome, *, paper: str, include_answer_key: bool) -> str:
         for block in section.content.blocks
         if block.type == "exercise" and block.answer
     ]
+    th = THEMES[tome.design.theme if tome.design else "clasico"]
+    bg, ink, accent = (tome.design.palette if tome.design else None) or tome.palette or DEFAULT_PALETTE
+    colors = {"ink": ink, "accent": accent, "tint": mix(bg, accent, 0.28), "soft": mix("#FFFFFF", accent, 0.09),
+              "line": mix("#FFFFFF", ink, 0.18), "muted": mix(ink, "#FFFFFF", 0.38)}
+    theme_fonts = sorted({(th.head, th.head_file), (th.body, th.body_file)} - {("Andika", "Andika-Regular.ttf"),
+                                                                              ("Nunito", "Nunito-Variable.ttf")})
     return _env.get_template("tome.html.j2").render(
-        tome=tome, paper=paper, answers=answers if include_answer_key else [], fonts=(ASSETS / "fonts").as_uri()
+        tome=tome, paper=paper, answers=answers if include_answer_key else [], fonts=(ASSETS / "fonts").as_uri(),
+        th=th, c=colors, head=f'"{th.head}"', body=f'"{th.body}"', theme_fonts=theme_fonts,
+        ornament=ORNAMENTS[tome.design.ornament] if tome.design else "",
     )
 
 

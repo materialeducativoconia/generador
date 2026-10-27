@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
+import { PageThumb } from '../components/Sheet'
 import { GENRE_LABEL } from '../lib/labels'
 import { ApiError } from '../lib/api'
 import { api } from '../lib/apiClient'
@@ -57,7 +58,7 @@ function CoverPanel({ series: s }: { series: Series }) {
   const busy = s.cover_status === 'queued' || s.cover_status === 'running' || repaint.isPending
   return (
     <div className="cover-panel">
-      <BookCover size="hero" title={s.title ?? s.topic} genre={s.genre} audience={s.audience.label} cover_url={s.cover_url} cover_status={s.cover_status} cover_palette={s.cover_palette} />
+      <BookCover size="hero" title={s.title ?? s.topic} genre={s.genre} audience={s.audience.label} cover_url={s.cover_url} cover_status={s.cover_status} cover_palette={s.cover_palette ?? s.design?.palette ?? null} />
       <button className="ghost small" onClick={() => repaint.mutate()} disabled={busy}>
         {busy ? 'Pintando…' : s.cover_url ? 'Otra portada' : s.cover_status === 'failed' ? 'Reintentar portada' : 'Crear portada'}
       </button>
@@ -230,23 +231,29 @@ function Sections({ series, progress }: { series: Series; progress: Progress }) 
       <div className="progress" role="progressbar" aria-valuenow={done} aria-valuemax={progress.counts.total}>
         <span style={{ transform: `scaleX(${progress.counts.total ? done / progress.counts.total : 0})` }} />
       </div>
-      <ul className="sections">
-        {progress.lessons.map((l) => {
+      <ul className="thumbs">
+        {progress.lessons.map((l, i) => {
           const ready = ['generated', 'edited', 'approved'].includes(l.status)
-          const row = (
-            <>
-              <span className="num">{l.position}</span>
-              <span className="sec-t">
-                {l.title}
-                {l.status === 'failed' && <small className="error">{l.error?.message}</small>}
-                {!ready && l.status !== 'failed' && byId.get(l.id)?.objectives[0] && <small className="muted">{byId.get(l.id)?.objectives[0]}</small>}
-              </span>
-              <StatusPill status={l.status} />
-            </>
+          const blocks = byId.get(l.id)?.content_json?.blocks
+          const caption = (
+            <span className="thumb-cap">
+              <span className="thumb-t"><span className="thumb-n">{l.position}</span>{l.title}</span>
+              {l.status === 'failed' ? <small className="error">{l.error?.message}</small> : !ready && <StatusPill status={l.status} />}
+            </span>
           )
           return (
-            <li key={l.id} className={`sec ${l.status}`}>
-              {ready ? <Link to={`/app/secciones/${l.id}`} className="sec-row">{row}<span className="chev">→</span></Link> : <div className="sec-row">{row}</div>}
+            <li key={l.id} className={`thumb-item ${l.status}`} style={{ '--i': i } as React.CSSProperties}>
+              {ready && blocks ? (
+                <Link to={`/app/secciones/${l.id}`} className="thumb-link" aria-label={`Abrir sección ${l.position}: ${l.title}`}>
+                  <PageThumb design={series.design} position={l.position} title={l.title} blocks={blocks} />
+                  {caption}
+                </Link>
+              ) : (
+                <div className="thumb-link idle">
+                  <div className={`thumb placeholder ${l.status}`} aria-hidden="true"><span /><span /><span /><span /></div>
+                  {caption}
+                </div>
+              )}
             </li>
           )
         })}

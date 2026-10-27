@@ -37,7 +37,7 @@ async def create_export(series_id: uuid.UUID, body: ExportOptions, request: Requ
         ), {"s": series_id})).all()
         content_hash = hashlib.sha256(json.dumps({
             "title": series["title"], "lessons": [[str(i), v] for i, v in versions], "options": body.model_dump(),
-            "cover": series["cover_key"],
+            "cover": series["cover_key"], "design": _jsonable_design(series["design"]),
         }, sort_keys=True).encode()).hexdigest()
         existing = (await conn.execute(text(
             """select * from public.exports where series_id = :s and content_hash = :h and status <> 'failed'
@@ -96,3 +96,7 @@ def _export(row) -> dict:
 def _slug(title: str) -> str:
     ascii_ = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", "-", ascii_.lower()).strip("-")[:80] or "tomo"
+
+
+def _jsonable_design(value):
+    return json.loads(value) if isinstance(value, str) else value

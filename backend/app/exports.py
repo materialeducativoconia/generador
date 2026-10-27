@@ -6,7 +6,7 @@ import logging
 
 from sqlalchemy import text
 
-from app.content import SectionContent
+from app.content import Design, SectionContent
 from app.render import Tome, TomeSection, render_pdf
 
 log = logging.getLogger("worker")
@@ -43,6 +43,7 @@ async def run_export(deps, job: dict) -> None:
                   for lesson in lessons if lesson["content_json"]],
         cover_image=cover_image, cover_media_type=media_type,
         palette=(_json(series["cover"]) or {}).get("palette"),
+        design=Design.model_validate(_json(series["design"])) if series["design"] else None,
     )
     # WeasyPrint is CPU-bound; keep the event loop free for the other jobs in flight.
     pdf, pages = await asyncio.wait_for(

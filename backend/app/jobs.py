@@ -15,8 +15,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.agents import PROMPT_VERSION, AgentFailed, Attempt, Brief, architect, cover_director, writer
-from app.content import Outline, OutlineSection
+from app.agents import PROMPT_VERSION, AgentFailed, Attempt, Brief, architect, cover_director, designer, writer
+from app.content import Design, Outline, OutlineSection
 from app.llm import LLM, UpstreamAuthError, UpstreamError
 from app.references import find_covers
 
@@ -184,17 +184,31 @@ async def _cover(deps: Deps, job: dict) -> None:
         sections = (await conn.execute(text(
             "select title from public.lessons where series_id = :s order by position"),
             {"s": job["series_id"]})).scalars().all()
+    brief = _brief(series, None)
+    title, genre = series["title"] or series["topic"], series["genre"] or ""
+    # The Designer runs once per tome; asking for another cover keeps the interior's look.
+    design = Design.model_validate(_json(series["design"])) if series["design"] else None
+    if design is None:
+        try:
+            designed = await designer(deps.llm, brief, title, genre, list(sections))
+        except AgentFailed as exc:
+            await _log_attempts(deps.engine, job, "designer", exc.attempts)
+            raise
+        design = designed.value
+        async with deps.engine.begin() as conn:
+            await _insert_logs(conn, job, "designer", designed.attempts)
+            await conn.execute(text("update public.series set design = cast(:d as jsonb) where id = :s"),
+                               {"s": job["series_id"], "d": design.model_dump_json()})
     if deps.images is None:
         raise JobFailed("not_configured", "Falta OPENROUTER_API_KEY para generar portadas.")
-    brief = _brief(series, None)
     try:
-        result = await cover_director(deps.llm, brief, series["title"] or series["topic"], series["genre"] or "",
-                                      list(sections))
+        result = await cover_director(deps.llm, brief, title, genre, list(sections), design)
     except AgentFailed as exc:
         await _log_attempts(deps.engine, job, "cover", exc.attempts)
         raise
     await _log_attempts(deps.engine, job, "cover", result.attempts)  # a retry below must not redo this log
     plan = result.value
+    plan.palette = design.palette  # cover and interior share one palette
     references = await deps.references(plan.search_queries, limit=4)
     image = await deps.images.generate(
         f"{plan.illustration_prompt}\n\n{COVER_RULES.format(palette=', '.join(plan.palette))}",

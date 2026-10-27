@@ -10,12 +10,13 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from app.content import CoverPlan, Outline, SectionContent
+from app.content import CoverPlan, Design, Outline, SectionContent
+from app.themes import THEMES
 from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@1", "writer": "writer@1", "cover": "cover@2"}
+PROMPT_VERSION = {"architect": "architect@1", "writer": "writer@1", "cover": "cover@2", "designer": "designer@1"}
 
 
 @dataclass
@@ -148,13 +149,41 @@ Reglas del illustration_prompt:
 - Para libros de colorear sugiere un estilo de línea limpia con algo de color, como su portada típica."""
 
 
-async def cover_director(llm: LLM, brief: Brief, title: str, genre: str, sections: list[str]) -> AgentResult[CoverPlan]:
+async def cover_director(llm: LLM, brief: Brief, title: str, genre: str, sections: list[str],
+                         design: Design | None = None) -> AgentResult[CoverPlan]:
+    style = (f"\nMaqueta interior elegida: tema {design.theme}, adorno {design.ornament}. Usa exactamente esta "
+             f"paleta: {', '.join(design.palette)}") if design else ""
     messages = [
         {"role": "system", "content": COVER_SYSTEM},
         {"role": "user", "content": f"Título del tomo: {title}\nTipo: {genre}\n{brief.describe()}\n"
-                                    f"Secciones: {'; '.join(sections) or '(sin secciones aún)'}"},
+                                    f"Secciones: {'; '.join(sections) or '(sin secciones aún)'}{style}"},
     ]
     return await _json_call(llm, messages, CoverPlan, temperature=1.0, max_tokens=1200)
+
+
+DESIGNER_SYSTEM = """Eres diseñadora editorial de material educativo impreso. Eliges la maqueta interior de un tomo
+para que tenga identidad propia y encaje con su público, nunca genérica.
+
+Temas disponibles (elige exactamente uno por su clave):
+""" + "\n".join(f"- {key}: {t.use_for} (títulos en {t.head})" for key, t in THEMES.items()) + """
+
+Adornos: estrellas, notas (música), hojas (naturaleza), puntos, formas (geometría, preescolar), ninguno.
+
+Responde solo con json:
+{"theme": "clave", "palette": ["#fondo muy claro", "#tinta oscura legible", "#acento saturado"],
+ "ornament": "uno de los adornos", "rationale": "por qué, en una frase"}
+
+La paleta se imprime: fondo casi blanco con un matiz, tinta con contraste alto sobre ese fondo, y un acento
+con carácter que combine con el tema (evita el violeta genérico salvo que el tema lo pida)."""
+
+
+async def designer(llm: LLM, brief: Brief, title: str, genre: str, sections: list[str]) -> AgentResult[Design]:
+    messages = [
+        {"role": "system", "content": DESIGNER_SYSTEM},
+        {"role": "user", "content": f"Título del tomo: {title}\nTipo: {genre}\n{brief.describe()}\n"
+                                    f"Secciones: {'; '.join(sections) or '(sin secciones aún)'}"},
+    ]
+    return await _json_call(llm, messages, Design, temperature=0.8, max_tokens=600)
 
 
 async def _json_call(llm: LLM, messages: list[dict], model: type[T], *, temperature: float,

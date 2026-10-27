@@ -125,7 +125,7 @@ function Library() {
         {data.map((s, i) => (
           <li key={s.id} style={{ '--i': i } as React.CSSProperties}>
             <Link to={`/app/tomos/${s.id}`} className="book-card" aria-label={`Abrir ${s.title ?? s.topic}`}>
-              <BookCover title={s.title ?? s.topic} genre={s.genre} cover_url={s.cover_url} cover_status={s.cover_status} cover_palette={s.cover_palette} />
+              <BookCover title={s.title ?? s.topic} genre={s.genre} cover_url={s.cover_url} cover_status={s.cover_status} cover_palette={s.cover_palette ?? s.design?.palette ?? null} />
               <span className="card-f">
                 <StatusPill status={s.status} />
                 {s.lesson_count > 0 && ['generating', 'ready', 'needs_attention'].includes(s.status) && (

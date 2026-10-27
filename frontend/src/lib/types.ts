@@ -12,7 +12,15 @@ export type CoverFields = {
   cover_palette: [string, string, string] | null
 }
 
+export type Design = {
+  theme: 'juego' | 'cuaderno' | 'editorial' | 'metodo' | 'ciencia' | 'clasico'
+  palette: [string, string, string]
+  ornament: 'estrellas' | 'notas' | 'hojas' | 'puntos' | 'formas' | 'ninguno'
+  rationale?: string
+}
+
 export type SeriesSummary = CoverFields & {
+  design: Design | null
   id: string
   title: string | null
   topic: string
@@ -31,9 +39,11 @@ export type LessonSummary = {
   key_points: string[]
   status: LessonStatus
   last_error: ApiErrorBody | null
+  content_json: { blocks: Block[] } | null
 }
 
 export type Series = CoverFields & {
+  design: Design | null
   id: string
   title: string | null
   topic: string

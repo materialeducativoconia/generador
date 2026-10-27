@@ -81,7 +81,7 @@ async def list_series(request: Request, user_id: UserId):
     async with request.app.state.engine.connect() as conn:
         rows = (await conn.execute(text(
             f"""select s.id, s.title, s.topic, s.genre, s.status, s.lesson_count, s.created_at, s.updated_at,
-                       s.cover_key, s.cover, {COVER_STATUS_SQL},
+                       s.cover_key, s.cover, s.design, {COVER_STATUS_SQL},
                        count(l.id) filter (where l.status in ('generated','edited','approved')) as done
                   from public.series s left join public.lessons l on l.series_id = s.id
                  where s.user_id = :u
@@ -275,7 +275,8 @@ def _with_cover(out: dict, request: Request) -> dict:
 async def _series_detail(conn, series_id, user_id, request: Request):
     series = await _own_series(conn, series_id, user_id)
     lessons = (await conn.execute(text(
-        """select id, position, title, objectives, key_points, status, last_error, content_version, updated_at
+        """select id, position, title, objectives, key_points, status, last_error, content_version, content_json,
+                  updated_at
              from public.lessons where series_id = :s order by position"""), {"s": series_id})).mappings().all()
     outline_error = None
     if series["status"] == "outline_failed":
@@ -309,7 +310,7 @@ def _jsonable(row) -> dict:
         elif hasattr(v, "isoformat"):
             v = v.isoformat()
         elif isinstance(v, str) and k in ("objectives", "key_points", "audience", "plan", "last_error", "error", "cover",
-                                          "options", "content_json", "pending_content_json"):
+                                          "options", "content_json", "pending_content_json", "design"):
             v = json.loads(v)
         out[k] = v
     return out

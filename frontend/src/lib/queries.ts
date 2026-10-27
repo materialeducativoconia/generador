@@ -25,6 +25,7 @@ export const useSeries = (id: string) =>
   useQuery({
     queryKey: ['series', id],
     queryFn: () => api.get<Series>(`/api/series/${id}`),
+    enabled: !!id,
     refetchInterval: (q) => (q.state.data && coverPending(q.state.data) ? 5000 : false),
   })
 

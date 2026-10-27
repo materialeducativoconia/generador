@@ -169,3 +169,15 @@ class CoverPlan(BaseModel):
     search_queries: list[str] = Field(min_length=1, max_length=3)
     illustration_prompt: str = Field(min_length=20, max_length=1500)
     palette: list[Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")]] = Field(min_length=3, max_length=3)
+
+
+Hex = Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")]
+
+
+class Design(BaseModel):
+    """The Designer's choice: one curated theme (app.themes), a palette and an ornament."""
+
+    theme: Literal["juego", "cuaderno", "editorial", "metodo", "ciencia", "clasico"]
+    palette: list[Hex] = Field(min_length=3, max_length=3)  # light background, ink, accent
+    ornament: Literal["estrellas", "notas", "hojas", "puntos", "formas", "ninguno"] = "ninguno"
+    rationale: str = Field(default="", max_length=400)
