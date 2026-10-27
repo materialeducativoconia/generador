@@ -1,19 +1,25 @@
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.api import health, me
+from app.api import exports, health, me, series
 from app.auth import TokenVerifier
 from app.config import Settings
 from app.db import make_engine
 from app.errors import install_error_handlers
+from app.storage import Storage
 
 
-def create_app(engine: AsyncEngine | None = None, verifier: TokenVerifier | None = None) -> FastAPI:
+def create_app(engine: AsyncEngine | None = None, verifier: TokenVerifier | None = None,
+               storage: Storage | None = None) -> FastAPI:
     settings = Settings() if engine is None or verifier is None else None
     app = FastAPI(title="Generador API")
     app.state.engine = engine or make_engine(settings.database_url)
     app.state.verifier = verifier or TokenVerifier(jwks_url=settings.jwks_url, issuer=settings.auth_issuer)
+    app.state.storage = storage or (Storage(settings.supabase_url, settings.supabase_service_role_key)
+                                    if settings and settings.supabase_service_role_key else None)
     install_error_handlers(app)
     app.include_router(health.router)
     app.include_router(me.router)
+    app.include_router(series.router)
+    app.include_router(exports.router)
     return app

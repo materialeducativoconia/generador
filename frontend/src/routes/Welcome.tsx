@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router'
 import { useAuth } from '../auth/context'
 import { signInWithGoogle } from '../auth/google'
+import { Logo } from '../components/AppShell'
 
 const ERRORS: Record<string, string> = {
   cancelled: 'No se completó el inicio de sesión.',
@@ -29,8 +30,10 @@ export function Welcome() {
 
   return (
     <main className="welcome">
-      <h1>Generador de material educativo</h1>
-      <p className="muted">Crea secuencias de lecciones y cuadernillos listos para imprimir.</p>
+      <div className="orb" aria-hidden="true" />
+      <span className="brand"><Logo /><span>Material Educativo IA</span></span>
+      <h1 className="display">Material educativo de cualquier tema, listo para imprimir.</h1>
+      <p className="lede">Libros para colorear, cuadernillos de fichas, métodos paso a paso y secuencias didácticas. Tú describes, un equipo de agentes lo planifica, escribe y maqueta.</p>
       <button className="google-button" onClick={start} disabled={starting || loading}>
         <GoogleLogo />
         {starting ? 'Abriendo Google…' : 'Continuar con Google'}
@@ -41,6 +44,12 @@ export function Welcome() {
         </p>
       )}
       <p className="fine-print muted">Sirve tu cuenta de Gmail o la de tu centro educativo.</p>
+      <ul className="welcome-genres" aria-label="Qué puedes crear">
+        <li>Libro para colorear</li>
+        <li>Cuadernillo de fichas</li>
+        <li>Método paso a paso</li>
+        <li>Secuencia didáctica</li>
+      </ul>
     </main>
   )
 }

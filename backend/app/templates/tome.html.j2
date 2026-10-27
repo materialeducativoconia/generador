@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>{{ tome.title }}</title>
+<style>
+  @font-face { font-family: "Andika"; src: url("{{ fonts }}/Andika-Regular.ttf"); }
+  @font-face { font-family: "Andika"; font-weight: 700; src: url("{{ fonts }}/Andika-Bold.ttf"); }
+  @font-face { font-family: "Nunito"; font-weight: 200 1000; src: url("{{ fonts }}/Nunito-Variable.ttf"); }
+
+  @page {
+    size: {{ "letter" if paper == "Letter" else "A4" }};
+    margin: 20mm 18mm 22mm;
+    @top-left { content: string(tome-title); font: 600 8pt "Nunito"; color: #8a8580; }
+    @top-right { content: string(section-title); font: 600 8pt "Nunito"; color: #8a8580; }
+    @bottom-center { content: counter(page); font: 700 9pt "Nunito"; color: #57534e; }
+  }
+  @page cover { margin: 0; @top-left { content: none } @top-right { content: none } @bottom-center { content: none } }
+
+  :root { --ink: #1c1917; --muted: #6b6560; --line: #d9d4cf; --soft: #f5f3f0; --accent: #4f46e5; }
+  * { box-sizing: border-box; }
+  body { font: 11.5pt/1.55 "Andika", sans-serif; color: var(--ink); margin: 0; }
+  h1, h2, h3, .ui { font-family: "Nunito", sans-serif; }
+
+  .cover { page: cover; height: {{ "279mm" if paper == "Letter" else "297mm" }}; position: relative; padding: 34mm 24mm; display: flex; flex-direction: column;
+           background: linear-gradient(160deg, #eef2ff 0%, #fdf2f8 55%, #fff7ed 100%); }
+  .cover .kicker { font: 800 10pt "Nunito"; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+  .cover h1 { font: 900 40pt/1.05 "Nunito"; margin: 8mm 0 6mm; letter-spacing: -.02em; string-set: tome-title content(); }
+  .cover .audience { font: 600 14pt "Nunito"; color: var(--muted); }
+  .cover .name { position: absolute; bottom: 34mm; left: 24mm; font: 600 12pt "Nunito"; border-top: 1.5pt solid var(--ink); padding-top: 3mm; width: 110mm; }
+  .cover .by { position: absolute; bottom: 24mm; left: 24mm; font: 500 10pt "Nunito"; color: var(--muted); }
+
+  .toc { page-break-after: always; }
+  .toc h2 { font: 900 22pt "Nunito"; margin: 0 0 8mm; }
+  .toc a { display: block; color: var(--ink); text-decoration: none; padding: 2.4mm 0; border-bottom: .5pt solid var(--line); font: 600 11pt "Nunito"; }
+  .toc a::after { content: target-counter(attr(href url), page); float: right; color: var(--muted); }
+  .toc .n { color: var(--accent); display: inline-block; width: 10mm; }
+
+  section.sec { page-break-before: always; }
+  section.sec > h2.title { font: 900 22pt/1.15 "Nunito"; margin: 0 0 6mm; string-set: section-title attr(data-title); letter-spacing: -.01em; }
+  section.sec > h2.title .n { display: block; font: 800 9pt "Nunito"; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 1.5mm; }
+  h2.b { font: 800 15pt "Nunito"; margin: 7mm 0 2mm; }
+  h3.b { font: 800 12.5pt "Nunito"; margin: 5mm 0 1.5mm; }
+  p { margin: 0 0 3mm; }
+  ul, ol { margin: 0 0 3mm; padding-left: 6mm; }
+  ul.check { list-style: none; padding-left: 0; }
+  ul.check li::before { content: "☐ "; font-family: "Nunito"; }
+
+  .callout { border-radius: 4mm; padding: 4mm 5mm; margin: 4mm 0; background: var(--soft); page-break-inside: avoid; }
+  .callout .t { font: 800 10pt "Nunito"; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 1mm; }
+  .callout.key_idea { background: #eef2ff; } .callout.key_idea .t { color: #4338ca; }
+  .callout.tip { background: #ecfdf5; } .callout.tip .t { color: #047857; }
+  .callout.warning { background: #fff7ed; } .callout.warning .t { color: #c2410c; }
+  .callout.fun_fact { background: #fdf2f8; } .callout.fun_fact .t { color: #be185d; }
+
+  table { border-collapse: collapse; width: 100%; margin: 3mm 0 5mm; font-size: 10.5pt; page-break-inside: avoid; }
+  th { font: 800 9.5pt "Nunito"; text-align: left; background: var(--soft); }
+  th, td { border: .6pt solid var(--line); padding: 2mm 2.5mm; }
+  caption { caption-side: top; text-align: left; font: 700 9.5pt "Nunito"; color: var(--muted); padding-bottom: 1.5mm; }
+
+  .example { border-left: 2.5pt solid var(--accent); padding: 1mm 0 1mm 4mm; margin: 4mm 0; }
+  .example .t { font: 800 10.5pt "Nunito"; }
+
+  .activity { border: 1pt solid var(--ink); border-radius: 4mm; padding: 4mm 5mm; margin: 5mm 0; page-break-inside: avoid; }
+  .activity .t { font: 900 12pt "Nunito"; display: flex; justify-content: space-between; }
+  .activity .d { font: 700 9pt "Nunito"; color: var(--muted); }
+  .activity .m { font-size: 10pt; color: var(--muted); }
+
+  .exercise { margin: 4mm 0 5mm; page-break-inside: avoid; }
+  .exercise .q { font-weight: 700; }
+  .exercise .q .n { display: inline-block; min-width: 7mm; font-family: "Nunito"; font-weight: 900; color: var(--accent); }
+  .exercise .opts { list-style: none; padding-left: 7mm; }
+  .exercise .opts li::before { content: "○  "; font-family: "Nunito"; }
+  .blank-line { border-bottom: .6pt solid #a8a29e; height: 9mm; }
+
+  .keyboard-wrap { margin: 4mm 0; text-align: center; page-break-inside: avoid; }
+  .figcap { font: 600 9pt "Nunito"; color: var(--muted); margin-top: 1.5mm; }
+
+  .tracing-wrap { margin: 3mm 0 5mm; page-break-inside: avoid; }
+
+  .grid { display: grid; gap: 2.5mm; margin: 4mm 0; page-break-inside: avoid; }
+  .grid span { height: var(--cell); border: 1.4pt solid var(--ink); border-radius: 50%; display: flex;
+               align-items: center; justify-content: center; font-size: 20pt; }
+
+  .image { border: 1.4pt dashed #a8a29e; border-radius: 5mm; display: flex; flex-direction: column;
+           align-items: center; justify-content: center; text-align: center; color: var(--muted);
+           font: 600 10pt "Nunito"; margin: 4mm auto; padding: 6mm; page-break-inside: avoid; }
+  .image.full { height: 190mm; width: 100%; } .image.half { height: 85mm; width: 100%; } .image.small { height: 50mm; width: 60%; }
+  .image .k { font: 800 8pt "Nunito"; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 2mm; }
+
+  .lines .label { font: 700 10pt "Nunito"; }
+  .page-break { page-break-after: always; }
+
+  #solucionario { page-break-before: always; }
+  #solucionario h2 { font: 900 22pt "Nunito"; margin: 0 0 6mm; }
+  #solucionario h3 { font: 800 12pt "Nunito"; margin: 5mm 0 2mm; }
+  #solucionario p { font-size: 10.5pt; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="kicker">{{ GENRE_LABEL.get(tome.genre, "Material educativo") }}</div>
+  <h1>{{ tome.title }}</h1>
+  <div class="audience">{{ tome.audience }}</div>
+  <div class="name">Nombre:</div>
+  {% if tome.author %}<div class="by">Elaborado por {{ tome.author }}</div>{% endif %}
+</div>
+
+{% if tome.sections|length > 1 %}
+<nav class="toc">
+  <h2>Contenido</h2>
+  {% for s in tome.sections %}
+  <a href="#s{{ s.position }}"><span class="n">{{ s.position }}</span>{{ s.title }}</a>
+  {% endfor %}
+  {% if answers %}<a href="#solucionario"><span class="n">✓</span>Solucionario</a>{% endif %}
+</nav>
+{% endif %}
+
+{% for s in tome.sections %}
+<section class="sec" id="s{{ s.position }}">
+  <h2 class="title" data-title="{{ s.title }}"><span class="n">Sección {{ s.position }}</span>{{ s.title }}</h2>
+  {% set ex = namespace(n=0) %}
+  {% for b in s.content.blocks %}
+    {% if b.type == "heading" %}
+      <h{{ b.level }} class="b">{{ b.text|inline }}</h{{ b.level }}>
+    {% elif b.type == "paragraph" %}
+      <p>{{ b.text|inline }}</p>
+    {% elif b.type == "list" %}
+      {% set tag = "ol" if b.style == "number" else "ul" %}
+      <{{ tag }} class="{{ b.style }}">{% for i in b.items %}<li>{{ i|inline }}</li>{% endfor %}</{{ tag }}>
+    {% elif b.type == "callout" %}
+      <div class="callout {{ b.variant }}">{% if b.title %}<div class="t">{{ b.title }}</div>{% endif %}{{ b.text|inline }}</div>
+    {% elif b.type == "table" %}
+      <table>{% if b.caption %}<caption>{{ b.caption }}</caption>{% endif %}
+        <tr>{% for h in b.headers %}<th>{{ h|inline }}</th>{% endfor %}</tr>
+        {% for r in b.rows %}<tr>{% for c in r %}<td>{{ c|inline }}</td>{% endfor %}</tr>{% endfor %}
+      </table>
+    {% elif b.type == "example" %}
+      <div class="example">{% if b.title %}<div class="t">{{ b.title }}</div>{% endif %}{{ b.text|inline }}</div>
+    {% elif b.type == "activity" %}
+      <div class="activity">
+        <div class="t">{{ b.title }}{% if b.duration_minutes %}<span class="d">{{ b.duration_minutes }} min</span>{% endif %}</div>
+        {% if b.materials %}<p class="m">Materiales: {{ b.materials|join(", ") }}</p>{% endif %}
+        <ol>{% for st in b.steps %}<li>{{ st|inline }}</li>{% endfor %}</ol>
+      </div>
+    {% elif b.type == "exercise" %}
+      {% set ex.n = ex.n + 1 %}
+      <div class="exercise">
+        <div class="q"><span class="n">{{ ex.n }}.</span>{{ b.prompt|inline }}</div>
+        {% if b.kind == "multiple_choice" and b.options %}
+          <ul class="opts">{% for o in b.options %}<li>{{ o|inline }}</li>{% endfor %}</ul>
+        {% elif b.kind == "true_false" %}
+          <ul class="opts"><li>Verdadero</li><li>Falso</li></ul>
+        {% endif %}
+        {% for _ in range(b.answer_space_lines or (3 if b.kind == "open" else 0)) %}<div class="blank-line"></div>{% endfor %}
+      </div>
+    {% elif b.type == "keyboard" %}
+      <div class="keyboard-wrap">{{ keyboard_svg(b) }}{% if b.caption %}<div class="figcap">{{ b.caption }}</div>{% endif %}</div>
+    {% elif b.type == "tracing" %}
+      <div class="tracing-wrap">{% if b.instruction %}<p><strong>{{ b.instruction }}</strong></p>{% endif %}{{ tracing_svg(b) }}</div>
+    {% elif b.type == "letter_grid" %}
+      {% if b.instruction %}<p><strong>{{ b.instruction }}</strong></p>{% endif %}
+      <div class="grid" style="grid-template-columns: repeat({{ b.cols }}, 1fr); --cell: {{ (150 / b.cols)|round(1) }}mm">
+        {% for c, _ in letter_grid_cells(b) %}<span>{{ c }}</span>{% endfor %}
+      </div>
+    {% elif b.type == "image" %}
+      <div class="image {{ b.size }}"><div class="k">{{ "Dibujo para colorear" if b.kind == "line_art" else "Ilustración" }}</div>{{ b.subject }}</div>
+      {% if b.caption %}<div class="figcap" style="text-align:center">{{ b.caption }}</div>{% endif %}
+    {% elif b.type == "writing_lines" %}
+      <div class="lines">{% if b.label %}<div class="label">{{ b.label }}</div>{% endif %}{% for _ in range(b.lines) %}<div class="blank-line"></div>{% endfor %}</div>
+    {% elif b.type == "page_break" %}
+      <div class="page-break"></div>
+    {% endif %}
+  {% endfor %}
+</section>
+{% endfor %}
+
+{% if answers %}
+<section id="solucionario">
+  <h2>Solucionario</h2>
+  {% for s, b in answers %}
+    {% if loop.first or answers[loop.index0 - 1][0].position != s.position %}<h3>{{ s.position }}. {{ s.title }}</h3>{% endif %}
+    <p><strong>{{ b.prompt|inline }}</strong><br>{{ b.answer|inline }}{% if b.explanation %} — {{ b.explanation|inline }}{% endif %}</p>
+  {% endfor %}
+</section>
+{% endif %}
+</body>
+</html>

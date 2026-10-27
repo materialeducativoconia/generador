@@ -17,6 +17,24 @@ function fakeServer(validToken: string) {
 }
 
 describe('api client', () => {
+  it('sends extra headers such as Idempotency-Key on POST', async () => {
+    let seen: Headers | null = null
+    const api = createApiClient({
+      fetchImpl: (async (_url: string, init?: RequestInit) => {
+        seen = new Headers(init?.headers)
+        return Response.json({ ok: true }, { status: 202 })
+      }) as typeof fetch,
+      getAccessToken: async () => 't1',
+      refreshAccessToken: async () => null,
+      onSessionExpired: () => {},
+    })
+
+    await api.post('/api/series', { a: 1 }, { 'Idempotency-Key': 'k1' })
+
+    expect(seen!.get('Idempotency-Key')).toBe('k1')
+    expect(seen!.get('Authorization')).toBe('Bearer t1')
+  })
+
   it('sends the current access token as a Bearer header', async () => {
     const server = fakeServer('t1')
     const api = createApiClient({

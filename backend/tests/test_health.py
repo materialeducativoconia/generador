@@ -20,7 +20,7 @@ async def test_health_is_ok_when_database_responds():
     response = await get_health(engine)
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "db": "ok"}
+    assert response.json() == {"status": "ok", "db": "ok", "pdf": "ok"}
     await engine.dispose()
 
 

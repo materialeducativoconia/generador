@@ -3,6 +3,8 @@
 > Estado: **diseño cerrado v1, revisión 2: Supabase** (2026-10-25). Ninguna línea de implementación existe todavía.
 > Cada decisión con alternativas tiene su registro en [§7 Registro de decisiones](#7-registro-de-decisiones).
 
+> **Revisión 3 (2026-10-27): tomos de cualquier género con agentes.** El usuario describe el material y el **Arquitecto** (DeepSeek) elige el género (`coloring_book`, `worksheets`, `tutorial`, `lesson_series`) y el esquema; el **Redactor** (DeepSeek) escribe cada sección con el catálogo de bloques de `backend/app/content.py` (añade `keyboard`, `tracing`, `letter_grid`, `image`, `writing_lines`, `page_break`); el **Maquetador** (código, `app/render.py`) dibuja lo exacto en SVG y genera el PDF. Fases siguientes: Ilustrador (OpenRouter) + biblioteca de imágenes compartida, Curador (Openverse/Wikimedia), Investigador (dossier con fuentes) y Revisor visual. `lessons` = secciones del tomo; `series.genre` y `series.plan` guardan la salida del Arquitecto. `GET /api/exports/{id}/file` devuelve `{url}` firmada en JSON (no 302), porque el navegador la pide con Bearer.
+
 ## 0. Resumen en una página
 
 Un docente describe una serie (tema, nivel, nº de lecciones). La app genera primero un **esquema** (títulos + objetivos por lección), el docente lo corrige y aprueba, y entonces se genera **cada lección como un bloque independiente** en paralelo, respetando el rate limit de DeepSeek. El docente revisa, edita o regenera lecciones sueltas, y exporta un **PDF maquetado** con portada, índice, lecciones y solucionario.

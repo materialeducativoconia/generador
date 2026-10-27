@@ -46,7 +46,8 @@ export function createApiClient({ fetchImpl, getAccessToken, refreshAccessToken,
 
   return {
     get: <T>(path: string) => request<T>(path),
-    post: <T>(path: string, data?: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+    post: <T>(path: string, data?: unknown, headers?: Record<string, string>) =>
+      request<T>(path, { method: 'POST', body: JSON.stringify(data ?? {}), headers }),
     patch: <T>(path: string, data: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(data) }),
   }
 }
