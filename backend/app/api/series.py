@@ -265,20 +265,17 @@ async def _image_progress(conn, series_id) -> dict:
         """select l.id::text as lesson_id, b->>'id' as block_id, b->>'asset_id' as asset_id
              from public.lessons l, jsonb_array_elements(l.content_json->'blocks') b
             where l.series_id = :s and b->>'type' = 'image'"""), {"s": series_id})).mappings().all()
-    jobs = (await conn.execute(text(
-        """select distinct on (lesson_id, payload->>'block_id') lesson_id::text, payload->>'block_id' as block_id,
-                  status::text from public.generation_jobs
-            where series_id = :s and kind = 'illustration'
-            order by lesson_id, payload->>'block_id', created_at desc"""), {"s": series_id})).all()
-    latest = {(lesson, block): status for lesson, block, status in jobs}
+    # One job illustrates the whole tome, so its state applies to every picture still missing.
+    latest = (await conn.execute(text(
+        "select status::text from public.generation_jobs where series_id = :s and kind = 'illustration'"
+        " order by created_at desc limit 1"), {"s": series_id})).scalar_one_or_none()
     out = {"total": len(blocks), "done": 0, "active": 0, "failed": 0}
     for b in blocks:
-        status = latest.get((b["lesson_id"], b["block_id"]))
         if b["asset_id"]:
             out["done"] += 1
-        elif status in ("queued", "running"):
+        elif latest in ("queued", "running"):
             out["active"] += 1
-        elif status == "failed":
+        elif latest == "failed":
             out["failed"] += 1
     return out
 

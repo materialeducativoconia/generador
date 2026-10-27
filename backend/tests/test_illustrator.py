@@ -5,14 +5,9 @@ import httpx
 import pytest
 from PIL import Image, ImageDraw
 
-from app.content import Design
-from app.illustrator import (ASPECT, illustration_prompt, line_art_coverage, normalize_subject, prepare_image,
-                             style_key)
+from app.illustrator import line_art_coverage, normalize_subject, prepare_image
 from app.llm import UpstreamError
 from app.vision import OpenRouterVision
-
-DESIGN = Design(theme="juego", palette=["#FFF8EC", "#2D2A5A", "#E8762C"], ornament="notas")
-
 
 def png(draw=None, size=(400, 400), color="white"):
     im = Image.new("RGB", size, color)
@@ -26,22 +21,6 @@ def png(draw=None, size=(400, 400), color="white"):
 def test_subjects_are_normalized_for_matching():
     assert normalize_subject("Una ardilla comiendo bellotas.") == "ardilla comiendo bellotas"
     assert normalize_subject("  El  Árbol de la vida ") == "arbol vida"
-
-
-def test_line_art_is_style_free_but_colour_art_depends_on_the_design():
-    assert style_key("line_art", DESIGN) == style_key("line_art", None) == "line"
-    assert style_key("illustration", DESIGN) == "juego:#E8762C"
-    assert style_key("illustration", None) == "clasico"
-
-
-def test_prompts_fit_the_kind_and_forbid_text():
-    line = illustration_prompt("line_art", "una ardilla", DESIGN)
-    colour = illustration_prompt("illustration", "una ardilla", DESIGN)
-
-    assert "coloring" in line.lower() and "no color" in line.lower() and "una ardilla" in line
-    assert "#E8762C" in colour and "rounded" in colour.lower()
-    assert all("no text" in p.lower() for p in (line, colour))
-    assert ASPECT["full"] == "3:4" and ASPECT["small"] == "1:1"
 
 
 def test_line_art_becomes_pure_black_and_white():

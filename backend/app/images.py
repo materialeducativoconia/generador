@@ -21,8 +21,9 @@ class OpenRouterImages:
                  transport: httpx.AsyncBaseTransport | None = None):
         self.api_key, self.model, self.timeout, self.transport = api_key, model, timeout, transport
 
-    async def generate(self, prompt: str, *, references: list[bytes] = (), aspect_ratio: str = "3:4") -> GeneratedImage:
-        body = {"model": self.model, "prompt": prompt, "aspect_ratio": aspect_ratio, "resolution": "1K"}
+    async def generate(self, prompt: str, *, references: list[bytes] = (), aspect_ratio: str = "3:4",
+                       resolution: str = "1K") -> GeneratedImage:
+        body = {"model": self.model, "prompt": prompt, "aspect_ratio": aspect_ratio, "resolution": resolution}
         if references:
             body["input_references"] = [
                 {"type": "image_url", "image_url": {"url": f"data:{_sniff(r)};base64,{base64.b64encode(r).decode()}"}}

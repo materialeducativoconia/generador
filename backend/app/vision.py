@@ -23,6 +23,14 @@ EXTRA = {
 }
 
 
+SHEET_PROMPT = """Esta imagen es una hoja con {n} ilustraciones para un libro educativo impreso, en orden de
+lectura (izquierda a derecha, arriba a abajo). Tipo: {kind}. Lo que debe mostrar cada una:
+{subjects}
+Responde solo con json: {{"panels": [{{"ok": true|false, "has_text": true|false, "issues": "una frase o vacío"}}]}}
+con un elemento por ilustración, en el mismo orden. ok es false solo si tiene texto o letras, si no muestra lo
+pedido, si es inapropiada para niños, o si {extra}"""
+
+
 @dataclass
 class Review:
     ok: bool
@@ -38,11 +46,24 @@ class OpenRouterVision:
         self.api_key, self.model, self.timeout, self.transport = api_key, model, timeout, transport
 
     async def review(self, image: bytes, *, kind: str, subject: str) -> Review:
+        verdict, cost = await self._ask(image, REVIEW_PROMPT.format(kind=kind, subject=subject, extra=EXTRA[kind]))
+        return _review(verdict, cost)
+
+    async def review_sheet(self, image: bytes, subjects: list[str], *, kind: str) -> list[Review]:
+        """One call for a whole sheet; panels the model forgot to judge count as accepted."""
+        listing = "\n".join(f"{i}. {s}" for i, s in enumerate(subjects, 1))
+        verdict, cost = await self._ask(image, SHEET_PROMPT.format(n=len(subjects), kind=kind, subjects=listing,
+                                                                   extra=EXTRA[kind]))
+        panels = verdict.get("panels") if isinstance(verdict.get("panels"), list) else []
+        return [_review(panels[i] if i < len(panels) and isinstance(panels[i], dict) else {"ok": True},
+                        cost if i == 0 else None) for i in range(len(subjects))]
+
+    async def _ask(self, image: bytes, prompt: str) -> tuple[dict, float | None]:
         url = f"data:{_sniff(image)};base64,{base64.b64encode(image).decode()}"
         body = {"model": self.model, "temperature": 0, "max_tokens": 800,
                 "reasoning": {"exclude": True}, "response_format": {"type": "json_object"},
                 "messages": [{"role": "user", "content": [
-                    {"type": "text", "text": REVIEW_PROMPT.format(kind=kind, subject=subject, extra=EXTRA[kind])},
+                    {"type": "text", "text": prompt},
                     {"type": "image_url", "image_url": {"url": url}}]}]}
         try:
             async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as http:
@@ -62,6 +83,10 @@ class OpenRouterVision:
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             raw = str((payload.get("choices") or [{}])[0].get("message", {}).get("content"))[:200]
             raise UpstreamError("invalid_output", f"El revisor no devolvió un veredicto: {raw!r}") from exc
-        return Review(ok=bool(verdict.get("ok")), has_text=bool(verdict.get("has_text")),
-                      matches_subject=bool(verdict.get("matches_subject", True)),
-                      issues=str(verdict.get("issues") or "")[:500], cost_usd=(payload.get("usage") or {}).get("cost"))
+        return verdict, (payload.get("usage") or {}).get("cost")
+
+
+def _review(verdict: dict, cost: float | None) -> Review:
+    return Review(ok=bool(verdict.get("ok")), has_text=bool(verdict.get("has_text")),
+                  matches_subject=bool(verdict.get("matches_subject", True)),
+                  issues=str(verdict.get("issues") or "")[:500], cost_usd=cost)

@@ -133,13 +133,14 @@ async def test_export_prints_the_illustrations(raw_db, google_user, client_with_
 
     from pypdf import PdfReader
 
-    from tests.db.test_illustrations import LINE_ART, SECTION, FakeImages, FakeVision, written_tome
+    from tests.db.test_illustrations import ART, LINE_ART, SECTION, FakeImages, FakeVision, written_tome
 
     client = client_with_storage
     await raw_db.execute("delete from public.assets where subject_norm = 'vaca feliz'")
     user = await google_user()
     sid = await written_tome(client, key, user, engine, {**SECTION, "blocks": [SECTION["blocks"][1]]})
-    await run_next(engine, None, images=FakeImages(LINE_ART), vision=FakeVision(), storage=storage)
+    await run_next(engine, ScriptedLLM(json.dumps(ART)), images=FakeImages(LINE_ART), vision=FakeVision(),
+                   storage=storage)
 
     created = await client.post(f"/api/series/{sid}/exports", json={}, headers=bearer(key, user))
     await run_next_with_storage(engine, storage)

@@ -10,13 +10,13 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from app.content import CoverPlan, Design, Outline, SectionContent
+from app.content import ArtPlan, CoverPlan, Design, Outline, SectionContent
 from app.themes import THEMES
 from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@1", "writer": "writer@1", "cover": "cover@2", "designer": "designer@1"}
+PROMPT_VERSION = {"architect": "architect@1", "writer": "writer@1", "cover": "cover@2", "designer": "designer@1", "art": "art@1"}
 
 
 @dataclass
@@ -184,6 +184,36 @@ async def designer(llm: LLM, brief: Brief, title: str, genre: str, sections: lis
                                     f"Secciones: {'; '.join(sections) or '(sin secciones aún)'}"},
     ]
     return await _json_call(llm, messages, Design, temperature=0.8, max_tokens=600)
+
+
+ART_SYSTEM = """Eres directora de arte de un libro educativo ilustrado. Todas sus imágenes deben parecer del
+mismo libro: una sola técnica, la misma paleta y los mismos personajes recurrentes.
+
+Recibes la lista de imágenes del tomo (ref, tipo, tamaño y qué mostrar). Responde solo con json:
+{"style": "en inglés: técnica, trazo, grosor de línea, formas, luz; válido para color y para páginas de colorear",
+ "characters": [{"name": "nombre corto", "look": "en inglés: aspecto fijo y reconocible (especie, ropa, colores)"}],
+ "prompts": {"<ref>": "en inglés, una o dos frases: la escena concreta, usando los personajes por su nombre"}}
+
+Reglas:
+- 0 a 4 personajes; si la portada tiene un protagonista, úsalo como personaje principal.
+- Un prompt por cada ref recibida. Nada de texto, letras ni números dentro de las imágenes: si el pedido
+  menciona palabras, etiquetas o flechas con nombres, muéstralo solo con dibujos.
+- Mantén lo didáctico del pedido (qué debe aprender el niño al verla)."""
+
+
+async def art_director(llm: LLM, brief: Brief, title: str, design: Design | None, cover_concept: str | None,
+                       requests: list) -> AgentResult[ArtPlan]:
+    lines = [f"- {r.ref} | {r.kind} | {r.size} | {r.subject}" for r in requests]
+    look = f"Tema {design.theme}, paleta {', '.join(design.palette)}" if design else "Tema clásico"
+    messages = [
+        {"role": "system", "content": ART_SYSTEM},
+        {"role": "user", "content": f"Título: {title}\n{brief.describe()}\n{look}\n"
+                                    f"Portada: {cover_concept or '(sin portada)'}\nImágenes:\n" + "\n".join(lines)},
+    ]
+    result = await _json_call(llm, messages, ArtPlan, temperature=0.8, max_tokens=4000)
+    # Keep only known refs; any the model skipped fall back to the Writer's own description.
+    result.value.prompts = {r.ref: result.value.prompts.get(r.ref) or r.subject for r in requests}
+    return result
 
 
 async def _json_call(llm: LLM, messages: list[dict], model: type[T], *, temperature: float,

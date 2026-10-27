@@ -181,3 +181,16 @@ class Design(BaseModel):
     palette: list[Hex] = Field(min_length=3, max_length=3)  # light background, ink, accent
     ornament: Literal["estrellas", "notas", "hojas", "puntos", "formas", "ninguno"] = "ninguno"
     rationale: str = Field(default="", max_length=400)
+
+
+class Character(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    look: str = Field(min_length=3, max_length=300)  # fixed appearance, repeated in every prompt
+
+
+class ArtPlan(BaseModel):
+    """The Art director's style bible for every picture in a tome: one style, recurring characters."""
+
+    style: str = Field(min_length=10, max_length=800)
+    characters: list[Character] = Field(default_factory=list, max_length=4)
+    prompts: dict[str, str] = Field(default_factory=dict)  # image ref -> rewritten prompt (English)
