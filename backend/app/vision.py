@@ -39,7 +39,8 @@ class OpenRouterVision:
 
     async def review(self, image: bytes, *, kind: str, subject: str) -> Review:
         url = f"data:{_sniff(image)};base64,{base64.b64encode(image).decode()}"
-        body = {"model": self.model, "temperature": 0, "max_tokens": 300, "response_format": {"type": "json_object"},
+        body = {"model": self.model, "temperature": 0, "max_tokens": 800,
+                "reasoning": {"exclude": True}, "response_format": {"type": "json_object"},
                 "messages": [{"role": "user", "content": [
                     {"type": "text", "text": REVIEW_PROMPT.format(kind=kind, subject=subject, extra=EXTRA[kind])},
                     {"type": "image_url", "image_url": {"url": url}}]}]}
@@ -55,9 +56,12 @@ class OpenRouterVision:
             raise UpstreamError("upstream_unavailable", f"El revisor respondió {response.status_code}.")
         payload = response.json()
         try:
-            verdict = json.loads(payload["choices"][0]["message"]["content"])
+            content = payload["choices"][0]["message"]["content"] or ""
+            # Some vision models wrap the json in prose or a ```json fence despite response_format.
+            verdict = json.loads(content[content.index("{"):content.rindex("}") + 1])
         except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise UpstreamError("invalid_output", "El revisor no devolvió un veredicto.") from exc
+            raw = str((payload.get("choices") or [{}])[0].get("message", {}).get("content"))[:200]
+            raise UpstreamError("invalid_output", f"El revisor no devolvió un veredicto: {raw!r}") from exc
         return Review(ok=bool(verdict.get("ok")), has_text=bool(verdict.get("has_text")),
                       matches_subject=bool(verdict.get("matches_subject", True)),
                       issues=str(verdict.get("issues") or "")[:500], cost_usd=(payload.get("usage") or {}).get("cost"))

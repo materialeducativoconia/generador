@@ -89,3 +89,13 @@ async def test_vision_review_maps_errors():
 
     with pytest.raises(UpstreamError):
         await vision.review(png(), kind="line_art", subject="x")
+
+
+async def test_vision_review_reads_a_verdict_wrapped_in_prose_or_fences():
+    reply = 'Claro:\n```json\n{"ok": true, "has_text": false, "matches_subject": true, "issues": ""}\n```'
+    vision = OpenRouterVision("k", "m", transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json={"choices": [{"message": {"content": reply}}]})))
+
+    review = await vision.review(png(), kind="illustration", subject="x")
+
+    assert review.ok is True
