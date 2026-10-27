@@ -120,6 +120,11 @@
   .figure img { max-width: 100%; object-fit: contain; }
   .figure.full img { height: 200mm; } .figure.half img { height: 88mm; } .figure.small img { height: 50mm; }
   .figure.illustration img, .figure.photo img, .figure.diagram img { border-radius: {{ th.radius_mm }}mm; }
+  .credit { font: 500 7pt {{ head|safe }}; color: var(--muted); text-align: center; margin-top: -2mm; margin-bottom: 4mm; }
+  .fuentes { page-break-before: always; }
+  .fuentes h2 { font: {{ th.head_weight }} 22pt {{ head|safe }}; margin: 0 0 6mm; }
+  .fuentes li { margin-bottom: 2mm; font-size: 10pt; } .fuentes .u { color: var(--muted); font-size: 8.5pt; word-break: break-all; }
+  .fuentes .lic { margin-top: 8mm; font-size: 8.5pt; color: var(--muted); }
   .image .k { font: 800 8pt {{ head|safe }}; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 2mm; }
 
   .lines .label { font: 700 10pt {{ head|safe }}; }
@@ -215,6 +220,7 @@
     {% elif b.type == "image" and tome.image_uri(b.asset_id) %}
       <div class="figure {{ b.size }} {{ b.kind }}"><img src="{{ tome.image_uri(b.asset_id) }}" alt="{{ b.subject }}"></div>
       {% if b.caption %}<div class="figcap" style="text-align:center">{{ b.caption }}</div>{% endif %}
+      {% if tome.credits.get(b.asset_id) %}<div class="credit">{{ tome.credits[b.asset_id] }}</div>{% endif %}
     {% elif b.type == "image" %}
       <div class="image {{ b.size }}"><div class="k">{{ "Dibujo para colorear" if b.kind == "line_art" else "Ilustración" }}</div>{{ b.subject }}</div>
       {% if b.caption %}<div class="figcap" style="text-align:center">{{ b.caption }}</div>{% endif %}
@@ -234,6 +240,14 @@
     {% if loop.first or answers[loop.index0 - 1][0].position != s.position %}<h3>{{ s.position }}. {{ s.title }}</h3>{% endif %}
     <p><strong>{{ b.prompt|inline }}</strong><br>{{ b.answer|inline }}{% if b.explanation %} — {{ b.explanation|inline }}{% endif %}</p>
   {% endfor %}
+</section>
+{% endif %}
+{% if tome.sources %}
+<section class="fuentes" id="fuentes">
+  <h2>Fuentes</h2>
+  <ol>{% for src in tome.sources %}<li>{{ src.title }}<br><span class="u">{{ src.url }}</span></li>{% endfor %}</ol>
+  <p class="lic">Los datos de este tomo se contrastaron con los artículos citados de Wikipedia (texto bajo licencia
+  CC BY-SA 4.0). Las fotos de Wikimedia Commons llevan su autor y licencia al pie.</p>
 </section>
 {% endif %}
 </body>

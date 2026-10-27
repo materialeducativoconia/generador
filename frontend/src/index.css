@@ -347,6 +347,12 @@ a.sec-row { transition: background-color 160ms ease; }
 .sheet .fig { margin: 18px auto; text-align: center; }
 .sheet .fig img { display: block; margin: 0 auto; max-width: 100%; object-fit: contain; }
 .sheet .fig.full img { max-height: 760px; } .sheet .fig.half img { max-height: 360px; } .sheet .fig.small img { max-height: 200px; }
+.sheet .fig .credit { display: block; margin-top: 4px; font: 500 11px 'Geist', sans-serif; color: #8a8580; }
+.sources summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; }
+.sources summary::-webkit-details-marker { display: none; }
+.sources ol { margin: 12px 0 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; }
+.sources a { color: inherit; text-underline-offset: 3px; text-decoration-color: var(--border-strong); }
+@media (hover: hover) and (pointer: fine) { .sources a:hover { text-decoration-color: currentColor; } }
 .sheet .fig:not(.line_art) img { border-radius: var(--t-radius, 12px); }
 .sheet .lines { margin: 12px 0 20px; } .sheet .line { height: 34px; border-bottom: 1px solid #b9b4ae; }
 .sheet .page-break { border: 0; border-top: 1.5px dashed #d6d3cf; margin: 32px -8px; }

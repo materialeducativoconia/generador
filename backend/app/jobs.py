@@ -17,7 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.agents import (PROMPT_VERSION, AgentFailed, Attempt, Brief, architect, art_director, cover_director, designer,
-                        writer)
+                        fact_sheet, research_planner, writer)
 from app.content import ArtPlan, Design, Outline, OutlineSection
 from app.llm import LLM, UpstreamAuthError, UpstreamError
 from app.artwork import ImageRequest, plan_sheets, sheet_prompt, slice_sheet
@@ -36,6 +36,7 @@ class Deps:
     images: Any = None  # app.images.OpenRouterImages; None when OPENROUTER_API_KEY is unset
     vision: Any = None  # app.vision.OpenRouterVision, the image Reviewer; None skips the visual review
     references: Callable[..., Awaitable[list]] = find_covers
+    web: Any = None  # app.research.Web (Wikipedia, Commons); None skips research and real photos
 
 
 class JobFailed(Exception):
@@ -105,6 +106,9 @@ async def _outline(deps: Deps, job: dict) -> None:
     async with deps.engine.connect() as conn:
         series = await _series(conn, job["series_id"])
     brief = _brief(series, job["payload"].get("brief"))
+    if deps.web is not None and series["research"] is None:
+        research = await _research(deps, job, brief)
+        brief.facts = _facts(research)
     if job["payload"].get("instructions"):
         brief.extra_instructions = "\n".join(filter(None, [brief.extra_instructions,
                                                            f"Rehaz el esquema: {job['payload']['instructions']}"]))
@@ -130,6 +134,34 @@ async def _outline(deps: Deps, job: dict) -> None:
             "plan": json.dumps({"genre": outline.genre, "style_notes": outline.style_notes})})
         await enqueue_cover(conn, job["user_id"], job["series_id"])
         await _succeed(conn, job)
+
+
+async def _research(deps: Deps, job: dict, brief: Brief) -> dict:
+    """Researcher: decide if the tome needs sources, read Wikipedia, keep a fact sheet. Never fails the outline."""
+    research: dict = {"needed": False}
+    try:
+        planned = await research_planner(deps.llm, brief)
+        await _log_attempts(deps.engine, job, "research", planned.attempts)
+        research = {"needed": planned.value.needed, "reason": planned.value.reason, "queries": planned.value.queries}
+        if planned.value.needed and planned.value.queries:
+            documents = await deps.web.wikipedia(planned.value.queries, lang=brief.language)
+            if documents:
+                sheet = await fact_sheet(deps.llm, brief, documents)
+                await _log_attempts(deps.engine, job, "facts", sheet.attempts)
+                research["facts"] = [f.model_dump() for f in sheet.value.facts]
+                research["sources"] = [{"title": d.title, "url": d.url} for d in documents]
+    except AgentFailed as exc:
+        await _log_attempts(deps.engine, job, "research", exc.attempts)
+        log.warning("research skipped for %s: %s", job["series_id"], exc)
+    async with deps.engine.begin() as conn:
+        await conn.execute(text("update public.series set research = cast(:r as jsonb) where id = :s"),
+                           {"s": job["series_id"], "r": json.dumps(research)})
+    return research
+
+
+def _facts(research: dict | None) -> list[str] | None:
+    facts = (research or {}).get("facts") or []
+    return [f"{f['text']} [{f['source']}]" for f in facts] or None
 
 
 async def _lesson(deps: Deps, job: dict) -> None:
@@ -307,6 +339,20 @@ async def _illustration(deps: Deps, job: dict) -> None:
             await _insert_logs(conn, job, "art", directed.attempts)
             await conn.execute(text("update public.series set art = cast(:a as jsonb) where id = :s"),
                                {"s": job["series_id"], "a": plan.model_dump_json()})
+    if deps.web is not None:
+        for r in [r for r in todo if r.kind == "photo"]:
+            photo = await deps.web.commons_photo(plan.photo_queries.get(r.ref) or plan.prompts.get(r.ref) or r.subject)
+            if photo:
+                data, media_type = prepare_image(photo.data, "photo")
+                await _store_image(deps, job, key, r, unique[(r.kind, normalize_subject(r.subject))], data,
+                                   media_type, None, 1, Review(ok=True), 1, plan,
+                                   attribution={"author": photo.author, "license": photo.license,
+                                                "source_url": photo.source_url, "credit": photo.credit})
+                todo.remove(r)
+        if not todo:
+            async with deps.engine.begin() as conn:
+                await _succeed(conn, job)
+            return
     references = []
     if series["cover_key"]:
         try:
@@ -368,18 +414,21 @@ async def _review_sheet(deps: Deps, sheet_image: bytes, panels: list[tuple[bytes
             for c, v in zip(checks, seen)]
 
 
-async def _store_image(deps, job, key, request, group, data, media_type, image, share, review, attempts, plan):
+async def _store_image(deps, job, key, request, group, data, media_type, image, share, review, attempts, plan,
+                       attribution=None):
     asset_id = uuid.uuid4()
     storage_key = f"{asset_id}.{'png' if media_type == 'image/png' else 'jpg'}"
     await deps.storage.upload(storage_key, data, media_type, bucket="images")
     async with deps.engine.begin() as conn:
         await conn.execute(text(
             """insert into public.assets (id, kind, subject, subject_norm, style_key, storage_key, media_type, model,
-                                          cost_usd, review, created_by, use_count)
-               values (:id, :k, :subj, :n, :st, :key, :mt, :model, :cost, cast(:review as jsonb), :u, :uses)"""
+                                          cost_usd, review, created_by, use_count, attribution)
+               values (:id, :k, :subj, :n, :st, :key, :mt, :model, :cost, cast(:review as jsonb), :u, :uses,
+                       cast(:attr as jsonb))"""
         ), {"id": asset_id, "k": request.kind, "subj": request.subject, "n": normalize_subject(request.subject),
-            "st": key, "key": storage_key, "mt": media_type, "model": image.model, "u": job["user_id"],
-            "cost": (image.cost_usd or 0) / share, "uses": len(group),
+            "st": key, "key": storage_key, "mt": media_type, "model": image.model if image else "wikimedia-commons",
+            "u": job["user_id"], "cost": ((image.cost_usd or 0) / share) if image else 0, "uses": len(group),
+            "attr": json.dumps(attribution) if attribution else None,
             "review": json.dumps({"ok": review.ok, "has_text": review.has_text, "issues": review.issues,
                                   "attempts": attempts, "prompt": plan.prompts.get(request.ref)})})
         for r in group:  # every block in the tome that asked for this same subject
@@ -465,12 +514,14 @@ async def _series(conn, series_id):
 
 
 def _brief(series, stored: dict | None) -> Brief:
+    facts = _facts(_json(series["research"]))
     if stored:
         return Brief(request=stored["request"], audience=stored["audience"], language=stored.get("language", "es"),
-                     section_count=stored.get("section_count"), extra_instructions=stored.get("extra_instructions"))
+                     section_count=stored.get("section_count"), extra_instructions=stored.get("extra_instructions"),
+                     facts=facts)
     return Brief(request=series["topic"], audience=(_json(series["audience"]) or {}).get("label", ""),
                  language=series["language"], section_count=series["lesson_count"],
-                 extra_instructions=series["extra_instructions"])
+                 extra_instructions=series["extra_instructions"], facts=facts)
 
 
 def _json(value):

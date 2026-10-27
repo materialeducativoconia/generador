@@ -314,7 +314,10 @@ async def _series_detail(conn, series_id, user_id, request: Request):
         "select status::text from public.generation_jobs where series_id = :s and kind = 'cover'"
         " order by created_at desc limit 1"), {"s": series_id})).scalar_one_or_none()
     out["lessons"] = [_jsonable(lesson) for lesson in lessons]
-    out["assets"] = await _asset_urls(conn, request, out["lessons"])
+    out["assets"], out["credits"] = await _asset_urls(conn, request, out["lessons"])
+    research = out.pop("research", None) or {}
+    out["research"] = {"needed": research.get("needed", False), "sources": research.get("sources", []),
+                       "facts": len(research.get("facts", []))} if research else None
     out["outline_error"] = outline_error
     return _with_cover(out, request)
 
@@ -336,7 +339,8 @@ def _jsonable(row) -> dict:
         elif hasattr(v, "isoformat"):
             v = v.isoformat()
         elif isinstance(v, str) and k in ("objectives", "key_points", "audience", "plan", "last_error", "error", "cover",
-                                          "options", "content_json", "pending_content_json", "design"):
+                                          "options", "content_json", "pending_content_json", "design", "research",
+                                          "art"):
             v = json.loads(v)
         out[k] = v
     return out
@@ -346,7 +350,7 @@ def _jsonable(row) -> dict:
 async def get_lesson(lesson_id: uuid.UUID, request: Request, user_id: UserId):
     async with request.app.state.engine.connect() as conn:
         out = _jsonable(await _own_lesson(conn, lesson_id, user_id))
-        out["assets"] = await _asset_urls(conn, request, [out])
+        out["assets"], out["credits"] = await _asset_urls(conn, request, [out])
     return out
 
 
@@ -355,15 +359,21 @@ def _image_blocks(lessons) -> list[dict]:
             if b.get("type") == "image"]
 
 
-async def _asset_urls(conn, request: Request, lessons) -> dict[str, str]:
-    """Image blocks carry an asset id; the page needs a URL for each (public `images` bucket)."""
+async def _asset_urls(conn, request: Request, lessons) -> tuple[dict[str, str], dict[str, str]]:
+    """Image blocks carry an asset id; the page needs a URL for each (public `images` bucket) and photo credits."""
     ids = list({b["asset_id"] for b in _image_blocks(lessons) if b.get("asset_id")})
     storage = request.app.state.storage
     if not ids or storage is None:
-        return {}
-    rows = (await conn.execute(text("select id::text, storage_key from public.assets where id = any(cast(:ids as uuid[]))"),
-                               {"ids": ids})).all()
-    return {i: storage.public_url(k, bucket="images") for i, k in rows}
+        return {}, {}
+    rows = (await conn.execute(text(
+        "select id::text, storage_key, attribution from public.assets where id = any(cast(:ids as uuid[]))"),
+        {"ids": ids})).all()
+    credits = {i: _parse(a)["credit"] for i, _, a in rows if a}
+    return {i: storage.public_url(k, bucket="images") for i, k, _ in rows}, credits
+
+
+def _parse(value):
+    return json.loads(value) if isinstance(value, str) else value
 
 
 @router.post("/api/lessons/{lesson_id}/regenerate", status_code=202)

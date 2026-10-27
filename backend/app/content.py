@@ -194,3 +194,21 @@ class ArtPlan(BaseModel):
     style: str = Field(min_length=10, max_length=800)
     characters: list[Character] = Field(default_factory=list, max_length=4)
     prompts: dict[str, str] = Field(default_factory=dict)  # image ref -> rewritten prompt (English)
+    photo_queries: dict[str, str] = Field(default_factory=dict)  # photo ref -> short English Commons search
+
+
+class ResearchPlan(BaseModel):
+    """Whether a tome needs sources (facts, history, science) or not (colouring book, piano method)."""
+
+    needed: bool
+    queries: list[str] = Field(default_factory=list, max_length=3)
+    reason: str = Field(default="", max_length=300)
+
+
+class Fact(BaseModel):
+    text: str = Field(min_length=5, max_length=300)
+    source: int = Field(ge=1)  # 1-based index into the documents the Researcher read
+
+
+class FactSheet(BaseModel):
+    facts: list[Fact] = Field(default_factory=list, max_length=40)

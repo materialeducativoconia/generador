@@ -42,9 +42,13 @@ export type LessonSummary = {
   content_json: { blocks: Block[] } | null
 }
 
+export type Source = { title: string; url: string }
+
 export type Series = CoverFields & {
   design: Design | null
   assets: Record<string, string>
+  credits: Record<string, string>
+  research: { needed: boolean; facts: number; sources: Source[] } | null
   id: string
   title: string | null
   topic: string
@@ -97,5 +101,6 @@ export type Block =
 export type Lesson = LessonSummary & {
   series_id: string
   assets: Record<string, string>
+  credits: Record<string, string>
   content_json: { schema_version: 1; summary: string; blocks: Block[] } | null
 }

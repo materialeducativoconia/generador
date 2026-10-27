@@ -27,12 +27,14 @@ async def run_export(deps, job: dict) -> None:
         asset_ids = list({b["asset_id"] for lesson in lessons for b in (_json(lesson["content_json"]) or {}).get("blocks", [])
                           if b.get("type") == "image" and b.get("asset_id")})
         assets = (await conn.execute(text(
-            "select id::text, storage_key, media_type from public.assets where id = any(cast(:ids as uuid[]))"
+            "select id::text, storage_key, media_type, attribution from public.assets where id = any(cast(:ids as uuid[]))"
         ), {"ids": asset_ids})).all() if asset_ids else []
 
     options = _json(export["options"])
-    images = {}
-    for asset_id, key, media_type in assets:
+    images, credits = {}, {}
+    for asset_id, key, media_type, attribution in assets:
+        if attribution:
+            credits[asset_id] = _json(attribution)["credit"]
         try:
             images[asset_id] = (await deps.storage.download(key, bucket="images"), media_type)
         except Exception:  # a missing picture prints as its placeholder
@@ -55,7 +57,8 @@ async def run_export(deps, job: dict) -> None:
         cover_image=cover_image, cover_media_type=media_type,
         palette=(_json(series["cover"]) or {}).get("palette"),
         design=Design.model_validate(_json(series["design"])) if series["design"] else None,
-        images=images,
+        images=images, credits=credits,
+        sources=(_json(series["research"]) or {}).get("sources") or [],
     )
     # WeasyPrint is CPU-bound; keep the event loop free for the other jobs in flight.
     pdf, pages = await asyncio.wait_for(

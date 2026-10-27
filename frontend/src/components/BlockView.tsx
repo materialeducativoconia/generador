@@ -17,13 +17,14 @@ export function Inline({ text }: { text: string }) {
 }
 
 function ImageBlock({ block }: { block: Extract<Block, { type: 'image' }> }) {
-  const { urls, painting } = useContext(AssetsContext)
+  const { urls, credits, painting } = useContext(AssetsContext)
   const url = block.asset_id ? urls[block.asset_id] : undefined
   if (url) {
     return (
       <figure className={`fig ${block.size} ${block.kind}`}>
         <img src={url} alt={block.subject} loading="lazy" />
         {block.caption && <figcaption>{block.caption}</figcaption>}
+        {credits[block.asset_id!] && <small className="credit">{credits[block.asset_id!]}</small>}
       </figure>
     )
   }

@@ -42,6 +42,7 @@ export function TomePage() {
       {['generating', 'needs_attention', 'ready'].includes(status) && progress.data && (
         <>
           <Sections series={s} progress={progress.data} />
+          {s.research?.sources.length ? <Sources research={s.research} /> : null}
           {status === 'ready' && <ExportPanel key={progress.data.images.done} seriesId={s.id} latest={progress.data.latest_export} images={progress.data.images} />}
         </>
       )}
@@ -96,8 +97,29 @@ function Planning() {
   return (
     <div className="panel planning">
       <div className="shimmer-lines" aria-hidden="true"><span /><span /><span /><span /></div>
-      <p className="muted">El arquitecto está diseñando el tomo: género, secciones y objetivos. Suele tardar entre 10 y 40 segundos.</p>
+      <p className="muted">
+        El investigador busca fuentes si el tema lo necesita y el arquitecto diseña el tomo: género, secciones y objetivos.
+        Suele tardar entre 15 y 60 segundos.
+      </p>
     </div>
+  )
+}
+
+function Sources({ research }: { research: NonNullable<Series['research']> }) {
+  return (
+    <details className="panel sources">
+      <summary>
+        <span className="section-h">Fuentes</span>
+        <span className="muted small">{research.facts} datos verificados en {research.sources.length} artículos</span>
+      </summary>
+      <ol>
+        {research.sources.map((src) => (
+          <li key={src.url}>
+            <a href={src.url} target="_blank" rel="noreferrer noopener">{src.title}</a>
+          </li>
+        ))}
+      </ol>
+    </details>
   )
 }
 
@@ -245,7 +267,7 @@ function Sections({ series, progress }: { series: Series; progress: Progress }) 
             <li key={l.id} className={`thumb-item ${l.status}`} style={{ '--i': i } as React.CSSProperties}>
               {ready && blocks ? (
                 <Link to={`/app/secciones/${l.id}`} className="thumb-link" aria-label={`Abrir sección ${l.position}: ${l.title}`}>
-                  <PageThumb design={series.design} position={l.position} title={l.title} blocks={blocks} assets={series.assets} painting={progress.images.active > 0} />
+                  <PageThumb design={series.design} position={l.position} title={l.title} blocks={blocks} assets={series.assets} credits={series.credits} painting={progress.images.active > 0} />
                   {caption}
                 </Link>
               ) : (

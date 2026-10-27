@@ -45,6 +45,8 @@ class Tome:
     palette: list[str] | None = None  # [background, ink, accent] from the cover agent
     design: Design | None = None  # the Designer's theme; None means the classic theme
     images: dict[str, tuple[bytes, str]] = field(default_factory=dict)  # asset id -> (bytes, media type)
+    credits: dict[str, str] = field(default_factory=dict)  # asset id -> attribution, for photos we did not make
+    sources: list[dict] = field(default_factory=list)  # the Researcher's documents: {title, url}
 
     def image_uri(self, asset_id: str | None) -> str | None:
         if not asset_id or asset_id not in self.images:
