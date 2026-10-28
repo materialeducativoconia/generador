@@ -74,6 +74,15 @@ export type Progress = {
 export type ExportStatus = 'queued' | 'running' | 'succeeded' | 'failed'
 export type Preflight = { rating: 'lista' | 'aceptable' | 'baja'; min_dpi: number | null; issues: string[]; vector: number }
 
+export type Quality = {
+  verdict: 'lista' | 'revisar' | 'pendiente'
+  reasons: string[]
+  text: { score: number | null; reviewed: number; sections: number; fixed: number; issues: { section: number; issue: string }[] }
+  facts: { needed: boolean; facts: number; sources: number } | null
+  art: { total: number; done: number; active: number; failed: number }
+  print: (Preflight & { layout?: { fixed: string[]; issues: string[] } }) | null
+}
+
 export type Export = {
   id: string
   status: ExportStatus

@@ -78,7 +78,7 @@ def _dpi(px: tuple[int, int], box_w: float, box_h: float, *, fill: bool = False)
     return round(25.4 / scale)
 
 
-def preflight(tome, *, paper: str, print_edition: bool, pages: int) -> dict:
+def preflight(tome, *, paper: str, print_edition: bool, pages: int, layout: dict | None = None) -> dict:
     geo = page_geometry(paper, print_edition=print_edition)
     issues, dpis, vector = [], [], 0
 
@@ -106,9 +106,14 @@ def preflight(tome, *, paper: str, print_edition: bool, pages: int) -> dict:
             check(_short(b.subject), _dpi(px, box_w, getattr(geo, b.size)))
     if print_edition and pages < MIN_PAGES:
         issues.append(f"KDP pide al menos {MIN_PAGES} páginas; este tomo tiene {pages}")
+    layout = layout or {"fixed": [], "issues": []}
+    issues += layout["issues"]
     low = min(dpis, default=None)
     rating = "baja" if low is not None and low < SOFT_DPI else ("aceptable" if issues else "lista")
-    return {"rating": rating, "min_dpi": low, "issues": issues, "vector": vector}
+    report = {"rating": rating, "min_dpi": low, "issues": issues, "vector": vector}
+    if layout["fixed"] or layout["issues"]:
+        report["layout"] = layout
+    return report
 
 
 def _short(subject: str) -> str:

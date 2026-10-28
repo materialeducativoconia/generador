@@ -16,7 +16,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.agents import (PROMPT_VERSION, AgentFailed, Attempt, Brief, architect, art_director, cover_director, designer,
+from app.agents import (PROMPT_VERSION, AgentFailed, Attempt, Brief, apply_fixes, architect, editor, art_director, cover_director, designer,
                         fact_sheet, research_planner, writer)
 from app.content import ArtPlan, Design, Outline, OutlineSection
 from app.llm import LLM, UpstreamAuthError, UpstreamError
@@ -38,6 +38,7 @@ class Deps:
     vision: Any = None  # app.vision.OpenRouterVision, the image Reviewer; None skips the visual review
     references: Callable[..., Awaitable[list]] = find_covers
     web: Any = None  # app.research.Web (Wikipedia, Commons); None skips research and real photos
+    edit: bool = True  # the Editor proofreads each section after the Writer
 
 
 class JobFailed(Exception):
@@ -190,13 +191,25 @@ async def _lesson(deps: Deps, job: dict) -> None:
     except AgentFailed as exc:
         await _log_attempts(deps.engine, job, "writer", exc.attempts)
         raise
+    content, review, edit_attempts = result.value, None, []
+    if deps.edit:
+        try:
+            edited = await editor(deps.llm, brief, outline, position, content)
+        except (AgentFailed, UpstreamError) as exc:  # the Writer's text is still worth keeping
+            log.warning("editor skipped for lesson %s: %s", job["lesson_id"], exc)
+            edit_attempts = getattr(exc, "attempts", [])
+        else:
+            content, applied = apply_fixes(content, edited.value.fixes)
+            review = {"score": edited.value.score, "issues": edited.value.issues, "fixed": applied}
+            edit_attempts = edited.attempts
     async with deps.engine.begin() as conn:
         await _lock_series(conn, job)
         await _insert_logs(conn, job, "writer", result.attempts)
+        await _insert_logs(conn, job, "editor", edit_attempts)
         await conn.execute(text(
-            """update public.lessons set content_json = cast(:c as jsonb), status = 'generated',
+            """update public.lessons set content_json = cast(:c as jsonb), status = 'generated', review = cast(:r as jsonb),
                       content_version = content_version + 1, last_error = null where id = :l"""
-        ), {"l": job["lesson_id"], "c": result.value.model_dump_json()})
+        ), {"l": job["lesson_id"], "c": content.model_dump_json(), "r": json.dumps(review) if review else None})
         await conn.execute(text("select public.refresh_series_status(:s)"), {"s": job["series_id"]})
         await _queue_artwork(conn, job)
         await _succeed(conn, job)

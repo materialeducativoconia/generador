@@ -127,6 +127,43 @@ async def get_progress(series_id: uuid.UUID, request: Request, user_id: UserId):
     }
 
 
+@router.get("/api/series/{series_id}/quality")
+async def get_quality(series_id: uuid.UUID, request: Request, user_id: UserId):
+    """The tome's quality card: the Editor's verdicts, sources, pictures and the last PDF's print check."""
+    async with request.app.state.engine.connect() as conn:
+        series = await _own_series(conn, series_id, user_id)
+        lessons = (await conn.execute(text(
+            "select position, review from public.lessons where series_id = :s order by position"),
+            {"s": series_id})).mappings().all()
+        images = await _image_progress(conn, series_id)
+        export = (await conn.execute(text(
+            """select preflight from public.exports where series_id = :s and status = 'succeeded'
+                order by created_at desc limit 1"""), {"s": series_id})).scalar_one_or_none()
+    reviews = [(lesson["position"], _parse(lesson["review"])) for lesson in lessons if lesson["review"]]
+    scores = [r["score"] for _, r in reviews]
+    textcard = {"score": round(sum(scores) / len(scores), 1) if scores else None, "reviewed": len(reviews),
+                "sections": len(lessons), "fixed": sum(r.get("fixed", 0) for _, r in reviews),
+                "issues": [{"section": p, "issue": i} for p, r in reviews for i in r.get("issues", [])][:20]}
+    research = _parse(series["research"]) or {}
+    facts = {"needed": research.get("needed", False), "facts": len(research.get("facts", [])),
+             "sources": len(research.get("sources", []))} if research else None
+    preflight = _parse(export)
+
+    reasons = []
+    if scores and (min(scores) <= 2 or textcard["score"] < 4):
+        reasons.append("El Editor pide revisar el texto de alguna sección")
+    if images["failed"]:
+        reasons.append(f"{images['failed']} imágenes no se pudieron ilustrar")
+    if preflight and preflight.get("rating") == "baja":
+        reasons.append("Hay imágenes con baja resolución para imprimir")
+    if preflight and preflight.get("layout", {}).get("issues"):
+        reasons.append("La maqueta tiene páginas casi vacías")
+    pending = series["status"] != "ready" or images["active"] > 0 or preflight is None
+    verdict = "revisar" if reasons else ("pendiente" if pending else "lista")
+    return {"verdict": verdict, "reasons": reasons, "text": textcard, "facts": facts, "art": images,
+            "print": preflight}
+
+
 @router.patch("/api/series/{series_id}/outline")
 async def edit_outline(series_id: uuid.UUID, body: OutlineEdit, request: Request, user_id: UserId):
     async with request.app.state.engine.begin() as conn:

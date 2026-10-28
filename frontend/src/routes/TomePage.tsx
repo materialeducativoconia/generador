@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
@@ -7,7 +7,7 @@ import { PageThumb } from '../components/Sheet'
 import { GENRE_LABEL } from '../lib/labels'
 import { ApiError } from '../lib/api'
 import { api } from '../lib/apiClient'
-import { useExport, useProgress, useSeries } from '../lib/queries'
+import { useExport, useProgress, useQuality, useSeries } from '../lib/queries'
 import type { Export, LessonSummary, Preflight, Progress, Series } from '../lib/types'
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback)
@@ -43,6 +43,7 @@ export function TomePage() {
         <>
           <Sections series={s} progress={progress.data} />
           {s.research?.sources.length ? <Sources research={s.research} /> : null}
+          {status === 'ready' && <QualityCard seriesId={s.id} progress={progress.data} />}
           {status === 'ready' && <ExportPanel key={progress.data.images.done} seriesId={s.id} latest={progress.data.latest_export} images={progress.data.images} />}
         </>
       )}
@@ -102,6 +103,46 @@ function Planning() {
         Suele tardar entre 15 y 60 segundos.
       </p>
     </div>
+  )
+}
+
+const VERDICT = {
+  lista: { label: 'Lista para vender', pill: 'ok' },
+  revisar: { label: 'Revisar antes de vender', pill: 'bad' },
+  pendiente: { label: 'Falta generar el PDF', pill: 'idle' },
+} as const
+
+function QualityCard({ seriesId, progress }: { seriesId: string; progress: Progress }) {
+  const e = progress.latest_export
+  const stamp = `${progress.counts.generated}:${progress.images.done}:${progress.images.failed}:${e?.id ?? ''}:${e?.status ?? ''}`
+  const q = useQuality(seriesId, stamp).data
+  if (!q) return null
+  const v = VERDICT[q.verdict]
+  const t = q.text
+  const rows: [string, string][] = [
+    ['Texto', t.score === null ? 'Sin revisión del Editor' : `Editor ${String(t.score).replace('.', ',')}/5 · ${t.fixed} correcciones aplicadas`],
+    ['Datos', q.facts?.needed ? `${q.facts.facts} datos verificados en ${q.facts.sources} fuentes` : 'No requiere fuentes'],
+    ['Ilustraciones', q.art.total ? `${q.art.done} de ${q.art.total}${q.art.failed ? ` · ${q.art.failed} fallidas` : ''}` : 'Sin ilustraciones'],
+    ['Impresión', q.print ? `${{ lista: 'Lista', aceptable: 'Aceptable', baja: 'Baja resolución' }[q.print.rating]}${q.print.layout?.fixed.length ? ` · maqueta ajustada en ${q.print.layout.fixed.length} imágenes` : ''}` : 'Genera el PDF para revisarla'],
+  ]
+  return (
+    <details className="panel quality">
+      <summary>
+        <span className="section-h">Calidad</span>
+        <span className={`pill ${v.pill}`}>{v.label}</span>
+      </summary>
+      <dl>
+        {rows.map(([k, val]) => (
+          <div key={k}><dt>{k}</dt><dd>{val}</dd></div>
+        ))}
+      </dl>
+      {q.reasons.length > 0 && <ul className="reasons">{q.reasons.map((r) => <li key={r}>{r}</li>)}</ul>}
+      {t.issues.length > 0 && (
+        <ul className="issues muted small">
+          {t.issues.map((i, n) => <li key={n}><strong>Sección {i.section}:</strong> {i.issue}</li>)}
+        </ul>
+      )}
+    </details>
   )
 }
 
@@ -315,6 +356,10 @@ function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: P
     onSuccess: ({ url }) => window.location.assign(url),
   })
   const status = current.data?.status
+  const qc = useQueryClient()
+  useEffect(() => {
+    if (status === 'succeeded') qc.invalidateQueries({ queryKey: ['quality', seriesId] })
+  }, [status, qc, seriesId])
   const busy = create.isPending || status === 'queued' || status === 'running'
   // Any new option means a different PDF: offer to generate it rather than download the old one.
   const change = (fn: () => void) => () => { fn(); setExportId(null) }

@@ -316,3 +316,19 @@ class Fact(BaseModel):
 
 class FactSheet(BaseModel):
     facts: list[Fact] = Field(default_factory=list, max_length=40)
+
+
+class Fix(BaseModel):
+    """One correction from the Editor: replace a text field (or one item of a list field) of a block."""
+
+    block_id: Annotated[str, Field(min_length=1, max_length=20)]
+    field: Literal["text", "title", "prompt", "answer", "explanation", "caption", "label", "instruction", "items",
+                   "options", "steps"]
+    index: int | None = Field(default=None, ge=0, le=40)  # for items / options / steps
+    text: Annotated[str, Field(min_length=1, max_length=4000)]
+
+
+class EditReview(BaseModel):
+    score: int = Field(ge=1, le=5)  # 5 = ready to sell as is
+    issues: list[Annotated[str, Field(max_length=300)]] = Field(default_factory=list, max_length=8)
+    fixes: list[Fix] = Field(default_factory=list, max_length=25)

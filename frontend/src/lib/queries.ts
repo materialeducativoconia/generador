@@ -2,7 +2,7 @@ import { QueryClient, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { api, type Me } from './apiClient'
 import { supabase } from './supabase'
-import type { CoverFields, Export, Lesson, Progress, Series, SeriesSummary } from './types'
+import type { CoverFields, Export, Lesson, Progress, Quality, Series, SeriesSummary } from './types'
 
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, retry: 1, refetchOnWindowFocus: false } },
@@ -30,6 +30,15 @@ export const useSeries = (id: string) =>
   })
 
 export const useLesson = (id: string) => useQuery({ queryKey: ['lesson', id], queryFn: () => api.get<Lesson>(`/api/lessons/${id}`) })
+
+/** The tome's quality card; `stamp` changes whenever sections, pictures or the PDF change. */
+export function useQuality(id: string, stamp: string) {
+  return useQuery({
+    queryKey: ['quality', id, stamp],
+    queryFn: () => api.get<Quality>(`/api/series/${id}/quality`),
+    placeholderData: (prev) => prev,
+  })
+}
 
 export function useExport(id: string | null) {
   return useQuery({

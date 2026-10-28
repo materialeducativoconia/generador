@@ -81,6 +81,7 @@
   .opener-badge .op .num { display: inline-block; background: var(--accent); color: #fff; border-radius: 10mm; padding: 1.4mm 5mm; margin-bottom: 3mm; }
   .opener-badge .op { padding-bottom: 4mm; border-bottom: 2.4pt solid var(--tint); }
   .opener-bar .op { border-left: 3mm solid var(--accent); padding: 1mm 18mm 1mm 6mm; }
+  h2.b, h3.b, .op { break-after: avoid; }  /* a heading never ends a page alone */
   h2.b { font: {{ th.head_weight }} 15pt {{ head|safe }}; margin: 7mm 0 2mm; color: var(--ink); }
   h3.b { font: {{ th.head_weight }} 12.5pt {{ head|safe }}; margin: 5mm 0 1.5mm; }
   p { margin: 0 0 3mm; }
@@ -244,7 +245,8 @@
         {% for c, _ in letter_grid_cells(b) %}<span>{{ c }}</span>{% endfor %}
       </div>
     {% elif b.type == "image" and tome.image_uri(b.asset_id) %}
-      <div class="figure {{ b.size }} {{ b.kind }}"><img src="{{ tome.image_uri(b.asset_id) }}" alt="{{ b.subject }}"></div>
+      {% set key = s.position ~ ":" ~ b.id %}
+      <div class="figure {{ b.size }} {{ b.kind }}" data-block="{{ key }}"{% if loop.first or loop.previtem.type == "page_break" %} data-free="1"{% endif %}><img src="{{ tome.image_uri(b.asset_id) }}" alt="{{ b.subject }}"{% if key in fit %} style="height: {{ fit[key] }}mm"{% endif %}></div>
       {% if b.caption %}<div class="figcap" style="text-align:center">{{ b.caption }}</div>{% endif %}
       {% if tome.credits.get(b.asset_id) %}<div class="credit">{{ tome.credits[b.asset_id] }}</div>{% endif %}
     {% elif b.type == "image" %}

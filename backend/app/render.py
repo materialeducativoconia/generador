@@ -151,7 +151,8 @@ def _look(tome: Tome) -> dict:
             "fonts": (ASSETS / "fonts").as_uri()}
 
 
-def render_html(tome: Tome, *, paper: str, include_answer_key: bool, print_edition: bool = False) -> str:
+def render_html(tome: Tome, *, paper: str, include_answer_key: bool, print_edition: bool = False,
+                fit: dict[str, float] | None = None) -> str:
     """The interior. The print edition swaps the cover for a title page (the cover is its own file) and
     mirrors the margins so the binding side is wider."""
     answers = [
@@ -162,6 +163,7 @@ def render_html(tome: Tome, *, paper: str, include_answer_key: bool, print_editi
     ]
     return _env.get_template("tome.html.j2").render(
         tome=tome, paper=paper, answers=answers if include_answer_key else [], print_edition=print_edition,
+        fit=fit or {},
         geo=page_geometry(paper, print_edition=print_edition),
         ornament=ORNAMENTS[tome.design.ornament] if tome.design else "", **_look(tome),
     )
@@ -190,16 +192,72 @@ def _asset_fetcher():
     return AssetFetcher(allowed_protocols=["file", "data"])
 
 
-def _write_pdf(html: str) -> tuple[bytes, int]:
+def _document(html: str):
     from weasyprint import HTML
     from weasyprint.text.fonts import FontConfiguration
 
     # Without a FontConfiguration, WeasyPrint silently ignores @font-face.
-    document = HTML(string=html, base_url=ASSETS.as_uri(), url_fetcher=_asset_fetcher()).render(
+    return HTML(string=html, base_url=ASSETS.as_uri(), url_fetcher=_asset_fetcher()).render(
         font_config=FontConfiguration())
+
+
+def _write_pdf(html: str) -> tuple[bytes, int]:
+    document = _document(html)
     return document.write_pdf(), len(document.pages)
 
 
+PX_MM = 25.4 / 96
+FIT_MIN = 0.55  # a fitted picture keeps at least this share of its normal height, or it is not worth it
+
+
+def _pages(document) -> list[dict]:
+    """Per page: how full the content area is, and the first block that starts it."""
+    out = []
+    for page in document.pages:
+        box = page._page_box
+        top, height = box.content_box_y(), box.height
+        flow = [b for child in box.children if type(child).__name__ != "MarginBox" for b in child.descendants()]
+        # Leaves only: containers (the section, the body) stretch to the page bottom when they continue.
+        bottoms = [b.position_y + b.margin_height() for b in flow if hasattr(b, "margin_height") and (
+            type(b).__name__ == "LineBox" or "Replaced" in type(b).__name__ or not getattr(b, "children", None))]
+        first = next((b for b in flow if getattr(b, "element", None) is not None and b.element.get("data-block")), None)
+        out.append({"fill": (max(bottoms, default=top) - top) / height, "free_px": height - (max(bottoms, default=top) - top),
+                    "first": first.element.get("data-block") if first is not None and abs(first.position_y - top) < 2 else None,
+                    "first_free": first is not None and first.element.get("data-free") == "1",
+                    "lines": sum(1 for b in flow if type(b).__name__ == "LineBox")})
+    return out
+
+
+def render_checked(tome: Tome, *, paper: str, include_answer_key: bool,
+                   print_edition: bool = False) -> tuple[bytes, int, dict]:
+    """Render, then repair what a layout editor would: a picture that did not fit is shrunk into the gap it
+    left behind (the page before it is half empty). Reports nearly empty pages it cannot fix."""
+    geo = page_geometry(paper, print_edition=print_edition)
+    sizes = {f"{s.position}:{b.id}": (b.size, b.subject) for s in tome.sections for b in s.content.blocks
+             if b.type == "image"}
+    fit: dict[str, float] = {}
+    for _ in range(3):  # each pass can only move pictures back; two repairs are plenty
+        document = _document(render_html(tome, paper=paper, include_answer_key=include_answer_key,
+                                         print_edition=print_edition, fit=fit))
+        pages = _pages(document)
+        new = {}
+        for before, page in zip(pages, pages[1:]):
+            key = page["first"]
+            if key not in sizes or key in fit or page["first_free"] or before["fill"] > 0.8:
+                continue
+            normal = getattr(geo, sizes[key][0])
+            height = round(before["free_px"] * PX_MM - 14, 1)  # figure margins and a caption
+            if height >= normal * FIT_MIN:
+                new[key] = min(height, normal)
+        if not new:
+            break
+        fit.update(new)
+    issues = [f"Página {i + 1} casi vacía ({p['lines']} líneas)" for i, p in enumerate(pages)
+              if i > 0 and p["fill"] < 0.12 and not p["first"]]
+    return document.write_pdf(), len(document.pages), {"fixed": [sizes[k][1] for k in fit], "issues": issues}
+
+
 def render_pdf(tome: Tome, *, paper: str, include_answer_key: bool, print_edition: bool = False) -> tuple[bytes, int]:
+    """The plain render; exports use render_checked."""
     return _write_pdf(render_html(tome, paper=paper, include_answer_key=include_answer_key,
                                   print_edition=print_edition))

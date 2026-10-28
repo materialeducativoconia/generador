@@ -273,6 +273,14 @@ a.sec-row { transition: background-color 160ms ease; }
 .export { display: flex; gap: 16px; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-top: 24px; }
 .export .section-h { margin: 0 0 2px; }
 .export p { margin: 0; }
+.quality summary { display: flex; align-items: center; gap: 12px; cursor: pointer; list-style: none; }
+.quality summary::-webkit-details-marker { display: none; }
+.quality dl { display: grid; gap: 8px; margin: 16px 0 0; }
+.quality dl div { display: grid; grid-template-columns: 120px 1fr; gap: 12px; font-size: 14px; }
+.quality dt { color: var(--muted); }
+.quality dd { margin: 0; }
+.quality .reasons { margin: 14px 0 0; padding-left: 18px; font-size: 14px; color: var(--danger); }
+.quality .issues { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 4px; }
 .export-opts { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .preflight { flex-basis: 100%; font-size: 13px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
 .preflight strong::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; background: #16a34a; vertical-align: 1px; }

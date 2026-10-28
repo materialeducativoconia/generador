@@ -9,7 +9,7 @@ from sqlalchemy import text
 from app.content import Design, SectionContent
 from app.illustrator import vectorize
 from app.printing import preflight
-from app.render import Tome, TomeSection, render_cover_wrap, render_pdf
+from app.render import Tome, TomeSection, render_checked, render_cover_wrap
 
 log = logging.getLogger("worker")
 
@@ -69,10 +69,10 @@ async def run_export(deps, job: dict) -> None:
     )
     paper, print_edition = options.get("paper", "A4"), options.get("edition") == "print"
     # WeasyPrint is CPU-bound; keep the event loop free for the other jobs in flight.
-    pdf, pages = await asyncio.wait_for(
-        asyncio.to_thread(render_pdf, tome, paper=paper, include_answer_key=options.get("include_answer_key", True),
+    pdf, pages, layout = await asyncio.wait_for(
+        asyncio.to_thread(render_checked, tome, paper=paper, include_answer_key=options.get("include_answer_key", True),
                           print_edition=print_edition),
-        timeout=120,
+        timeout=240,  # up to three layout passes on a slow CPU
     )
     base = f"{job['user_id']}/{job['series_id']}/{export_id}"
     storage_key, cover_key = f"{base}.pdf", None
@@ -82,7 +82,7 @@ async def run_export(deps, job: dict) -> None:
                                          timeout=60)
         cover_key = f"{base}-cover.pdf"
         await deps.storage.upload(cover_key, wrap)
-    report = preflight(tome, paper=paper, print_edition=print_edition, pages=pages)
+    report = preflight(tome, paper=paper, print_edition=print_edition, pages=pages, layout=layout)
 
     async with deps.engine.begin() as conn:
         await conn.execute(text(

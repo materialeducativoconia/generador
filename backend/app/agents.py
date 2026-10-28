@@ -10,13 +10,13 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from app.content import ArtPlan, CoverPlan, Design, FactSheet, Outline, ResearchPlan, SectionContent
+from app.content import ArtPlan, CoverPlan, Design, EditReview, FactSheet, Fix, Outline, ResearchPlan, SectionContent
 from app.themes import THEMES
 from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@1", "writer": "writer@2", "cover": "cover@2", "designer": "designer@1", "art": "art@2", "research": "research@1", "facts": "facts@1"}
+PROMPT_VERSION = {"architect": "architect@1", "writer": "writer@2", "editor": "editor@1", "cover": "cover@2", "designer": "designer@1", "art": "art@2", "research": "research@1", "facts": "facts@1"}
 
 
 @dataclass
@@ -152,6 +152,63 @@ async def writer(llm: LLM, brief: Brief, outline: Outline, position: int) -> Age
                                     f"Puntos clave: {'; '.join(section.key_points)}"},
     ]
     return await _json_call(llm, messages, SectionContent, temperature=1.0, max_tokens=8000)
+
+
+EDITOR_SYSTEM = """Eres el Editor de una editorial de material educativo que se vende impreso. Revisas UNA sección ya
+escrita (lista de bloques json) antes de imprenta y corriges solo lo necesario, sin reescribir el estilo:
+1. Ortografía, tildes, gramática y puntuación (español correcto; para preescolar, frases muy cortas).
+2. Exactitud: cifras, fechas y nombres contra los datos verificados del pedido; si algo los contradice, corrígelo.
+3. Ejercicios: resuelve cada uno tú mismo; si la respuesta ("answer") está mal o falta en un ejercicio que la
+   necesita, corrígela. Que las opciones de multiple_choice incluyan la correcta.
+4. Claridad para el público indicado: instrucciones que un niño o un adulto de ese nivel entienda a la primera.
+5. Que la sección cumpla sus objetivos y no repita lo mismo dos veces.
+Mantén **negrita** y *cursiva*. No cambies ids, tipos de bloque ni datos de diagramas.
+
+Responde solo con json:
+{"score": 1-5 (5 = lista para vender tal cual, 3 = aceptable, 1 = mala),
+ "issues": ["hasta 8 problemas, breves, en español, los que quedan o los que corregiste"],
+ "fixes": [{"block_id": "b3", "field": "text|title|prompt|answer|explanation|caption|label|instruction|items|options|steps",
+            "index": 0 (solo para items, options o steps: la posición, desde 0), "text": "el texto corregido completo"}]}
+Si todo está bien: {"score": 5, "issues": [], "fixes": []}."""
+
+
+async def editor(llm: LLM, brief: Brief, outline: Outline, position: int,
+                 content: SectionContent) -> AgentResult[EditReview]:
+    section = outline.sections[position - 1]
+    messages = [
+        {"role": "system", "content": EDITOR_SYSTEM},
+        {"role": "user", "content": f"{brief.describe()}\n\nTomo: {outline.title} ({outline.genre})\n"
+                                    f"Sección {position}: {section.title}\n"
+                                    f"Objetivos: {'; '.join(section.objectives)}\n\n"
+                                    f"Bloques:\n{content.model_dump_json(exclude_none=True)}"},
+    ]
+    return await _json_call(llm, messages, EditReview, temperature=0.2, max_tokens=4000)
+
+
+def apply_fixes(content: SectionContent, fixes: list[Fix]) -> tuple[SectionContent, int]:
+    """Apply each fix that lands on a real block and field and keeps the block valid; skip the rest."""
+    data = content.model_dump()
+    applied = 0
+    for fix in fixes:
+        block = next((b for b in data["blocks"] if b["id"] == fix.block_id), None)
+        if block is None or fix.field not in block:
+            continue
+        before = block[fix.field]
+        if isinstance(before, list):
+            if fix.index is None or not 0 <= fix.index < len(before):
+                continue
+            block[fix.field] = [fix.text if i == fix.index else v for i, v in enumerate(before)]
+        elif isinstance(before, str) or (before is None and fix.field in ("answer", "explanation")):
+            block[fix.field] = fix.text
+        else:
+            continue
+        try:
+            SectionContent.model_validate(data)
+        except ValidationError:
+            block[fix.field] = before
+            continue
+        applied += 1
+    return SectionContent.model_validate(data), applied
 
 
 COVER_SYSTEM = """Eres directora de arte de portadas de material educativo impreso (cuadernillos, métodos, libros

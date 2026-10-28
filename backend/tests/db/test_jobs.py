@@ -45,6 +45,7 @@ async def run_next(engine, llm, *, covers=False, **deps):
                                     " where kind = 'cover' and status = 'queued'"))
     job = await claim_job(engine, "test-worker")
     assert job is not None
+    deps.setdefault("edit", False)  # the Editor has its own tests; elsewhere one scripted reply per section
     await process_job(Deps(engine=engine, llm=llm, storage=deps.pop("storage", None), **deps), job)
     return job
 
@@ -181,7 +182,7 @@ async def test_sections_finishing_at_once_still_finish_the_tome(raw_db, google_u
             await barrier.wait()
             return await super().complete(*args, **kwargs)
 
-    await asyncio.gather(*(process_job(Deps(engine=engine, llm=TogetherLLM(json.dumps(SECTION)), storage=None), j)
+    await asyncio.gather(*(process_job(Deps(engine=engine, llm=TogetherLLM(json.dumps(SECTION)), storage=None, edit=False), j)
                            for j in jobs))
 
     assert await raw_db.fetchval("select status from public.series where id = $1", sid) == "ready"
