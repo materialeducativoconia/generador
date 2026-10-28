@@ -40,7 +40,7 @@ async def test_research_grounds_the_outline_and_the_sections(raw_db, google_user
     assert research["sources"][0]["title"] == "Ciclo hidrológico" and len(research["facts"]) == 1
     versions = await raw_db.fetch("select prompt_version from public.generation_logs where series_id = $1"
                                   " order by created_at", sid)
-    assert [v["prompt_version"] for v in versions] == ["research@1", "facts@1", "architect@1"]
+    assert [v["prompt_version"] for v in versions] == ["research@1", "facts@1", "architect@2"]
 
     await client.post(f"/api/series/{sid}/lessons/generate", json={}, headers=bearer(key, user))
     writer_llm = ScriptedLLM(json.dumps(SECTION))

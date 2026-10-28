@@ -13,7 +13,7 @@ import unicodedata
 from PIL import Image, ImageFilter
 
 
-ASPECT = {"full": "3:4", "half": "4:3", "small": "1:1"}
+ASPECT = {"full": "3:4", "half": "4:3", "small": "1:1", "icon": "1:1"}
 STOPWORDS = {"un", "una", "unos", "unas", "el", "la", "los", "las", "lo", "de", "del", "al", "a", "y", "e", "o",
              "en", "con", "para", "por", "su", "sus"}
 THEME_STYLE = {
@@ -37,7 +37,7 @@ def prepare_image(data: bytes, kind: str) -> tuple[bytes, str]:
     im = Image.open(io.BytesIO(data))
     im.load()
     out = io.BytesIO()
-    if kind == "line_art":
+    if kind in ("line_art", "icon"):
         grey = im.convert("L")
         grey.thumbnail((2000, 2000))
         grey.point(lambda v: 255 if v > 170 else 0).convert("1").save(out, "PNG", optimize=True)

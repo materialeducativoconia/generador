@@ -13,12 +13,13 @@ from app.content import ArtPlan, Design
 from app.illustrator import ASPECT, NO_TEXT, THEME_STYLE
 from app.printing import PAPERS, page_geometry
 
-SLOTS = {(1, 1): ["the only panel"], (2, 2): ["top-left", "top-right", "bottom-left", "bottom-right"]}
 # Pixels the image model returns at "1K" per aspect; "2K" and "4K" double and quadruple them.
 PIXELS_1K = {"1:1": (1024, 1024), "3:4": (896, 1200), "4:3": (1200, 896)}
 RESOLUTIONS = {"1K": 1, "2K": 2, "4K": 4}
 # Colour art must print at 300 dpi on its own; colouring pages are traced to vectors and only need the shapes.
-TARGET_DPI = {"colour": 300, "line": 150}
+TARGET_DPI = {"colour": 300, "line": 150, "icon": 150}
+ICON_MM = 30  # the largest a worksheet prints a word's picture
+ICONS_PER_SHEET = 16
 
 
 @dataclass
@@ -29,17 +30,19 @@ class ImageRequest:
     kind: str
     size: str
     subject: str
+    word: str | None = None  # a worksheet word's picture (kind "icon"), stored in the block's `pictures`
 
 
 @dataclass
 class Sheet:
-    family: str  # "line" (colouring pages) or "colour"; never mixed in one sheet
+    family: str  # "line" (colouring pages), "colour" or "icon" (worksheet pictures); never mixed in one sheet
     aspect: str  # of each panel; a 2x2 grid of them has the same aspect
     requests: list[ImageRequest] = field(default_factory=list)
 
     @property
     def cols(self) -> int:
-        return 1 if len(self.requests) == 1 else 2
+        n = len(self.requests)
+        return next(k for k in (1, 2, 3, 4) if k * k >= n)
 
     rows = cols
 
@@ -56,22 +59,56 @@ class Sheet:
 def _dpi(w: float, h: float, size: str) -> float:
     def on(paper: str) -> float:
         geo = page_geometry(paper, print_edition=False)
+        if size == "icon":
+            return 25.4 / min(ICON_MM / w, ICON_MM / h)
         box_w = geo.content_w * (0.6 if size == "small" else 1)
         return 25.4 / min(box_w / w, getattr(geo, size) / h)
 
     return min(on(paper) for paper in PAPERS)
 
 
+def _family(kind: str) -> str:
+    return {"line_art": "line", "icon": "icon"}.get(kind, "colour")
+
+
 def plan_sheets(requests: list[ImageRequest], per_sheet: int = 4) -> list[Sheet]:
     groups: dict[tuple[str, str], list[ImageRequest]] = {}
     for r in requests:
-        groups.setdefault(("line" if r.kind == "line_art" else "colour", ASPECT.get(r.size, "3:4")), []).append(r)
-    return [Sheet(family, aspect, items[i:i + per_sheet])
-            for (family, aspect), items in groups.items() for i in range(0, len(items), per_sheet)]
+        groups.setdefault((_family(r.kind), ASPECT.get(r.size, "3:4")), []).append(r)
+    return [Sheet(family, aspect, items[i:i + n])
+            for (family, aspect), items in groups.items()
+            for n in [ICONS_PER_SHEET if family == "icon" else per_sheet] for i in range(0, len(items), n)]
+
+
+def _slots(n: int) -> list[str]:
+    if n == 1:
+        return ["the only panel"]
+    if n == 2:
+        return ["top-left", "top-right", "bottom-left", "bottom-right"]
+    return [f"row {r + 1}, column {c + 1}" for r in range(n) for c in range(n)]
+
+
+def icon_sheet_prompt(sheet: Sheet, feedback: str | None = None) -> str:
+    """Worksheet pictures: one plain object per cell, the same clip-art style in every tome (they are shared)."""
+    n = sheet.cols
+    cells = [f"{slot}: {r.subject}" for slot, r in zip(_slots(n), sheet.requests)]
+    cells += [f"{slot}: empty, pure white" for slot in _slots(n)[len(sheet.requests):]]
+    layout = ("A single" if n == 1 else f"A {n}x{n} grid of separate") + (
+        " simple black-and-white line drawing" + ("" if n == 1 else "s, one per cell,") +
+        " for a children's reading workbook: clip-art style, one recognisable object or animal per cell, centred, "
+        "drawn as a young child would name the Spanish word given, thick clean continuous black outlines, closed "
+        "shapes, no shading, no gray, no color, pure white background")
+    gutters = "" if n == 1 else ", wide pure white gutters between cells, no borders or frames"
+    prompt = f"{layout}{gutters}. Each cell names the Spanish word to draw. {' '.join(c + '.' for c in cells)} {NO_TEXT}"
+    if feedback:
+        prompt += f" Fix these problems from the previous attempt: {feedback}"
+    return prompt
 
 
 def sheet_prompt(sheet: Sheet, plan: ArtPlan, design: Design | None, feedback: str | None = None) -> str:
-    slots = SLOTS[(sheet.cols, sheet.rows)]
+    if sheet.family == "icon":
+        return icon_sheet_prompt(sheet, feedback)
+    slots = _slots(sheet.cols)
     panels = [f"{slot}: {plan.prompts.get(r.ref, r.subject)}" for slot, r in zip(slots, sheet.requests)]
     panels += [f"{slot}: leave this panel completely empty and white" for slot in slots[len(sheet.requests):]]
     cast = "; ".join(f"{c.name} is {c.look}" for c in plan.characters)
@@ -98,8 +135,8 @@ def slice_sheet(data: bytes, cols: int, rows: int) -> list[bytes]:
     """Cuts at the whitest column/row near the middle (the model rarely centres gutters exactly)."""
     im = Image.open(io.BytesIO(data)).convert("RGB")
     grey = im.convert("L")
-    xs = [0, _gutter(grey, axis=0), im.width] if cols == 2 else [0, im.width]
-    ys = [0, _gutter(grey, axis=1), im.height] if rows == 2 else [0, im.height]
+    xs = [0, *(_gutter(grey, axis=0, at=k / cols) for k in range(1, cols)), im.width]
+    ys = [0, *(_gutter(grey, axis=1, at=k / rows) for k in range(1, rows)), im.height]
     panels = []
     for r in range(rows):
         for c in range(cols):
@@ -107,8 +144,9 @@ def slice_sheet(data: bytes, cols: int, rows: int) -> list[bytes]:
     return panels
 
 
-def _gutter(grey: Image.Image, axis: int) -> int:
-    """axis=0: x of the whitest column in the central 30–70 % band; axis=1: y of the whitest row."""
+def _gutter(grey: Image.Image, axis: int, at: float = 0.5) -> int:
+    """axis=0: x of the whitest column near `at` (a fraction of the width); axis=1: y of the whitest row.
+    The band is ±20 % around the middle of a 2x2 sheet and narrower on denser grids."""
     small = grey.copy()
     small.thumbnail((400, 400))
     w, h = small.size
@@ -118,8 +156,9 @@ def _gutter(grey: Image.Image, axis: int) -> int:
     def darkness(i: int) -> int:
         return sum(255 - (px[i, j] if axis == 0 else px[j, i]) for j in range(h if axis == 0 else w))
 
-    lo, hi = int(length * 0.3), int(length * 0.7)
-    best = min(range(lo, hi), key=lambda i: (darkness(i), abs(i - length / 2)))
+    band = 0.2 if at == 0.5 else 0.07
+    lo, hi = int(length * (at - band)), int(length * (at + band))
+    best = min(range(lo, hi), key=lambda i: (darkness(i), abs(i - length * at)))
     return round(best * (grey.width if axis == 0 else grey.height) / length)
 
 

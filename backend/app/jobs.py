@@ -125,15 +125,16 @@ async def _outline(deps: Deps, job: dict) -> None:
         await conn.execute(text("delete from public.lessons where series_id = :s"), {"s": job["series_id"]})
         for position, section in enumerate(outline.sections, 1):
             await conn.execute(text(
-                """insert into public.lessons (series_id, position, title, objectives, key_points, status)
-                   values (:s, :p, :t, cast(:o as jsonb), cast(:k as jsonb), 'pending')"""
-            ), {"s": job["series_id"], "p": position, "t": section.title,
+                """insert into public.lessons (series_id, position, title, objectives, key_points, letters, status)
+                   values (:s, :p, :t, cast(:o as jsonb), cast(:k as jsonb), cast(:lt as jsonb), 'pending')"""
+            ), {"s": job["series_id"], "p": position, "t": section.title, "lt": json.dumps(section.letters),
                 "o": json.dumps(section.objectives), "k": json.dumps(section.key_points)})
         await conn.execute(text(
             """update public.series set title = :t, genre = :g, plan = cast(:plan as jsonb), lesson_count = :n,
                       status = 'outline_ready', version = version + 1 where id = :s"""
         ), {"s": job["series_id"], "t": outline.title, "g": outline.genre, "n": len(outline.sections),
-            "plan": json.dumps({"genre": outline.genre, "style_notes": outline.style_notes})})
+            "plan": json.dumps({"genre": outline.genre, "style_notes": outline.style_notes,
+                                "known_letters": outline.known_letters})})
         await enqueue_cover(conn, job["user_id"], job["series_id"])
         await _succeed(conn, job)
 
@@ -170,17 +171,20 @@ async def _lesson(deps: Deps, job: dict) -> None:
     async with deps.engine.begin() as conn:
         series = await _series(conn, job["series_id"])
         lessons = (await conn.execute(text(
-            "select id, position, title, objectives, key_points from public.lessons where series_id = :s"
+            "select id, position, title, objectives, key_points, letters from public.lessons where series_id = :s"
             " order by position"), {"s": job["series_id"]})).mappings().all()
         await conn.execute(text("update public.lessons set status = 'generating' where id = :l"),
                            {"l": job["lesson_id"]})
     position = next(lesson["position"] for lesson in lessons if lesson["id"] == job["lesson_id"])
+    plan = _json(series["plan"]) or {}
     outline = Outline(
         title=series["title"] or series["topic"],
         genre=series["genre"] or "lesson_series",
-        style_notes=(_json(series["plan"]) or {}).get("style_notes", ""),
+        style_notes=plan.get("style_notes", ""),
+        known_letters=plan.get("known_letters", []),
         sections=[OutlineSection(title=lesson["title"], objectives=_json(lesson["objectives"]),
-                                 key_points=_json(lesson["key_points"])) for lesson in lessons],
+                                 key_points=_json(lesson["key_points"]), letters=_json(lesson["letters"]) or [])
+                  for lesson in lessons],
     )
     brief = _brief(series, None)
     if job["payload"].get("instructions"):
@@ -202,6 +206,8 @@ async def _lesson(deps: Deps, job: dict) -> None:
             content, applied = apply_fixes(content, edited.value.fixes)
             review = {"score": edited.value.score, "issues": edited.value.issues, "fixed": applied}
             edit_attempts = edited.attempts
+    if result.notes:  # words with letters the child has not learnt yet, after the Writer's second try
+        review = {"score": None, "issues": [], "fixed": 0, **(review or {}), "letters": result.notes[:20]}
     async with deps.engine.begin() as conn:
         await _lock_series(conn, job)
         await _insert_logs(conn, job, "writer", result.attempts)
@@ -283,6 +289,29 @@ async def _cover(deps: Deps, job: dict) -> None:
 
 
 MAX_IMAGES_PER_TOME = 48
+MAX_ICONS_PER_TOME = 240  # worksheet pictures: 15 sheets of 16 at most, and the library reuses most of them
+ICON_LIBRARY = "icon"  # style key of the worksheet pictures every tome shares
+# Where each worksheet block keeps the words that get a picture.
+PICTURED = {"syllable_chart": ("words", "word"), "picture_words": ("items", "word"), "reading": ("sentences", "picture"),
+            "fill_sentences": ("items", "answer"), "word_search": ("words", None)}
+
+
+def _picture_requests(lessons) -> list[ImageRequest]:
+    """Image blocks still without a picture, then worksheet words without one (capped separately)."""
+    images, icons = [], []
+    for lesson in lessons:
+        for b in (_json(lesson["content_json"]) or {}).get("blocks", []):
+            ref = f"{lesson['position']}:{b['id']}"
+            if b.get("type") == "image" and not b.get("asset_id"):
+                images.append(ImageRequest(ref=ref, lesson_id=lesson["id"], block_id=b["id"], kind=b["kind"],
+                                           size=b.get("size", "half"), subject=b["subject"]))
+            elif b.get("type") in PICTURED:
+                field, attr = PICTURED[b["type"]]
+                words = [i if attr is None else i.get(attr) for i in b.get(field) or []]
+                for w in dict.fromkeys(w for w in words if w and w not in (b.get("pictures") or {})):
+                    icons.append(ImageRequest(ref=f"{ref}:{w}", lesson_id=lesson["id"], block_id=b["id"],
+                                              kind="icon", size="icon", subject=w, word=w))
+    return images[:MAX_IMAGES_PER_TOME] + icons[:MAX_ICONS_PER_TOME]
 EXTENSION = {"image/png": "png", "image/svg+xml": "svg", "image/jpeg": "jpg"}
 
 
@@ -296,9 +325,11 @@ async def _queue_artwork(conn, job: dict) -> None:
         """insert into public.generation_jobs (user_id, series_id, kind, status, payload, max_attempts)
            select :u, :s, 'illustration', 'queued', '{}', 3
             where exists (select 1 from public.lessons l, jsonb_array_elements(l.content_json->'blocks') b
-                           where l.series_id = :s and b->>'type' = 'image' and b->>'asset_id' is null)
+                           where l.series_id = :s and (b->>'type' = 'image' and b->>'asset_id' is null
+                                                        or b->>'type' = any(cast(:pictured as text[]))))
               and not exists (select 1 from public.generation_jobs where series_id = :s and kind = 'illustration'
-                                 and status in ('queued', 'running'))"""), {"u": job["user_id"], "s": job["series_id"]})
+                                 and status in ('queued', 'running'))"""),
+        {"u": job["user_id"], "s": job["series_id"], "pictured": list(PICTURED)})
 
 
 async def _illustration(deps: Deps, job: dict) -> None:
@@ -308,10 +339,7 @@ async def _illustration(deps: Deps, job: dict) -> None:
         lessons = (await conn.execute(text(
             "select id::text, position, content_json from public.lessons where series_id = :s order by position"
         ), {"s": job["series_id"]})).mappings().all()
-    requests = [ImageRequest(ref=f"{lesson['position']}:{b['id']}", lesson_id=lesson["id"], block_id=b["id"],
-                             kind=b["kind"], size=b.get("size", "half"), subject=b["subject"])
-                for lesson in lessons for b in (_json(lesson["content_json"]) or {}).get("blocks", [])
-                if b.get("type") == "image" and not b.get("asset_id")][:MAX_IMAGES_PER_TOME]
+    requests = _picture_requests(lessons)
     if not requests:
         async with deps.engine.begin() as conn:
             await _succeed(conn, job)
@@ -333,10 +361,10 @@ async def _illustration(deps: Deps, job: dict) -> None:
                                    and style_key = any(cast(:st as text[]))
                                  order by style_key = :own desc, created_at desc limit 1) returning id"""),
                 {"n": len(group), "k": kind, "own": key, "sn": norm,
-                 "st": [key, shared] if kind == "line_art" else [key]})).scalar_one_or_none()
+                 "st": {"line_art": [key, shared], "icon": [ICON_LIBRARY]}.get(kind, [key])})).scalar_one_or_none()
             if asset_id:
                 for r in group:
-                    await _attach_image(conn, r.lesson_id, r.block_id, asset_id)
+                    await _attach_image(conn, r.lesson_id, r.block_id, asset_id, r.word)
                 del unique[(kind, norm)]
     if not unique:
         async with deps.engine.begin() as conn:
@@ -347,11 +375,11 @@ async def _illustration(deps: Deps, job: dict) -> None:
 
     plan = ArtPlan.model_validate(_json(series["art"])) if series["art"] else None
     todo = [group[0] for group in unique.values()]
-    if plan is None:
+    if plan is None and any(r.kind != "icon" for r in todo):  # worksheet pictures need no art direction
         cover_concept = (_json(series["cover"]) or {}).get("concept")
         try:
             directed = await art_director(deps.llm, _brief(series, None), series["title"] or series["topic"], design,
-                                          cover_concept, todo)
+                                          cover_concept, [r for r in todo if r.kind != "icon"])
         except AgentFailed as exc:
             await _log_attempts(deps.engine, job, "art", exc.attempts)
             raise
@@ -360,6 +388,7 @@ async def _illustration(deps: Deps, job: dict) -> None:
             await _insert_logs(conn, job, "art", directed.attempts)
             await conn.execute(text("update public.series set art = cast(:a as jsonb) where id = :s"),
                                {"s": job["series_id"], "a": plan.model_dump_json()})
+    plan = plan or ArtPlan(style="Simple clean black line icons.")
     if deps.web is not None:
         for r in [r for r in todo if r.kind == "photo"]:
             photo = await deps.web.commons_photo(plan.photo_queries.get(r.ref) or plan.prompts.get(r.ref) or r.subject)
@@ -387,7 +416,9 @@ async def _illustration(deps: Deps, job: dict) -> None:
 
         async def paint(sheet):
             note = "; ".join(f"{r.ref}: {feedback[r.ref]}" for r in sheet.requests if r.ref in feedback) or None
-            image = await deps.images.generate(sheet_prompt(sheet, plan, design, note), references=references,
+            # Worksheet pictures are shared by every tome, so they never borrow this tome's cover style.
+            image = await deps.images.generate(sheet_prompt(sheet, plan, design, note),
+                                               references=[] if sheet.family == "icon" else references,
                                                aspect_ratio=sheet.aspect,
                                                resolution=sheet.resolution)
             panels = [prepare_image(p, sheet.requests[0].kind) for p in
@@ -415,7 +446,7 @@ async def _review_sheet(deps: Deps, sheet_image: bytes, panels: list[tuple[bytes
     """Deterministic checks per panel, then one vision call for the whole sheet."""
     checks = []
     for data, _ in panels:
-        coverage = line_art_coverage(data) if sheet.family == "line" else None
+        coverage = line_art_coverage(data) if sheet.family in ("line", "icon") else None
         if coverage is not None and coverage < 0.005:
             checks.append(Review(ok=False, issues="the panel came out blank"))
         elif coverage is not None and coverage > 0.5:
@@ -439,8 +470,8 @@ async def _store_image(deps, job, keys, request, group, data, media_type, image,
                        attribution=None):
     prompt = plan.prompts.get(request.ref) or request.subject
     generic = not any(c.name.lower() in f"{prompt} {request.subject}".lower() for c in plan.characters)
-    key = keys[1] if request.kind == "line_art" and generic else keys[0]
-    if request.kind == "line_art" and media_type == "image/png":
+    key = ICON_LIBRARY if request.kind == "icon" else keys[1] if request.kind == "line_art" and generic else keys[0]
+    if request.kind in ("line_art", "icon") and media_type == "image/png":
         svg = await asyncio.to_thread(vectorize, data)
         if svg:
             data, media_type = svg, "image/svg+xml"
@@ -462,16 +493,19 @@ async def _store_image(deps, job, keys, request, group, data, media_type, image,
                                   "cost_usd": review.cost_usd,
                                   "attempts": attempts, "prompt": plan.prompts.get(request.ref)})})
         for r in group:  # every block in the tome that asked for this same subject
-            await _attach_image(conn, r.lesson_id, r.block_id, asset_id)
+            await _attach_image(conn, r.lesson_id, r.block_id, asset_id, r.word)
 
 
-async def _attach_image(conn, lesson_id: str, block_id: str, asset_id) -> None:
+async def _attach_image(conn, lesson_id: str, block_id: str, asset_id, word: str | None = None) -> None:
     # Row lock: the section may be rewritten meanwhile; we patch whatever content is current.
     content = _json((await conn.execute(text("select content_json from public.lessons where id = :l for update"),
                                         {"l": lesson_id})).scalar_one_or_none())
     for block in (content or {}).get("blocks", []):
         if block["id"] == block_id:
-            block["asset_id"] = str(asset_id)
+            if word:
+                block.setdefault("pictures", {})[word] = str(asset_id)
+            else:
+                block["asset_id"] = str(asset_id)
             await conn.execute(text(
                 """update public.lessons set content_json = cast(:c as jsonb), content_version = content_version + 1
                     where id = :l"""), {"l": lesson_id, "c": json.dumps(content)})

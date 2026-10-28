@@ -16,8 +16,9 @@ from markupsafe import Markup
 
 from app.printing import BLEED_MM, PAPERS, SPINE_TEXT_PAGES, is_color, page_geometry, spine_mm
 from app.themes import DEFAULT_PALETTE, ORNAMENTS, THEMES, mix
-from app.content import DIAGRAM_TYPES, Design, Keyboard, LetterGrid, SectionContent, Tracing
+from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Design, Keyboard, LetterGrid, SectionContent, Tracing
 from app.diagrams import render_diagram
+from app.worksheets import render_worksheet
 
 ASSETS = Path(__file__).parent / "assets"
 TEMPLATES = Path(__file__).parent / "templates"
@@ -131,7 +132,8 @@ _env = Environment(loader=FileSystemLoader(TEMPLATES), autoescape=select_autoesc
                    trim_blocks=True, lstrip_blocks=True)
 _env.filters["inline"] = inline
 _env.globals.update(keyboard_svg=keyboard_svg, tracing_svg=tracing_svg, letter_grid_cells=letter_grid_cells,
-                    GENRE_LABEL=GENRE_LABEL, render_diagram=render_diagram, DIAGRAM_TYPES=DIAGRAM_TYPES)
+                    GENRE_LABEL=GENRE_LABEL, render_diagram=render_diagram, DIAGRAM_TYPES=DIAGRAM_TYPES,
+                    render_worksheet=render_worksheet, WORKSHEET_TYPES=WORKSHEET_TYPES)
 
 
 def theme_colors(design: Design | None, palette: list[str] | None = None):

@@ -11,8 +11,9 @@ from sqlalchemy import text
 from uuid6 import uuid7
 
 from app.api.deps import current_user_id
-from app.content import DIAGRAM_TYPES, Block, Design, OutlineSection
+from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Block, Design, OutlineSection, block_assets
 from app.diagrams import render_diagram
+from app.worksheets import render_worksheet
 from app.errors import ApiError
 from app.jobs import enqueue_cover
 from app.llm import USD_PER_M
@@ -142,10 +143,12 @@ async def get_quality(series_id: uuid.UUID, request: Request, user_id: UserId):
             """select preflight from public.exports where series_id = :s and status = 'succeeded'
                 order by created_at desc limit 1"""), {"s": series_id})).scalar_one_or_none()
     reviews = [(lesson["position"], _parse(lesson["review"])) for lesson in lessons if lesson["review"]]
-    scores = [r["score"] for _, r in reviews]
+    scores = [r["score"] for _, r in reviews if r.get("score") is not None]
+    undecodable = [(p, w) for p, r in reviews for w in r.get("letters", [])]
     textcard = {"score": round(sum(scores) / len(scores), 1) if scores else None, "reviewed": len(reviews),
                 "sections": len(lessons), "fixed": sum(r.get("fixed", 0) for _, r in reviews),
-                "issues": [{"section": p, "issue": i} for p, r in reviews for i in r.get("issues", [])][:20]}
+                "issues": ([{"section": p, "issue": i} for p, i in undecodable]
+                           + [{"section": p, "issue": i} for p, r in reviews for i in r.get("issues", [])])[:20]}
     research = _parse(series["research"]) or {}
     facts = {"needed": research.get("needed", False), "facts": len(research.get("facts", [])),
              "sources": len(research.get("sources", []))} if research else None
@@ -154,6 +157,8 @@ async def get_quality(series_id: uuid.UUID, request: Request, user_id: UserId):
     reasons = []
     if scores and (min(scores) <= 2 or textcard["score"] < 4):
         reasons.append("El Editor pide revisar el texto de alguna sección")
+    if undecodable:
+        reasons.append(f"{len(undecodable)} palabras usan letras que el niño aún no conoce")
     if images["failed"]:
         reasons.append(f"{images['failed']} imágenes no se pudieron ilustrar")
     if preflight and preflight.get("rating") == "baja":
@@ -375,9 +380,9 @@ async def _series_detail(conn, series_id, user_id, request: Request):
         "select status::text from public.generation_jobs where series_id = :s and kind = 'cover'"
         " order by created_at desc limit 1"), {"s": series_id})).scalar_one_or_none()
     out["lessons"] = [_jsonable(lesson) for lesson in lessons]
-    for lesson in out["lessons"]:
-        lesson["diagrams"] = _diagrams(lesson, series)
     out["assets"], out["credits"] = await _asset_urls(conn, request, out["lessons"])
+    for lesson in out["lessons"]:
+        lesson["diagrams"] = _diagrams(lesson, series, out["assets"])
     research = out.pop("research", None) or {}
     out["research"] = {"needed": research.get("needed", False), "sources": research.get("sources", []),
                        "facts": len(research.get("facts", []))} if research else None
@@ -416,16 +421,18 @@ async def get_lesson(lesson_id: uuid.UUID, request: Request, user_id: UserId):
         out["assets"], out["credits"] = await _asset_urls(conn, request, [out])
         series = (await conn.execute(text("select design, cover from public.series where id = :s"),
                                      {"s": out["series_id"]})).mappings().one()
-    out["diagrams"] = _diagrams(out, series)
+    out["diagrams"] = _diagrams(out, series, out["assets"])
     return out
 
 
 _block = TypeAdapter(Block)
 
 
-def _diagrams(lesson: dict, series) -> dict[str, str]:
-    """Block id -> the same SVG the PDF prints, drawn in the tome's theme, so the preview never drifts."""
-    blocks = [b for b in ((lesson.get("content_json") or {}).get("blocks") or []) if b.get("type") in DIAGRAM_TYPES]
+def _diagrams(lesson: dict, series, urls: dict[str, str]) -> dict[str, str]:
+    """Block id -> the same SVG the PDF prints, drawn in the tome's theme, so the preview never drifts.
+    Worksheets point at their word pictures by public URL instead of the PDF's embedded copies."""
+    blocks = [b for b in ((lesson.get("content_json") or {}).get("blocks") or [])
+              if b.get("type") in DIAGRAM_TYPES + WORKSHEET_TYPES]
     if not blocks:
         return {}
     from app.render import theme_colors  # render pulls in Jinja; only pay for it when there is a diagram
@@ -435,20 +442,19 @@ def _diagrams(lesson: dict, series) -> dict[str, str]:
     out = {}
     for b in blocks:
         try:
-            out[b["id"]] = str(render_diagram(_block.validate_python(b), colors, th.head))
+            block = _block.validate_python(b)
+            draw = render_worksheet(block, colors, th.head, urls.get) if b["type"] in WORKSHEET_TYPES else \
+                render_diagram(block, colors, th.head)
+            out[b["id"]] = str(draw)
         except ValidationError:  # an edit left it half-written: the preview shows nothing rather than failing
             continue
     return out
 
 
-def _image_blocks(lessons) -> list[dict]:
-    return [b for lesson in lessons for b in ((lesson.get("content_json") or {}).get("blocks") or [])
-            if b.get("type") == "image"]
-
-
 async def _asset_urls(conn, request: Request, lessons) -> tuple[dict[str, str], dict[str, str]]:
     """Image blocks carry an asset id; the page needs a URL for each (public `images` bucket) and photo credits."""
-    ids = list({b["asset_id"] for b in _image_blocks(lessons) if b.get("asset_id")})
+    ids = list({i for lesson in lessons for b in ((lesson.get("content_json") or {}).get("blocks") or [])
+                for i in block_assets(b)})
     storage = request.app.state.storage
     if not ids or storage is None:
         return {}, {}

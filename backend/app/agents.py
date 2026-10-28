@@ -11,12 +11,13 @@ from typing import Generic, TypeVar
 from pydantic import BaseModel, ValidationError
 
 from app.content import ArtPlan, CoverPlan, Design, EditReview, FactSheet, Fix, Outline, ResearchPlan, SectionContent
+from app.literacy import allowed_letters, check_section
 from app.themes import THEMES
 from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@1", "writer": "writer@2", "editor": "editor@1", "cover": "cover@2", "designer": "designer@1", "art": "art@2", "research": "research@1", "facts": "facts@1"}
+PROMPT_VERSION = {"architect": "architect@2", "writer": "writer@3", "editor": "editor@1", "cover": "cover@2", "designer": "designer@1", "art": "art@2", "research": "research@1", "facts": "facts@1"}
 
 
 @dataclass
@@ -52,6 +53,7 @@ class Attempt:
 class AgentResult(Generic[T]):
     value: T
     attempts: list[Attempt] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)  # problems the code still sees in an accepted answer
 
 
 class AgentFailed(Exception):
@@ -74,10 +76,15 @@ diseñas el TOMO completo.
 2. Divide el tomo en secciones coherentes y progresivas (de lo simple a lo complejo).
 3. Para cada sección da un título claro, de 1 a 4 objetivos y de 1 a 8 puntos clave (conceptos, palabras,
    dibujos o ejercicios que la sección debe incluir).
+4. Si es un método de lectoescritura (aprender a leer y escribir por letras y sílabas, como el método de los
+   20 días): cada sección enseña 1 o 2 letras nuevas en "letters" (minúsculas; dígrafos como "ch", "ll", "qu"
+   cuentan como una), en un orden que permita formar palabras pronto (vocales; m, p, s, l, t, d, n…), y
+   "known_letters" son las que el niño ya sabe al abrir el tomo (por ejemplo las vocales si el tomo empieza en
+   la m). Para cualquier otro tomo deja ambas listas vacías.
 
 Responde SOLO con un objeto json con esta forma:
 {"title": "…", "genre": "coloring_book|worksheets|tutorial|lesson_series", "style_notes": "tono y estilo visual",
- "sections": [{"title": "…", "objectives": ["…"], "key_points": ["…"]}]}"""
+ "known_letters": [], "sections": [{"title": "…", "objectives": ["…"], "key_points": ["…"], "letters": []}]}"""
 
 WRITER_SYSTEM = """Eres el Redactor de un generador de material educativo imprimible. Escribes UNA sección del tomo
 como una lista de bloques de página. No escribas HTML ni Markdown: solo **negrita** y *cursiva* dentro del texto.
@@ -116,10 +123,35 @@ Las image nunca llevan texto ni rótulos: reserva image diagram para lo que esos
 - writing_lines {lines, label?}
 - page_break {}
 
+Fichas de lectoescritura (las dibuja el código a página completa; tú solo eliges letras, palabras y frases; el
+ilustrador pone un dibujo a cada palabra, así que elige palabras que se puedan dibujar: objetos, animales,
+personas):
+- syllable_chart {letter: "m", words: [{word: "mesa", syllable: "me"}] (6 a 12), instruction?}  ← plantilla de
+  la letra: cada palabra con su dibujo y su sílaba
+- picture_words {mode: write|complete|circle|match, items: [{word, syllable?}] (4 a 8), instruction?}
+  ← write: escribe el nombre del dibujo; complete: completa la sílaba que falta; circle: encierra la sílaba
+  con que empieza; match: une dibujo y sílaba (syllable obligatoria salvo en write)
+- syllable_cards {syllables: [..] (8 a 40), cut: true, instruction?}  ← sílabas para recortar y formar palabras
+- reading {title?, sentences: [{text, picture?: "palabra"}] (3 a 6), rubric: true}  ← frases para leer en voz
+  alta con casilla de evaluación (Logrado / Con ayuda / No logrado)
+- dictation {words: [..] (5 a 10), lines: 10, show_words: true}  ← dictado; las palabras son para el adulto
+- fill_sentences {items: [{text: "Mi ___ es azul.", answer: "moto"}] (3 a 6), instruction?}  ← completa la frase;
+  el dibujo de answer es la pista
+- word_search {words: [..] (3 a 8), size: 6-10, instruction?}  ← sopa de letras con los dibujos como pista
+- classify {columns: ["ma", "pa"], words: [..] (6 a 12), instruction?}  ← clasifica cada palabra en la columna
+  de su sílaba (cada palabra encaja en una sola columna)
+- draw_frames {count: 1-6, labels?: [..], instruction?}  ← marcos para dibujar ("Dibuja 3 cosas que empiecen con m")
+
 Reglas según el género:
 - coloring_book: un heading con el título y un image line_art size "full" por página; texto mínimo.
 - worksheets: cada ficha empieza con heading "Ficha N"; instrucciones cortas para niños; usa tracing,
   letter_grid, image line_art, writing_lines y exercise; separa fichas con page_break.
+- método de lectoescritura (si se te indican letras): cada sección es una semana de fichas de su letra, cada
+  una en su página (heading "Ficha N" + una ficha + page_break), en este orden: syllable_chart, tracing de la
+  letra y sus sílabas, picture_words circle, picture_words complete, syllable_cards, classify, fill_sentences,
+  reading, word_search, picture_words write y dictation. Las frases, el dictado, las palabras de sopa, de
+  clasificar y de completar usan SOLO las letras permitidas; las palabras de syllable_chart y picture_words
+  solo tienen que contener su sílaba.
 - tutorial: explica paso a paso; usa keyboard, table, callout tip, activity y exercises de práctica.
 - lesson_series: introducción, explicación, ejemplos, una activity y al menos 3 exercise con answer.
 Según el tema: música → staff y keyboard; historia → timeline; ciencias → cycle y bar_chart; matemáticas →
@@ -142,6 +174,9 @@ async def architect(llm: LLM, brief: Brief) -> AgentResult[Outline]:
 
 async def writer(llm: LLM, brief: Brief, outline: Outline, position: int) -> AgentResult[SectionContent]:
     section = outline.sections[position - 1]
+    allowed = allowed_letters(outline, position)
+    letters = (f"\nLetras que enseña esta sección: {', '.join(section.letters) or '(repaso)'}\n"
+               f"Letras permitidas (el niño ya las conoce): {', '.join(sorted(allowed))}") if allowed else ""
     # Most stable first, so DeepSeek's prefix cache covers everything but the last message.
     messages = [
         {"role": "system", "content": WRITER_SYSTEM},
@@ -149,9 +184,28 @@ async def writer(llm: LLM, brief: Brief, outline: Outline, position: int) -> Age
                                     f"{outline.model_dump_json(indent=1)}"},
         {"role": "user", "content": f"Escribe ahora la sección {position}: {section.title}\n"
                                     f"Objetivos: {'; '.join(section.objectives)}\n"
-                                    f"Puntos clave: {'; '.join(section.key_points)}"},
+                                    f"Puntos clave: {'; '.join(section.key_points)}{letters}"},
     ]
-    return await _json_call(llm, messages, SectionContent, temperature=1.0, max_tokens=8000)
+    result = await _json_call(llm, messages, SectionContent, temperature=1.0, max_tokens=8000)
+    problems = check_section(result.value, allowed)
+    if problems:  # decodable text is checked by code: one chance to swap the words that break it
+        last = result.attempts[-1]
+        retry_messages = [*last.messages, {"role": "assistant", "content": last.completion.text},
+                          {"role": "user", "content": "Estas palabras no cumplen las reglas de la sección:\n"
+                                                      + "\n".join(f"- {p}" for p in problems[:15])
+                                                      + "\nCámbialas por otras que sí las cumplan y responde solo "
+                                                        "con el json completo."}]
+        try:
+            retry = await _json_call(llm, retry_messages, SectionContent, temperature=0.7, max_tokens=8000)
+        except AgentFailed as exc:
+            result.attempts += exc.attempts
+        else:
+            left = check_section(retry.value, allowed)
+            attempts = result.attempts + retry.attempts
+            result = retry if len(left) < len(problems) else result
+            result.attempts, problems = attempts, min(left, problems, key=len)
+        result.notes = problems
+    return result
 
 
 EDITOR_SYSTEM = """Eres el Editor de una editorial de material educativo que se vende impreso. Revisas UNA sección ya

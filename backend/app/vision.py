@@ -17,6 +17,7 @@ ok es false si aparece texto o letras, si no muestra el tema pedido, si es inapr
 {extra}"""
 EXTRA = {
     "line_art": "no es un dibujo de líneas negras sobre blanco apto para colorear (sin relleno ni sombras).",
+    "icon": "no es un dibujo simple de líneas negras sobre blanco de un solo objeto reconocible.",
     "illustration": "está deformada o es confusa.",
     "diagram": "no se entiende qué muestra.",
     "photo": "parece falsa o está deformada.",

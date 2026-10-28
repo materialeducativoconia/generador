@@ -119,7 +119,12 @@ export type Block =
   | { id: string; type: 'page_break' }
   | { id: string; type: DiagramType; caption?: string | null }
 
-export const DIAGRAM_TYPES = ['staff', 'timeline', 'cycle', 'bar_chart', 'number_line', 'fraction', 'clock'] as const
+export const DIAGRAM_TYPES = [
+  'staff', 'timeline', 'cycle', 'bar_chart', 'number_line', 'fraction', 'clock',
+  // literacy worksheets: also drawn by the backend, with their word pictures inside the SVG
+  'syllable_chart', 'picture_words', 'syllable_cards', 'reading', 'dictation', 'fill_sentences', 'word_search',
+  'classify', 'draw_frames',
+] as const
 export type DiagramType = (typeof DIAGRAM_TYPES)[number]
 
 export type Lesson = LessonSummary & {

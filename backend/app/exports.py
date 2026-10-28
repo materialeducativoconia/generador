@@ -6,7 +6,7 @@ import logging
 
 from sqlalchemy import text
 
-from app.content import Design, SectionContent
+from app.content import Design, SectionContent, block_assets
 from app.illustrator import vectorize
 from app.printing import preflight
 from app.render import Tome, TomeSection, render_checked, render_cover_wrap
@@ -26,26 +26,31 @@ async def run_export(deps, job: dict) -> None:
             "select position, title, content_json from public.lessons where series_id = :s order by position"
         ), {"s": job["series_id"]})).mappings().all()
         await conn.execute(text("update public.exports set status = 'running' where id = :e"), {"e": export_id})
-        asset_ids = list({b["asset_id"] for lesson in lessons for b in (_json(lesson["content_json"]) or {}).get("blocks", [])
-                          if b.get("type") == "image" and b.get("asset_id")})
+        asset_ids = list({i for lesson in lessons for b in (_json(lesson["content_json"]) or {}).get("blocks", [])
+                          for i in block_assets(b)})
         assets = (await conn.execute(text(
             "select id::text, storage_key, media_type, attribution, kind from public.assets where id = any(cast(:ids as uuid[]))"
         ), {"ids": asset_ids})).all() if asset_ids else []
 
     options = _json(export["options"])
     images, credits = {}, {}
-    for asset_id, key, media_type, attribution, kind in assets:
+    slots = asyncio.Semaphore(8)  # a worksheet tome can point at a hundred small pictures
+
+    async def fetch(asset_id, key, media_type, attribution, kind):
         if attribution:
             credits[asset_id] = _json(attribution)["credit"]
         try:
-            data = await deps.storage.download(key, bucket="images")
+            async with slots:
+                data = await deps.storage.download(key, bucket="images")
         except Exception:  # a missing picture prints as its placeholder
             log.exception("image %s unavailable", key)
-            continue
+            return
         if kind == "line_art" and media_type == "image/png":  # painted before colouring pages were traced
             svg = await asyncio.to_thread(vectorize, data)
             data, media_type = (svg, "image/svg+xml") if svg else (data, media_type)
         images[asset_id] = (data, media_type)
+
+    await asyncio.gather(*(fetch(*row) for row in assets))
     cover_image, media_type = None, "image/png"
     if series["cover_key"]:
         try:

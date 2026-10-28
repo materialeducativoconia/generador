@@ -217,6 +217,133 @@ class Clock(_Block):
 DIAGRAM_TYPES = ("staff", "timeline", "cycle", "bar_chart", "number_line", "fraction", "clock")
 
 
+# Literacy worksheets drawn by code (app.worksheets). The Writer picks letters, words and sentences; the code
+# lays out the page. `pictures` maps a word to its drawing in the shared icon library, filled by the Illustrator.
+Word = Annotated[str, Field(min_length=1, max_length=24, pattern=r"^[^\s<>]+$")]
+Syllable = Annotated[str, Field(min_length=1, max_length=5, pattern=r"^[^\s<>]+$")]
+
+
+class _Pictured(_Block):
+    instruction: Short | None = None
+    pictures: dict[str, str] = Field(default_factory=dict)
+
+
+class ChartWord(BaseModel):
+    word: Word
+    syllable: Syllable
+
+
+class SyllableChart(_Pictured):
+    """The letter's template: big letter, then one cell per word with its picture and syllable."""
+
+    type: Literal["syllable_chart"]
+    letter: Syllable
+    words: list[ChartWord] = Field(min_length=4, max_length=15)
+
+
+class PictureWord(BaseModel):
+    word: Word
+    syllable: Syllable | None = None
+
+
+class PictureWords(_Pictured):
+    """write: name each picture on guide lines; complete: fill the missing syllable; circle: circle the
+    syllable the word starts with; match: join each picture with its syllable."""
+
+    type: Literal["picture_words"]
+    mode: Literal["write", "complete", "circle", "match"] = "write"
+    items: list[PictureWord] = Field(min_length=2, max_length=8)
+
+    @model_validator(mode="after")
+    def _syllables(self):
+        if self.mode != "write" and any(not i.syllable for i in self.items):
+            raise ValueError(f"En modo {self.mode} cada item necesita su syllable.")
+        return self
+
+
+class SyllableCards(_Block):
+    """Syllables in cells, dashed to cut out (or to colour) and build words with."""
+
+    type: Literal["syllable_cards"]
+    syllables: list[Syllable] = Field(min_length=4, max_length=40)
+    cut: bool = True
+    instruction: Short | None = None
+
+
+class ReadingLine(BaseModel):
+    text: Annotated[str, Field(min_length=1, max_length=160)]
+    picture: Word | None = None
+
+
+class Reading(_Pictured):
+    """Sentences to read aloud, each with a box the teacher ticks; optional rubric legend."""
+
+    type: Literal["reading"]
+    title: Short | None = None
+    sentences: list[ReadingLine] = Field(min_length=1, max_length=8)
+    rubric: bool = True
+
+
+class Dictation(_Block):
+    """Numbered lines for a dictation; the words go to the teacher's box (or the answer key)."""
+
+    type: Literal["dictation"]
+    words: list[Annotated[str, Field(min_length=1, max_length=40)]] = Field(default_factory=list, max_length=12)
+    lines: int = Field(default=10, ge=3, le=12)
+    show_words: bool = True
+    title: Short | None = None
+
+
+class FillItem(BaseModel):
+    text: Annotated[str, Field(min_length=4, max_length=160, pattern=r"___")]
+    answer: Word
+
+
+class FillSentences(_Pictured):
+    """Sentences with a blank; the answer's picture is the hint."""
+
+    type: Literal["fill_sentences"]
+    items: list[FillItem] = Field(min_length=1, max_length=6)
+
+
+class WordSearch(_Pictured):
+    type: Literal["word_search"]
+    words: list[Word] = Field(min_length=3, max_length=8)
+    size: int = Field(default=8, ge=6, le=12)
+
+    @model_validator(mode="after")
+    def _fits(self):
+        if any(len(w) > self.size for w in self.words):
+            raise ValueError("Cada palabra debe caber en la sopa de letras (size).")
+        return self
+
+
+class Classify(_Block):
+    """Columns headed by syllables; the child sorts the word bank into them."""
+
+    type: Literal["classify"]
+    columns: list[Syllable] = Field(min_length=2, max_length=4)
+    words: list[Word] = Field(min_length=4, max_length=16)
+    instruction: Short | None = None
+
+
+class DrawFrames(_Block):
+    type: Literal["draw_frames"]
+    count: int = Field(default=3, ge=1, le=6)
+    labels: list[Annotated[str, Field(max_length=40)]] = Field(default_factory=list, max_length=6)
+    instruction: Short | None = None
+
+
+def block_assets(block: dict) -> list[str]:
+    """Asset ids a stored block points at: an image's picture, or a worksheet's word pictures."""
+    ids = [block["asset_id"]] if block.get("type") == "image" and block.get("asset_id") else []
+    return ids + list((block.get("pictures") or {}).values())
+
+
+WORKSHEET_TYPES = ("syllable_chart", "picture_words", "syllable_cards", "reading", "dictation", "fill_sentences",
+                   "word_search", "classify", "draw_frames")
+
+
 class WritingLines(_Block):
     type: Literal["writing_lines"]
     lines: int = Field(default=4, ge=1, le=20)
@@ -230,7 +357,9 @@ class PageBreak(_Block):
 Block = Annotated[
     Heading | Paragraph | ListBlock | Callout | Table | Example | Activity | Exercise
     | Keyboard | Tracing | LetterGrid | Image | WritingLines | PageBreak
-    | Staff | Timeline | Cycle | BarChart | NumberLine | Fraction | Clock,
+    | Staff | Timeline | Cycle | BarChart | NumberLine | Fraction | Clock
+    | SyllableChart | PictureWords | SyllableCards | Reading | Dictation | FillSentences | WordSearch | Classify
+    | DrawFrames,
     Field(discriminator="type"),
 ]
 
@@ -252,12 +381,14 @@ class OutlineSection(BaseModel):
     title: Short
     objectives: list[Short] = Field(default_factory=list, max_length=6)
     key_points: list[Short] = Field(default_factory=list, max_length=12)
+    letters: list[Syllable] = Field(default_factory=list, max_length=6)  # literacy: letters this section teaches
 
 
 class Outline(BaseModel):
     title: Short
     genre: Genre
     style_notes: Annotated[str, Field(max_length=1000)] = ""
+    known_letters: list[Syllable] = Field(default_factory=list, max_length=30)  # literacy: known before the tome
     sections: list[OutlineSection] = Field(min_length=1, max_length=20)
 
     @field_validator("title")

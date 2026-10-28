@@ -115,3 +115,27 @@ def test_each_sheet_is_painted_at_the_lowest_resolution_that_still_prints_sharp(
     # Colouring pages are traced to vectors, so the pixels only need to carry the shapes.
     assert res("line_art", "full") == "1K" and res("line_art", "full", "full") == "2K"
     assert res("line_art", "small", "small") == "1K"
+
+
+def test_worksheet_pictures_are_painted_sixteen_per_call_at_1k():
+    sheets = plan_sheets([req(str(i), kind="icon", size="icon", subject=f"palabra{i}") for i in range(20)])
+
+    assert [len(s.requests) for s in sheets] == [16, 4] and [s.cols for s in sheets] == [4, 2]
+    assert all(s.family == "icon" and s.resolution == "1K" for s in sheets)
+    prompt = sheet_prompt(sheets[0], ArtPlan(style="ignored for icons"), DESIGN)
+    assert "4x4 grid" in prompt and "row 4, column 4: palabra15" in prompt and "ignored" not in prompt
+
+
+def test_a_4x4_sheet_is_cut_into_sixteen_panels():
+    im = Image.new("RGB", (800, 800), "white")
+    d = ImageDraw.Draw(im)
+    for c in range(4):
+        for r in range(4):
+            d.ellipse((c * 200 + 30, r * 200 + 30, c * 200 + 170, r * 200 + 170), outline="black", width=5)
+    out = io.BytesIO()
+    im.save(out, "PNG")
+
+    panels = slice_sheet(out.getvalue(), 4, 4)
+
+    assert len(panels) == 16
+    assert all(130 < Image.open(io.BytesIO(p)).width < 200 for p in panels)  # each trimmed to one drawing

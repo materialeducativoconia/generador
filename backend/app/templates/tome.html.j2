@@ -121,6 +121,9 @@
 
   .diagram { margin: 4mm 0 5mm; text-align: center; page-break-inside: avoid; }
   .diagram svg { max-width: 100%; height: auto; }
+  .ws-wrap { margin: 3mm 0 6mm; text-align: center; page-break-inside: avoid; }
+  .ws-wrap svg { width: 100%; height: auto; max-height: {{ geo.content_h - 56 }}mm; }
+  .page-break ~ .ws-wrap svg { max-height: {{ geo.content_h - 24 }}mm; }
   .tracing-wrap { margin: 3mm 0 5mm; page-break-inside: avoid; }
 
   .grid { display: grid; gap: 2.5mm; margin: 4mm 0; page-break-inside: avoid; }
@@ -198,7 +201,7 @@
     <span class="num">{{ s.position if th.opener == "blob" else ("%02d"|format(s.position) if th.opener == "numeral" else "Sección " ~ s.position) }}</span>
     <h2 class="title" data-title="{{ s.title }}">{{ s.title }}</h2>
   </header>
-  {% set ex = namespace(n=0) %}
+  {% set ex = namespace(n=0, broke=false) %}
   {% for b in s.content.blocks %}
     {% if b.type == "heading" %}
       <h{{ b.level }} class="b">{{ b.text|inline }}</h{{ b.level }}>
@@ -237,6 +240,10 @@
       <div class="keyboard-wrap">{{ keyboard_svg(b, c.tint, c.accent) }}{% if b.caption %}<div class="figcap">{{ b.caption }}</div>{% endif %}</div>
     {% elif b.type in DIAGRAM_TYPES %}
       <div class="diagram">{{ render_diagram(b, c, th.head) }}{% if b.caption %}<div class="figcap">{{ b.caption }}</div>{% endif %}</div>
+    {% elif b.type in WORKSHEET_TYPES %}
+      {# A ficha fills the room its page has left: the section header takes ~32 mm on the first page. #}
+      {% set room = geo.content_h - (26 if ex.broke else 58) %}
+      <div class="ws-wrap">{{ render_worksheet(b, c, th.head, tome.image_uri, room / geo.content_w * 640) }}</div>
     {% elif b.type == "tracing" %}
       <div class="tracing-wrap">{% if b.instruction %}<p><strong>{{ b.instruction }}</strong></p>{% endif %}{{ tracing_svg(b) }}</div>
     {% elif b.type == "letter_grid" %}
@@ -255,6 +262,7 @@
     {% elif b.type == "writing_lines" %}
       <div class="lines">{% if b.label %}<div class="label">{{ b.label }}</div>{% endif %}{% for _ in range(b.lines) %}<div class="blank-line"></div>{% endfor %}</div>
     {% elif b.type == "page_break" %}
+      {% set ex.broke = true %}
       <div class="page-break"></div>
     {% endif %}
   {% endfor %}
