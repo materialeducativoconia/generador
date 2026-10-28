@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_image_model: str = "google/gemini-nano-banana-2.1"
     openrouter_review_model: str = "qwen/qwen3.7-flash"  # vision model of the image Reviewer
+    openrouter_search_model: str = "perplexity/sonar"  # web search with citations, for official programs
     run_worker: bool = False  # run the job loop inside the API process (Render free plan has no workers)
 
     @property

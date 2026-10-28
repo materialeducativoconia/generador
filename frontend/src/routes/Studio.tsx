@@ -204,6 +204,7 @@ function CostDialog({ sections, pages, pending, onConfirm, onCancel }: {
             </p>
             <dl className="cost-rows">
               <div><dt>Texto (redacción y revisión)</dt><dd>{usd(q.text_usd)}</dd></div>
+              <div><dt>Búsqueda de programas oficiales</dt><dd>{usd(q.search_usd)}</dd></div>
               <div><dt>Portada</dt><dd>{usd(q.cover_usd)}</dd></div>
               <div><dt>Ilustraciones</dt><dd>{usd(q.art_usd[0])} – {usd(q.art_usd[1])}</dd></div>
               <div className="total"><dt>Total</dt><dd>{usd(q.total_usd[0])} – {usd(q.total_usd[1])} {q.currency}</dd></div>

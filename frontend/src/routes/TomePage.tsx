@@ -38,6 +38,7 @@ export function TomePage() {
 
       {status === 'outlining' && <Planning />}
       {status === 'outline_failed' && <OutlineFailed series={s} />}
+      {s.research?.program && <ProgramPanel program={s.research.program} />}
       {status === 'outline_ready' && <OutlineEditor key={s.version} series={s} />}
       {['generating', 'needs_attention', 'ready'].includes(status) && progress.data && (
         <>
@@ -126,7 +127,7 @@ function QualityCard({ seriesId, progress }: { seriesId: string; progress: Progr
     ['Datos', q.facts?.needed ? `${q.facts.facts} datos verificados en ${q.facts.sources} fuentes` : 'No requiere fuentes'],
     ['Ilustraciones', q.art.total ? `${q.art.done} de ${q.art.total}${q.art.failed ? ` · ${q.art.failed} fallidas` : ''}` : 'Sin ilustraciones'],
     ...(q.pages.target ? [['Páginas', q.pages.actual ? `${q.pages.actual} de ${q.pages.target} pedidas` : `${q.pages.target} pedidas · genera el PDF para contarlas`] as [string, string]] : []),
-    ['Costo IA', `${usd(q.cost.total_usd)} · texto ${usd(q.cost.text_usd)}, portada ${usd(q.cost.cover_usd)}, ilustraciones ${usd(q.cost.images_usd + q.cost.review_usd)}`],
+    ['Costo IA', `${usd(q.cost.total_usd)} · texto ${usd(q.cost.text_usd)}${q.cost.search_usd ? `, búsqueda ${usd(q.cost.search_usd)}` : ''}, portada ${usd(q.cost.cover_usd)}, ilustraciones ${usd(q.cost.images_usd + q.cost.review_usd)}`],
     ...(q.cost.minutes === null ? [] : [['Tiempo', `${String(q.cost.minutes).replace('.', ',')} min de escritura e ilustración`] as [string, string]]),
     ['Impresión', q.print ? `${{ lista: 'Lista', aceptable: 'Aceptable', baja: 'Baja resolución' }[q.print.rating]}${q.print.layout?.fixed.length ? ` · maqueta ajustada en ${q.print.layout.fixed.length} imágenes` : ''}` : 'Genera el PDF para revisarla'],
   ]
@@ -146,6 +147,41 @@ function QualityCard({ seriesId, progress }: { seriesId: string; progress: Progr
         <ul className="issues muted small">
           {t.issues.map((i, n) => <li key={n}><strong>Sección {i.section}:</strong> {i.issue}</li>)}
         </ul>
+      )}
+    </details>
+  )
+}
+
+/** Where the syllabus came from: the official programs and methods the searcher found, and the reviewer's check.
+ * A testing aid for now; it will be hidden from end users later. */
+function ProgramPanel({ program: p }: { program: NonNullable<NonNullable<Series['research']>['program']> }) {
+  const sources = p.sources ?? []
+  return (
+    <details className="panel sources program">
+      <summary>
+        <span className="section-h">Programa de referencia</span>
+        <span className="muted small">{p.program || 'Sin programa claro'} · {sources.length} fuentes{p.review ? ` · revisión ${p.review.score}/5` : ''}</span>
+      </summary>
+      {p.method && <p className="small"><strong>Método:</strong> {p.method}</p>}
+      {(p.points ?? []).length > 0 && (
+        <ol className="small">{(p.points ?? []).map((x, i) => <li key={i}>{x.text} <span className="muted">[{x.source}]</span></li>)}</ol>
+      )}
+      {p.review && (
+        <div className="small">
+          <strong>Revisión del esquema contra el programa: {p.review.score}/5</strong>
+          {p.review.missing.length > 0 && <p>Falta: {p.review.missing.join('; ')}</p>}
+          {p.review.issues.length > 0 && <ul>{p.review.issues.map((x) => <li key={x}>{x}</li>)}</ul>}
+        </div>
+      )}
+      <p className="small"><strong>Fuentes</strong></p>
+      <ol className="small">
+        {sources.map((s) => <li key={s.url}><a href={s.url} target="_blank" rel="noreferrer noopener">{s.title}</a></li>)}
+      </ol>
+      {(p.queries ?? []).length > 0 && <p className="small muted">Búsquedas: {(p.queries ?? []).join(' · ')}</p>}
+      {(p.findings ?? []).length > 0 && (
+        <details className="small"><summary>Lo que encontró el buscador</summary>
+          {(p.findings ?? []).map((f) => <div key={f.query}><p><strong>{f.query}</strong></p><p className="pre">{f.text}</p></div>)}
+        </details>
       )}
     </details>
   )

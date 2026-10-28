@@ -64,11 +64,22 @@ export type LessonSummary = {
 
 export type Source = { title: string; url: string }
 
+/** The reference syllabus found on the web (testing aid; to be hidden from end users later). */
+export type Program = {
+  program: string | null
+  method: string | null
+  points: { text: string; source: number }[] | null
+  sources: Source[] | null
+  queries: string[] | null
+  review: { score: number; covered: string[]; missing: string[]; issues: string[] } | null
+  findings: { query: string; text: string }[] | null
+}
+
 export type Series = CoverFields & {
   design: Design | null
   assets: Record<string, string>
   credits: Record<string, string>
-  research: { needed: boolean; facts: number; sources: Source[] } | null
+  research: { needed: boolean; facts: number; sources: Source[]; program: Program | null } | null
   id: string
   title: string | null
   topic: string
@@ -106,7 +117,7 @@ export type Quality = {
   art: { total: number; done: number; active: number; failed: number }
   print: (Preflight & { layout?: { fixed: string[]; issues: string[] } }) | null
   pages: { target: number | null; actual: number | null }
-  cost: { text_usd: number; images_usd: number; review_usd: number; cover_usd: number; total_usd: number; minutes: number | null }
+  cost: { search_usd?: number; text_usd: number; images_usd: number; review_usd: number; cover_usd: number; total_usd: number; minutes: number | null }
 }
 
 export type Export = {

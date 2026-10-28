@@ -89,3 +89,41 @@ def test_worksheets_print_with_real_text_and_vector_pictures():
     text = "".join(p.extract_text() for p in PdfReader(io.BytesIO(pdf)).pages)
     assert "Practiquemos la lectura" in text and "Dictado" in text and re.search(r"Memo\s*mima", text)
     assert not any(p.images for p in PdfReader(io.BytesIO(pdf)).pages)
+
+
+MATH = [{"id": "n", "type": "counting", "items": [{"object": "manzana", "count": 7}, {"object": "pastel", "count": 3}]},
+        {"id": "m", "type": "picture_math", "operations": [
+            {"object": "manzana", "a": 4, "op": "+", "b": 3}, {"object": "pastel", "a": 6, "op": "-", "b": 2},
+            {"object": "globo", "a": 3, "op": "×", "b": 4}, {"object": "galleta", "a": 8, "op": "÷", "b": 2}]}]
+
+
+def test_the_code_draws_exactly_the_quantities_of_each_operation():
+    counting = svg({**MATH[0], "pictures": {"manzana": "a", "pastel": "p"}}, picture=lambda i: f"https://cdn/{i}")
+    maths = svg({**MATH[1], "pictures": {w: w for w in ("manzana", "pastel", "globo", "galleta")}},
+                picture=lambda i: f"https://cdn/{i}")
+
+    assert counting.count("https://cdn/a") == 7 and counting.count("https://cdn/p") == 3
+    assert maths.count("https://cdn/manzana") == 7  # 4 + 3
+    assert maths.count("https://cdn/pastel") == 6 and maths.count('class="cross"') == 2  # 6, two crossed out
+    assert maths.count("https://cdn/globo") == 12 and maths.count("https://cdn/galleta") == 8  # 3 groups of 4; 8
+    assert "4 + 3 =" in maths and "8 ÷ 2 =" in maths
+
+
+def test_operations_the_pictures_cannot_show_are_rejected():
+    import pytest
+    from pydantic import ValidationError
+
+    for bad in ({"object": "x", "a": 2, "op": "-", "b": 5}, {"object": "x", "a": 7, "op": "÷", "b": 2},
+                {"object": "x", "a": 9, "op": "×", "b": 9}):
+        with pytest.raises(ValidationError):
+            block({"id": "m", "type": "picture_math", "operations": [bad]})
+
+
+def test_the_answer_key_gets_results_computed_by_code():
+    from app.render import render_html
+
+    html = render_html(tome(*MATH), paper="A4", include_answer_key=True)
+
+    key = html[html.index('id="solucionario"'):]
+    assert "4 + 3 (manzana)" in key and "8 ÷ 2 (galleta)" in key
+    assert all(f"<br>{n}" in key for n in ("7", "3", "4", "12"))

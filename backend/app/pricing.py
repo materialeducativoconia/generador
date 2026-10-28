@@ -11,6 +11,7 @@ PLANNING_TOKENS = {"miss": 9000, "hit": 3000, "out": 3500}  # researcher, archit
 SECTION_TOKENS = {"miss": 4000, "hit": 6000, "out": 900}  # writer + editor around one section
 PAGE_TOKENS = {"miss": 300, "hit": 0, "out": 1100}  # each printed page the Writer fills
 COVER_USD = 0.09
+SEARCH_USD = 0.02  # program searcher: up to three Perplexity Sonar searches with their citations
 # Illustration per page: worksheet pictures reused from the library (low) up to a 4K colour picture shared
 # four to a sheet, plus the vision review (high).
 ART_PER_PAGE_USD = (0.0, 0.024)
@@ -26,9 +27,9 @@ def estimate(sections: int | None, pages: int | None, history_per_page: float | 
     n = sections or (max(1, round(pages / PAGES_PER_SECTION)) if pages else DEFAULT_SECTIONS)
     p = pages or n * PAGES_PER_SECTION + 1
     text = _usd(PLANNING_TOKENS) + _usd(SECTION_TOKENS, n) + _usd(PAGE_TOKENS, p)
-    low, high = (text + COVER_USD + p * a for a in ART_PER_PAGE_USD)
+    low, high = (text + SEARCH_USD + COVER_USD + p * a for a in ART_PER_PAGE_USD)
     out = {"sections": n, "pages": p, "assumed": {"sections": sections is None, "pages": pages is None},
-           "text_usd": round(text, 3), "cover_usd": COVER_USD,
+           "text_usd": round(text, 3), "search_usd": SEARCH_USD, "cover_usd": COVER_USD,
            "art_usd": [round(p * a, 3) for a in ART_PER_PAGE_USD],
            "total_usd": [round(low, 2), round(high, 2)], "currency": "USD"}
     if history_per_page:

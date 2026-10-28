@@ -16,8 +16,9 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.agents import (PROMPT_VERSION, AgentFailed, Attempt, Brief, apply_fixes, architect, editor, art_director, cover_director, designer,
-                        fact_sheet, research_planner, writer)
+from app.agents import (PROMPT_VERSION, AgentFailed, Attempt, Brief, apply_fixes, architect, art_director,
+                        cover_director, designer, editor, fact_sheet, program_review, program_sheet,
+                        research_planner, writer)
 from app.content import ArtPlan, Design, Outline, OutlineSection
 from app.llm import LLM, UpstreamAuthError, UpstreamError
 from app.artwork import ImageRequest, plan_sheets, sheet_prompt, slice_sheet
@@ -39,6 +40,7 @@ class Deps:
     vision: Any = None  # app.vision.OpenRouterVision, the image Reviewer; None skips the visual review
     references: Callable[..., Awaitable[list]] = find_covers
     web: Any = None  # app.research.Web (Wikipedia, Commons); None skips research and real photos
+    search: Any = None  # app.curriculum.ProgramSearch (official programs on the web); None skips it
     edit: bool = True  # the Editor proofreads each section after the Writer
 
 
@@ -109,9 +111,9 @@ async def _outline(deps: Deps, job: dict) -> None:
     async with deps.engine.connect() as conn:
         series = await _series(conn, job["series_id"])
     brief = _brief(series, job["payload"].get("brief"))
-    if deps.web is not None and series["research"] is None:
+    if (deps.web is not None or deps.search is not None) and series["research"] is None:
         research = await _research(deps, job, brief)
-        brief.facts = _facts(research)
+        brief.facts, brief.program = _facts(research), _program(research)
     if job["payload"].get("instructions"):
         brief.extra_instructions = "\n".join(filter(None, [brief.extra_instructions,
                                                            f"Rehaz el esquema: {job['payload']['instructions']}"]))
@@ -121,6 +123,14 @@ async def _outline(deps: Deps, job: dict) -> None:
         await _log_attempts(deps.engine, job, "architect", exc.attempts)
         raise
     outline = result.value
+    review, review_attempts = None, []
+    if brief.program:  # Program reviewer: does the outline follow the reference syllabus?
+        try:
+            checked = await program_review(deps.llm, brief, outline)
+            review, review_attempts = checked.value.model_dump(), checked.attempts
+        except (AgentFailed, UpstreamError) as exc:
+            log.warning("program review skipped for %s: %s", job["series_id"], exc)
+            review_attempts = getattr(exc, "attempts", [])
     design, design_attempts = None, []
     if not series["design"]:  # the look is chosen now, so the outline review can show it before anything is written
         try:
@@ -131,6 +141,11 @@ async def _outline(deps: Deps, job: dict) -> None:
     async with deps.engine.begin() as conn:
         await _insert_logs(conn, job, "architect", result.attempts)
         await _insert_logs(conn, job, "designer", design_attempts)
+        await _insert_logs(conn, job, "program_review", review_attempts)
+        if review:
+            await conn.execute(text(
+                """update public.series set research = jsonb_set(research, '{program,review}', cast(:r as jsonb))
+                    where id = :s and research ? 'program'"""), {"s": job["series_id"], "r": json.dumps(review)})
         if design:
             await conn.execute(text("update public.series set design = cast(:d as jsonb) where id = :s"),
                                {"s": job["series_id"], "d": design.model_dump_json()})
@@ -160,7 +175,9 @@ async def _research(deps: Deps, job: dict, brief: Brief) -> dict:
         planned = await research_planner(deps.llm, brief)
         await _log_attempts(deps.engine, job, "research", planned.attempts)
         research = {"needed": planned.value.needed, "reason": planned.value.reason, "queries": planned.value.queries}
-        if planned.value.needed and planned.value.queries:
+        if deps.search is not None and planned.value.program_queries:
+            research["program"] = await _program_search(deps, job, brief, planned.value.program_queries)
+        if deps.web is not None and planned.value.needed and planned.value.queries:
             documents = await deps.web.wikipedia(planned.value.queries, lang=brief.language)
             if documents:
                 sheet = await fact_sheet(deps.llm, brief, documents)
@@ -174,6 +191,42 @@ async def _research(deps: Deps, job: dict, brief: Brief) -> dict:
         await conn.execute(text("update public.series set research = cast(:r as jsonb) where id = :s"),
                            {"s": job["series_id"], "r": json.dumps(research)})
     return research
+
+
+async def _program_search(deps: Deps, job: dict, brief: Brief, queries: list[str]) -> dict:
+    """Program searcher + Program sheet: official programs and proven methods from the web, with their links."""
+    found = await asyncio.gather(*(deps.search.search(q, language=brief.language) for q in queries[:3]),
+                                 return_exceptions=True)
+    findings = [f for f in found if not isinstance(f, BaseException) and f.text]
+    for f in found:
+        if isinstance(f, BaseException):
+            log.warning("program search failed for %s: %s", job["series_id"], f)
+    sources = list({s["url"]: s for f in findings for s in f.sources}.values())
+    out = {"queries": queries[:3], "sources": sources, "points": [], "program": "", "method": "",
+           "cost_usd": round(sum(f.cost_usd or 0 for f in findings), 4),
+           "findings": [{"query": f.query, "text": f.text} for f in findings]}  # kept for the testing panel
+    if not findings:
+        return out
+    try:
+        sheet = await program_sheet(deps.llm, brief, findings, sources)
+    except (AgentFailed, UpstreamError) as exc:  # the links stay for the panel; the Architect works without
+        await _log_attempts(deps.engine, job, "program", getattr(exc, "attempts", []))
+        log.warning("program sheet skipped for %s: %s", job["series_id"], exc)
+        return out
+    await _log_attempts(deps.engine, job, "program", sheet.attempts)
+    out.update(program=sheet.value.program, method=sheet.value.method,
+               points=[p.model_dump() for p in sheet.value.points])
+    return out
+
+
+def _program(research: dict | None) -> list[str] | None:
+    program = (research or {}).get("program") or {}
+    lines = [f"{p['text']} [programa {p['source']}]" for p in program.get("points") or []]
+    if lines and program.get("method"):
+        lines.insert(0, f"Método: {program['method']}")
+    if lines and program.get("program"):
+        lines.insert(0, f"Programa: {program['program']}")
+    return lines or None
 
 
 def _facts(research: dict | None) -> list[str] | None:
@@ -328,7 +381,8 @@ MAX_ICONS_PER_TOME = 240  # worksheet pictures: 15 sheets of 16 at most, and the
 ICON_LIBRARY = "icon"  # style key of the worksheet pictures every tome shares
 # Where each worksheet block keeps the words that get a picture.
 PICTURED = {"syllable_chart": ("words", "word"), "picture_words": ("items", "word"), "reading": ("sentences", "picture"),
-            "fill_sentences": ("items", "answer"), "word_search": ("words", None)}
+            "fill_sentences": ("items", "answer"), "word_search": ("words", None), "counting": ("items", "object"),
+            "picture_math": ("operations", "object")}
 
 
 def _picture_requests(lessons) -> list[ImageRequest]:
@@ -657,10 +711,13 @@ def _brief(series, stored: dict | None) -> Brief:
     if stored:
         return Brief(request=stored["request"], audience=stored["audience"], language=stored.get("language", "es"),
                      section_count=stored.get("section_count"), extra_instructions=stored.get("extra_instructions"),
-                     page_count=stored.get("page_count"), facts=facts)
-    return Brief(request=series["topic"], audience=(_json(series["audience"]) or {}).get("label", ""),
+                     page_count=stored.get("page_count"), facts=facts,
+                     program=_program(_json(series["research"])))
+    brief = Brief(request=series["topic"], audience=(_json(series["audience"]) or {}).get("label", ""),
                  language=series["language"], section_count=series["lesson_count"],
                  extra_instructions=series["extra_instructions"], page_count=series["page_target"], facts=facts)
+    brief.program = _program(_json(series["research"]))
+    return brief
 
 
 def _json(value):

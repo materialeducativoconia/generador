@@ -7,6 +7,7 @@ without a drawing yet gets a dashed placeholder. Everything a child reads — le
 Andika, a typeface made for learning to read; the theme's heading font only dresses titles and numbers.
 """
 
+import math
 import random
 import textwrap
 from collections.abc import Callable
@@ -27,7 +28,8 @@ def render_worksheet(block, c: dict, font: str, picture: Picture | None = None, 
     its page the way a printed workbook does, instead of floating at the top of it."""
     draw = {"syllable_chart": syllable_chart, "picture_words": picture_words, "syllable_cards": syllable_cards,
             "reading": reading, "dictation": dictation, "fill_sentences": fill_sentences,
-            "word_search": word_search, "classify": classify, "draw_frames": draw_frames}[block.type]
+            "word_search": word_search, "classify": classify, "draw_frames": draw_frames, "counting": counting,
+            "picture_math": picture_math}[block.type]
     pics = getattr(block, "pictures", {}) or {}
     look = picture or (lambda _id: None)
 
@@ -360,3 +362,88 @@ def draw_frames(b, c, font, pic, top, room):
         if i < len(b.labels) and b.labels[i]:
             body.append(_text(x + cw / 2, y + ch - 10, b.labels[i], KID, size=20, fill=c["ink"], weight=700))
     return W, top + rows * ch, body
+
+
+# --- counting and picture maths: the code draws the exact quantity, the model only names the object --------------
+
+def _icons(pic, word: str, n: int, x: float, y: float, w: float, h: float, crossed: int = 0) -> list[str]:
+    """n copies of a word's picture in a tidy grid inside the box; the last `crossed` are struck out."""
+    if n <= 0:
+        return []
+    cols = max(1, min(n, math.ceil(math.sqrt(n * w / h))))
+    rows = math.ceil(n / cols)
+    size = min(w / cols, h / rows) * 0.88
+    out = []
+    for i in range(n):
+        r, col = divmod(i, cols)
+        in_row = min(cols, n - r * cols)
+        cx = x + (w - in_row * w / cols) / 2 + (col + 0.5) * w / cols
+        cy = y + (h - rows * h / rows) / 2 + (r + 0.5) * h / rows
+        out.append(pic(word, cx - size / 2, cy - size / 2, size, size))
+        if i >= n - crossed:
+            out.append(f'<path class="cross" d="M{cx - size / 2:.1f} {cy - size / 2:.1f}L{cx + size / 2:.1f} '
+                       f'{cy + size / 2:.1f}M{cx + size / 2:.1f} {cy - size / 2:.1f}L{cx - size / 2:.1f} '
+                       f'{cy + size / 2:.1f}" stroke="#D33" stroke-width="3" stroke-linecap="round"/>')
+    return out
+
+
+def _answer_box(x, y, c) -> str:
+    return (f'<rect class="answer" x="{x:.1f}" y="{y:.1f}" width="74" height="64" rx="10" fill="#fff" '
+            f'stroke="{c["accent"]}" stroke-width="2.4"/>')
+
+
+def _sign(x, y, sign, c, font) -> str:
+    return _text(x, y, sign, KID, size=44, fill=c["ink"], weight=700)
+
+
+def counting(b, c, font, pic, top, room):
+    rh, body = _fit(room, len(b.items), 120, 210), []
+    for i, item in enumerate(b.items):
+        y = top + i * rh
+        body.append(_box(0, y, W - 132, rh - 12, c, rx=14))
+        body += _icons(pic, item.object, item.count, 12, y + 8, W - 156, rh - 28)
+        body.append(_sign(W - 106, y + rh / 2 + 10, "=", c, font))
+        body.append(_answer_box(W - 76, y + rh / 2 - 38, c))
+    return W, top + len(b.items) * rh, body
+
+
+def picture_math(b, c, font, pic, top, room):
+    rh, body = _fit(room, len(b.operations), 150, 240), []
+    for i, o in enumerate(b.operations):
+        y, h = top + i * rh, rh - 52
+        mid = y + h / 2 + 14
+        if o.op == "+":
+            body += [_box(0, y, 220, h, c, rx=12), _box(268, y, 220, h, c, rx=12), _sign(244, mid, "+", c, font)]
+            body += _icons(pic, o.object, o.a, 8, y + 6, 204, h - 12) + _icons(pic, o.object, o.b, 276, y + 6, 204, h - 12)
+        elif o.op == "-":
+            body.append(_box(0, y, 488, h, c, rx=12))
+            body += _icons(pic, o.object, o.a, 8, y + 6, 472, h - 12, crossed=o.b)
+        elif o.op == "×":
+            gap, gw = 8, (488 - 8 * (o.a - 1)) / max(o.a, 1)
+            for g in range(o.a):  # a groups of b
+                gx = g * (gw + gap)
+                body.append(_box(gx, y, gw, h, c, rx=10))
+                body += _icons(pic, o.object, o.b, gx + 4, y + 6, gw - 8, h - 12)
+        else:  # ÷: a pictures to share into b empty groups
+            body.append(_box(0, y, 230, h, c, rx=12))
+            body += _icons(pic, o.object, o.a, 8, y + 6, 214, h - 12)
+            gw = (240 - 8 * (o.b - 1)) / o.b
+            body += [f'<rect x="{248 + g * (gw + 8):.1f}" y="{y + 10:.1f}" width="{gw:.1f}" height="{h - 20:.1f}" '
+                     f'rx="{min(gw, h) / 2:.1f}" fill="none" stroke="{c["muted"]}" stroke-width="1.6" '
+                     f'stroke-dasharray="6 5"/>' for g in range(o.b)]
+        body.append(_sign(526, mid, "=", c, font))
+        body.append(_answer_box(556, y + h / 2 - 32, c))
+        sign = "−" if o.op == "-" else o.op
+        body.append(_text(244, y + h + 36, f"{o.a} {sign} {o.b} =", KID, size=28, fill=c["ink"], weight=700))
+        body.append(f'<line x1="318" x2="378" y1="{y + h + 40:.1f}" y2="{y + h + 40:.1f}" stroke="{c["muted"]}" '
+                    f'stroke-width="1.6"/>')
+    return W, top + len(b.operations) * rh, body
+
+
+def answers(block) -> list[tuple[str, str]]:
+    """Answer-key lines for worksheets whose answer the code knows exactly."""
+    if block.type == "counting":
+        return [(f"¿Cuántos hay? ({i.object})", str(i.count)) for i in block.items]
+    if block.type == "picture_math":
+        return [(f"{o.a} {'−' if o.op == '-' else o.op} {o.b} ({o.object})", str(o.result)) for o in block.operations]
+    return []

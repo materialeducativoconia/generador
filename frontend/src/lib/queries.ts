@@ -19,6 +19,7 @@ export type Estimate = {
   pages: number
   assumed: { sections: boolean; pages: boolean }
   text_usd: number
+  search_usd: number
   cover_usd: number
   art_usd: [number, number]
   total_usd: [number, number]

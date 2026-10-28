@@ -527,3 +527,5 @@ a.sec-row { transition: background-color 160ms ease; }
 .cost-rows .total { border-top: 1px solid var(--border); padding-top: 8px; font-weight: 600; }
 .cost-rows .total dt { color: inherit; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.program .pre { white-space: pre-wrap; }
+.program ol, .program ul { padding-left: 20px; }

@@ -9,6 +9,7 @@ import html
 import random
 import re
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -18,7 +19,7 @@ from app.printing import BLEED_MM, PAPERS, SPINE_TEXT_PAGES, is_color, page_geom
 from app.themes import DEFAULT_PALETTE, FRAMES, ORNAMENTS, THEMES, mix, theme_for
 from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Design, Keyboard, LetterGrid, SectionContent, Tracing
 from app.diagrams import render_diagram
-from app.worksheets import render_worksheet
+from app.worksheets import answers as worksheet_answers, render_worksheet
 
 ASSETS = Path(__file__).parent / "assets"
 TEMPLATES = Path(__file__).parent / "templates"
@@ -159,12 +160,13 @@ def render_html(tome: Tome, *, paper: str, include_answer_key: bool, print_editi
                 fit: dict[str, float] | None = None) -> str:
     """The interior. The print edition swaps the cover for a title page (the cover is its own file) and
     mirrors the margins so the binding side is wider."""
-    answers = [
-        (section, block)
-        for section in tome.sections
-        for block in section.content.blocks
-        if block.type == "exercise" and block.answer
-    ]
+    answers = []
+    for section in tome.sections:
+        for block in section.content.blocks:
+            if block.type == "exercise" and block.answer:
+                answers.append((section, block))
+            for prompt, answer in worksheet_answers(block):  # counting and picture maths: computed, not written
+                answers.append((section, SimpleNamespace(prompt=prompt, answer=answer, explanation=None)))
     return _env.get_template("tome.html.j2").render(
         tome=tome, paper=paper, answers=answers if include_answer_key else [], print_edition=print_edition,
         fit=fit or {},

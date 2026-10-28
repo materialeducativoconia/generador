@@ -9,6 +9,7 @@ import signal
 import socket
 
 from app.config import Settings
+from app.curriculum import ProgramSearch
 from app.db import make_engine
 from app.jobs import Deps, claim_job, process_job, reap_stale_jobs
 from app.images import OpenRouterImages
@@ -38,6 +39,8 @@ async def run(stop: asyncio.Event | None = None) -> None:
         vision=OpenRouterVision(settings.openrouter_api_key, settings.openrouter_review_model)
         if settings.openrouter_api_key else None,
         web=Web(),
+        search=ProgramSearch(settings.openrouter_api_key, settings.openrouter_search_model)
+        if settings.openrouter_api_key else None,
     )
     worker_id = f"{socket.gethostname()}:{id(deps)}"
     # More jobs in flight than LLM slots: PDF exports and waits on the limiter shouldn't block the queue.

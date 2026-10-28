@@ -210,6 +210,7 @@ async def _cost(conn, series) -> dict:
     cover = _parse(series["cover"]) or {}
     out = {k: round(float(row[k]), 4) for k in ("text_usd", "images_usd", "review_usd")}
     out["cover_usd"] = round(float(cover.get("spent_usd") or cover.get("cost_usd") or 0), 4)
+    out["search_usd"] = round(float(((_parse(series["research"]) or {}).get("program") or {}).get("cost_usd") or 0), 4)
     out["total_usd"] = round(sum(out.values()), 4)
     out["minutes"] = round(float(row["minutes"]), 1) if row["minutes"] is not None else None
     return out
@@ -480,8 +481,13 @@ async def _series_detail(conn, series_id, user_id, request: Request):
     for lesson in out["lessons"]:
         lesson["diagrams"] = _diagrams(lesson, series, out["assets"])
     research = out.pop("research", None) or {}
+    program = research.get("program") or {}
     out["research"] = {"needed": research.get("needed", False), "sources": research.get("sources", []),
-                       "facts": len(research.get("facts", []))} if research else None
+                       "facts": len(research.get("facts", [])),
+                       # Testing aid: where the syllabus came from (to be hidden from end users later).
+                       "program": {k: program.get(k) for k in ("program", "method", "points", "sources", "queries",
+                                                               "review", "findings")} if program else None,
+                       } if research else None
     out["outline_error"] = outline_error
     return _with_cover(out, request)
 

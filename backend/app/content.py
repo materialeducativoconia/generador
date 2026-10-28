@@ -340,8 +340,50 @@ def block_assets(block: dict) -> list[str]:
     return ids + list((block.get("pictures") or {}).values())
 
 
+class CountItem(BaseModel):
+    object: Word  # one word, drawn once in the picture library and repeated `count` times by code
+    count: int = Field(ge=1, le=20)
+
+
+class Counting(_Pictured):
+    """Count the pictures and write the number: the code draws exactly `count` copies."""
+
+    type: Literal["counting"]
+    items: list[CountItem] = Field(min_length=1, max_length=6)
+
+
+class Operation(BaseModel):
+    object: Word
+    a: int = Field(ge=0, le=30)
+    op: Literal["+", "-", "×", "÷"]
+    b: int = Field(ge=1, le=10)
+
+    @model_validator(mode="after")
+    def _drawable(self):
+        if self.op == "+" and self.a + self.b > 20:
+            raise ValueError("Una suma con dibujos llega como mucho a 20.")
+        if self.op == "-" and self.b > self.a:
+            raise ValueError("En una resta con dibujos a debe ser mayor o igual que b.")
+        if self.op == "×" and (self.a > 10 or self.a * self.b > 30):
+            raise ValueError("Una multiplicación con dibujos tiene como mucho 30 figuras (a ≤ 10).")
+        if self.op == "÷" and (self.a % self.b or self.a > 30):
+            raise ValueError("Una división con dibujos debe ser exacta y tener como mucho 30 figuras.")
+        return self
+
+    @property
+    def result(self) -> int:  # computed here, never taken from the model
+        return {"+": self.a + self.b, "-": self.a - self.b, "×": self.a * self.b, "÷": self.a // self.b}[self.op]
+
+
+class PictureMath(_Pictured):
+    """Operations shown with pictures: a + b, a − b (b crossed out), a groups of b, a shared into b groups."""
+
+    type: Literal["picture_math"]
+    operations: list[Operation] = Field(min_length=1, max_length=6)
+
+
 WORKSHEET_TYPES = ("syllable_chart", "picture_words", "syllable_cards", "reading", "dictation", "fill_sentences",
-                   "word_search", "classify", "draw_frames")
+                   "word_search", "classify", "draw_frames", "counting", "picture_math")
 
 
 class WritingLines(_Block):
@@ -359,7 +401,7 @@ Block = Annotated[
     | Keyboard | Tracing | LetterGrid | Image | WritingLines | PageBreak
     | Staff | Timeline | Cycle | BarChart | NumberLine | Fraction | Clock
     | SyllableChart | PictureWords | SyllableCards | Reading | Dictation | FillSentences | WordSearch | Classify
-    | DrawFrames,
+    | DrawFrames | Counting | PictureMath,
     Field(discriminator="type"),
 ]
 
@@ -465,6 +507,7 @@ class ResearchPlan(BaseModel):
     needed: bool
     queries: list[str] = Field(default_factory=list, max_length=3)
     reason: str = Field(default="", max_length=300)
+    program_queries: list[Annotated[str, Field(max_length=200)]] = Field(default_factory=list, max_length=3)
 
 
 class Fact(BaseModel):
@@ -474,6 +517,23 @@ class Fact(BaseModel):
 
 class FactSheet(BaseModel):
     facts: list[Fact] = Field(default_factory=list, max_length=40)
+
+
+class ProgramSheet(BaseModel):
+    """The reference syllabus the Architect follows: what an official or proven program teaches, in order."""
+
+    program: str = Field(default="", max_length=300)  # e.g. "SEP 2022, Fase 3 (1.º y 2.º de primaria), Lenguajes"
+    method: str = Field(default="", max_length=800)  # the teaching approach or the method's steps
+    points: list[Fact] = Field(default_factory=list, max_length=30)  # contents in teaching order, with source
+
+
+class ProgramReview(BaseModel):
+    """The Program reviewer's check of an outline against the reference syllabus."""
+
+    score: int = Field(ge=1, le=5)  # 5 = covers the program faithfully, in a sensible order
+    covered: list[Annotated[str, Field(max_length=200)]] = Field(default_factory=list, max_length=15)
+    missing: list[Annotated[str, Field(max_length=200)]] = Field(default_factory=list, max_length=10)
+    issues: list[Annotated[str, Field(max_length=300)]] = Field(default_factory=list, max_length=8)
 
 
 class Fix(BaseModel):
