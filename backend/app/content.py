@@ -382,6 +382,7 @@ class OutlineSection(BaseModel):
     objectives: list[Short] = Field(default_factory=list, max_length=6)
     key_points: list[Short] = Field(default_factory=list, max_length=12)
     letters: list[Syllable] = Field(default_factory=list, max_length=6)  # literacy: letters this section teaches
+    pages: int | None = Field(default=None, ge=1, le=60)  # printed pages this section should fill
 
 
 class Outline(BaseModel):

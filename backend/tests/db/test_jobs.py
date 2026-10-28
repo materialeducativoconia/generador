@@ -67,7 +67,7 @@ async def test_architect_job_turns_the_outline_into_sections(raw_db, google_user
     titles = await raw_db.fetch("select title from public.lessons where series_id = $1 order by position", sid)
     assert [r["title"] for r in titles] == ["Postura", "Do", "Melodía"]
     log = await raw_db.fetchrow("select outcome, prompt_version from public.generation_logs where series_id = $1", sid)
-    assert dict(log) == {"outcome": "ok", "prompt_version": "architect@2"}
+    assert dict(log) == {"outcome": "ok", "prompt_version": "architect@3"}
 
 
 async def test_writer_jobs_fill_sections_and_finish_the_tome(raw_db, google_user, client, key, engine):

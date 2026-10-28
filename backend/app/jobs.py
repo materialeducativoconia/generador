@@ -121,14 +121,27 @@ async def _outline(deps: Deps, job: dict) -> None:
         await _log_attempts(deps.engine, job, "architect", exc.attempts)
         raise
     outline = result.value
+    design, design_attempts = None, []
+    if not series["design"]:  # the look is chosen now, so the outline review can show it before anything is written
+        try:
+            design, design_attempts = await _design(deps, job, series, brief, outline.title, outline.genre,
+                                                    [x.title for x in outline.sections])
+        except (AgentFailed, UpstreamError) as exc:  # the cover job tries again
+            log.warning("designer skipped for %s: %s", job["series_id"], exc)
     async with deps.engine.begin() as conn:
         await _insert_logs(conn, job, "architect", result.attempts)
+        await _insert_logs(conn, job, "designer", design_attempts)
+        if design:
+            await conn.execute(text("update public.series set design = cast(:d as jsonb) where id = :s"),
+                               {"s": job["series_id"], "d": design.model_dump_json()})
         await conn.execute(text("delete from public.lessons where series_id = :s"), {"s": job["series_id"]})
         for position, section in enumerate(outline.sections, 1):
             await conn.execute(text(
-                """insert into public.lessons (series_id, position, title, objectives, key_points, letters, status)
-                   values (:s, :p, :t, cast(:o as jsonb), cast(:k as jsonb), cast(:lt as jsonb), 'pending')"""
+                """insert into public.lessons (series_id, position, title, objectives, key_points, letters, pages,
+                                               status)
+                   values (:s, :p, :t, cast(:o as jsonb), cast(:k as jsonb), cast(:lt as jsonb), :pg, 'pending')"""
             ), {"s": job["series_id"], "p": position, "t": section.title, "lt": json.dumps(section.letters),
+                "pg": section.pages,
                 "o": json.dumps(section.objectives), "k": json.dumps(section.key_points)})
         await conn.execute(text(
             """update public.series set title = :t, genre = :g, plan = cast(:plan as jsonb), lesson_count = :n,
@@ -172,7 +185,8 @@ async def _lesson(deps: Deps, job: dict) -> None:
     async with deps.engine.begin() as conn:
         series = await _series(conn, job["series_id"])
         lessons = (await conn.execute(text(
-            "select id, position, title, objectives, key_points, letters from public.lessons where series_id = :s"
+            "select id, position, title, objectives, key_points, letters, pages from public.lessons"
+            " where series_id = :s"
             " order by position"), {"s": job["series_id"]})).mappings().all()
         await conn.execute(text("update public.lessons set status = 'generating' where id = :l"),
                            {"l": job["lesson_id"]})
@@ -184,7 +198,8 @@ async def _lesson(deps: Deps, job: dict) -> None:
         style_notes=plan.get("style_notes", ""),
         known_letters=plan.get("known_letters", []),
         sections=[OutlineSection(title=lesson["title"], objectives=_json(lesson["objectives"]),
-                                 key_points=_json(lesson["key_points"]), letters=_json(lesson["letters"]) or [])
+                                 key_points=_json(lesson["key_points"]), letters=_json(lesson["letters"]) or [],
+                                 pages=lesson["pages"])
                   for lesson in lessons],
     )
     brief = _brief(series, None)
@@ -239,6 +254,30 @@ async def enqueue_cover(conn, user_id, series_id) -> uuid.UUID:
     return job_id
 
 
+async def _design(deps: Deps, job: dict, series, brief: Brief, title: str, genre: str,
+                  sections: list[str]) -> tuple[Design, list[Attempt]]:
+    """The tome's look: the style the user pinned, or the Designer's pick among their library and the themes."""
+    async with deps.engine.connect() as conn:
+        library = {str(r["id"]): r for r in (await conn.execute(text(
+            """select id, name, spec, design from public.styles where user_id = :u and status = 'ready'
+                order by created_at desc limit 12"""), {"u": job["user_id"]})).mappings().all()}
+    pinned = library.get(str(series["style_id"])) if series["style_id"] else None
+    if pinned:  # the user chose a style for this tome: no Designer call at all
+        return Design.model_validate(_json(pinned["design"])), []
+    try:
+        designed = await designer(deps.llm, brief, title, genre, sections, [
+            {"id": k, "name": r["name"], **{f: (_json(r["spec"]) or {}).get(f) for f in ("suits", "traits")}}
+            for k, r in library.items()])
+    except AgentFailed as exc:
+        await _log_attempts(deps.engine, job, "designer", exc.attempts)
+        raise
+    design = designed.value
+    chosen = library.get(design.style_id or "")
+    design = Design.model_validate(_json(chosen["design"])) if chosen else Design(
+        theme=design.theme, palette=design.palette, ornament=design.ornament, rationale=design.rationale)
+    return design, designed.attempts
+
+
 async def _cover(deps: Deps, job: dict) -> None:
     async with deps.engine.connect() as conn:
         series = await _series(conn, job["series_id"])
@@ -247,29 +286,10 @@ async def _cover(deps: Deps, job: dict) -> None:
             {"s": job["series_id"]})).scalars().all()
     brief = _brief(series, None)
     title, genre = series["title"] or series["topic"], series["genre"] or ""
-    # The Designer runs once per tome; asking for another cover keeps the interior's look.
+    # The Designer runs with the Architect; this is the fallback when it failed there.
     design = Design.model_validate(_json(series["design"])) if series["design"] else None
     if design is None:
-        async with deps.engine.connect() as conn:
-            library = {str(r["id"]): r for r in (await conn.execute(text(
-                """select id, name, spec, design from public.styles where user_id = :u and status = 'ready'
-                    order by created_at desc limit 12"""), {"u": job["user_id"]})).mappings().all()}
-        pinned = library.get(str(series["style_id"])) if series["style_id"] else None
-        attempts = []
-        if pinned:  # the user chose a style for this tome: no Designer call at all
-            design = Design.model_validate(_json(pinned["design"]))
-        else:
-            try:
-                designed = await designer(deps.llm, brief, title, genre, list(sections), [
-                    {"id": k, "name": r["name"], **{f: (_json(r["spec"]) or {}).get(f) for f in ("suits", "traits")}}
-                    for k, r in library.items()])
-            except AgentFailed as exc:
-                await _log_attempts(deps.engine, job, "designer", exc.attempts)
-                raise
-            design, attempts = designed.value, designed.attempts
-            chosen = library.get(design.style_id or "")
-            design = Design.model_validate(_json(chosen["design"])) if chosen else Design(
-                theme=design.theme, palette=design.palette, ornament=design.ornament, rationale=design.rationale)
+        design, attempts = await _design(deps, job, series, brief, title, genre, list(sections))
         async with deps.engine.begin() as conn:
             await _insert_logs(conn, job, "designer", attempts)
             await conn.execute(text("update public.series set design = cast(:d as jsonb) where id = :s"),
@@ -637,10 +657,10 @@ def _brief(series, stored: dict | None) -> Brief:
     if stored:
         return Brief(request=stored["request"], audience=stored["audience"], language=stored.get("language", "es"),
                      section_count=stored.get("section_count"), extra_instructions=stored.get("extra_instructions"),
-                     facts=facts)
+                     page_count=stored.get("page_count"), facts=facts)
     return Brief(request=series["topic"], audience=(_json(series["audience"]) or {}).get("label", ""),
                  language=series["language"], section_count=series["lesson_count"],
-                 extra_instructions=series["extra_instructions"], facts=facts)
+                 extra_instructions=series["extra_instructions"], page_count=series["page_target"], facts=facts)
 
 
 def _json(value):

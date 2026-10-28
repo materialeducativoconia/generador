@@ -2,7 +2,7 @@
 
 import json
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
@@ -16,6 +16,7 @@ from app.diagrams import render_diagram
 from app.errors import ApiError
 from app.jobs import enqueue_cover
 from app.llm import USD_PER_M
+from app.themes import DEFAULT_PALETTE
 from app.worksheets import render_worksheet
 
 router = APIRouter()
@@ -32,6 +33,7 @@ class NewTome(BaseModel):
     audience: str = Field(min_length=1, max_length=200)
     language: str = Field(default="es", pattern=r"^[a-z]{2}(-[A-Z]{2})?$")
     section_count: int | None = Field(default=None, ge=1, le=20)
+    page_count: int | None = Field(default=None, ge=4, le=200)  # by length: the Architect splits the pages
     extra_instructions: str | None = Field(default=None, max_length=2000)
     style_id: uuid.UUID | None = None  # a ready style from the user's library; None lets the Designer choose
 
@@ -68,12 +70,12 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
         series_id, job_id = uuid7(), uuid7()
         await conn.execute(text(
             """insert into public.series (id, user_id, topic, audience, language, lesson_count,
-                                          extra_instructions, status, style_id)
-               values (:id, :u, :topic, cast(:audience as jsonb), :lang, :n, :extra, 'outlining',
+                                          extra_instructions, status, page_target, style_id)
+               values (:id, :u, :topic, cast(:audience as jsonb), :lang, :n, :extra, 'outlining', :pages,
                        (select id from public.styles where id = :st and user_id = :u and status = 'ready'))"""
         ), {"id": series_id, "u": user_id, "topic": body.request, "audience": json.dumps({"label": body.audience}),
             "lang": body.language, "n": body.section_count or 10, "extra": body.extra_instructions,
-            "st": body.style_id})
+            "st": body.style_id, "pages": body.page_count})
         await conn.execute(text(
             """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, idempotency_key)
                values (:id, :u, :s, 'outline', 'queued', cast(:payload as jsonb), :k)"""
@@ -143,8 +145,8 @@ async def get_quality(series_id: uuid.UUID, request: Request, user_id: UserId):
         images = await _image_progress(conn, series_id)
         cost = await _cost(conn, series)
         export = (await conn.execute(text(
-            """select preflight from public.exports where series_id = :s and status = 'succeeded'
-                order by created_at desc limit 1"""), {"s": series_id})).scalar_one_or_none()
+            """select preflight, page_count from public.exports where series_id = :s and status = 'succeeded'
+                order by created_at desc limit 1"""), {"s": series_id})).mappings().one_or_none()
     reviews = [(lesson["position"], _parse(lesson["review"])) for lesson in lessons if lesson["review"]]
     scores = [r["score"] for _, r in reviews if r.get("score") is not None]
     undecodable = [(p, w) for p, r in reviews for w in r.get("letters", [])]
@@ -155,7 +157,8 @@ async def get_quality(series_id: uuid.UUID, request: Request, user_id: UserId):
     research = _parse(series["research"]) or {}
     facts = {"needed": research.get("needed", False), "facts": len(research.get("facts", [])),
              "sources": len(research.get("sources", []))} if research else None
-    preflight = _parse(export)
+    preflight = _parse(export["preflight"]) if export else None
+    pages = {"target": series["page_target"], "actual": export["page_count"] if export else None}
 
     reasons = []
     if scores and (min(scores) <= 2 or textcard["score"] < 4):
@@ -168,10 +171,12 @@ async def get_quality(series_id: uuid.UUID, request: Request, user_id: UserId):
         reasons.append("Hay imágenes con baja resolución para imprimir")
     if preflight and preflight.get("layout", {}).get("issues"):
         reasons.append("La maqueta tiene páginas casi vacías")
+    if pages["target"] and pages["actual"] and abs(pages["actual"] - pages["target"]) > max(2, pages["target"] * 0.15):
+        reasons.append(f"El PDF tiene {pages['actual']} páginas y pediste {pages['target']}")
     pending = series["status"] != "ready" or images["active"] > 0 or preflight is None
     verdict = "revisar" if reasons else ("pendiente" if pending else "lista")
     return {"verdict": verdict, "reasons": reasons, "text": textcard, "facts": facts, "art": images,
-            "print": preflight, "cost": cost}
+            "print": preflight, "cost": cost, "pages": pages}
 
 
 async def _cost(conn, series) -> dict:
@@ -213,18 +218,19 @@ async def edit_outline(series_id: uuid.UUID, body: OutlineEdit, request: Request
         ), {"s": series_id, "kept": kept})
         for position, lesson in enumerate(body.lessons, 1):
             params = {"s": series_id, "p": position, "t": lesson.title, "o": json.dumps(lesson.objectives),
-                      "k": json.dumps(lesson.key_points)}
+                      "k": json.dumps(lesson.key_points), "pg": lesson.pages}
             if lesson.id:
                 updated = await conn.execute(text(
                     """update public.lessons set position = :p, title = :t, objectives = cast(:o as jsonb),
-                              key_points = cast(:k as jsonb) where id = :id and series_id = :s"""
+                              key_points = cast(:k as jsonb), pages = :pg where id = :id and series_id = :s"""
                 ), {**params, "id": lesson.id})
                 if updated.rowcount == 0:
                     raise ApiError(422, "validation_error", "Una sección no pertenece a este tomo.")
             else:
                 await conn.execute(text(
-                    """insert into public.lessons (id, series_id, position, title, objectives, key_points, status)
-                       values (:id, :s, :p, :t, cast(:o as jsonb), cast(:k as jsonb), 'pending')"""
+                    """insert into public.lessons (id, series_id, position, title, objectives, key_points, pages,
+                                                  status)
+                       values (:id, :s, :p, :t, cast(:o as jsonb), cast(:k as jsonb), :pg, 'pending')"""
                 ), {**params, "id": uuid7()})
         await conn.execute(text(
             """update public.series set version = version + 1, lesson_count = :n,
@@ -266,6 +272,78 @@ async def request_cover(series_id: uuid.UUID, request: Request, user_id: UserId)
             raise ApiError(429, "quota_exceeded", f"Puedes crear hasta {COVERS_PER_DAY} portadas al día.")
         await enqueue_cover(conn, user_id, series_id)
     return {"cover_status": "queued"}
+
+
+
+
+class DesignChange(BaseModel):
+    """Pick one of the user's library styles, or one of the base themes (the Designer's palette stays)."""
+
+    style_id: uuid.UUID | None = None
+    theme: Literal["juego", "cuaderno", "editorial", "metodo", "ciencia", "clasico"] | None = None
+
+
+@router.patch("/api/series/{series_id}/design")
+async def change_design(series_id: uuid.UUID, body: DesignChange, request: Request, user_id: UserId):
+    """The outline review shows the proposed look; the user may swap it before anything is written."""
+    if (body.style_id is None) == (body.theme is None):
+        raise ApiError(422, "validation_error", "Elige un estilo de tu biblioteca o un tema.")
+    async with request.app.state.engine.begin() as conn:
+        series = await _own_series(conn, series_id, user_id, lock=True)
+        current = Design.model_validate(_parse(series["design"])) if series["design"] else None
+        if body.style_id:
+            raw = (await conn.execute(text(
+                "select design from public.styles where id = :id and user_id = :u and status = 'ready'"),
+                {"id": body.style_id, "u": user_id})).scalar_one_or_none()
+            if raw is None:
+                raise ApiError(404, "not_found", "Ese estilo no existe o aún no está listo.")
+            design = Design.model_validate(_parse(raw))
+        else:
+            base = current or Design(theme=body.theme, palette=list(DEFAULT_PALETTE))
+            design = Design(theme=body.theme, palette=base.palette, ornament=base.ornament,
+                            rationale="Tema elegido por ti")
+        await conn.execute(text(
+            "update public.series set design = cast(:d as jsonb), style_id = :st where id = :s"),
+            {"s": series_id, "d": design.model_dump_json(), "st": design.style_id})
+        # A cover painted (or being painted) in the old colours is repainted; a queued one reads the new design.
+        cover = (await conn.execute(text(
+            "select status::text from public.generation_jobs where series_id = :s and kind = 'cover'"
+            " order by created_at desc limit 1"), {"s": series_id})).scalar_one_or_none()
+        repaint = cover in ("running", "succeeded") and (current is None or current.palette != design.palette)
+        if repaint:
+            await enqueue_cover(conn, user_id, series_id)
+    return {"design": design.model_dump(), "cover_status": "queued" if repaint else cover}
+
+
+@router.get("/api/series/{series_id}/preview")
+async def design_preview(series_id: uuid.UUID, request: Request, user_id: UserId):
+    """A sample page in the tome's look, drawn before anything is written: same theme, fonts and fiche art."""
+    async with request.app.state.engine.connect() as conn:
+        series = await _own_series(conn, series_id, user_id)
+        first = (await conn.execute(text(
+            "select title, objectives, letters from public.lessons where series_id = :s order by position limit 1"),
+            {"s": series_id})).mappings().one_or_none()
+    title = first["title"] if first else (series["title"] or series["topic"])
+    letters = _parse(first["letters"]) if first else []
+    objectives = _parse(first["objectives"]) if first else []
+    if letters:
+        letter = letters[0]
+        blocks = [{"id": "h", "type": "heading", "level": 2, "text": "Ficha 1"},
+                  {"id": "k", "type": "syllable_cards", "cut": False, "instruction": f"Lee las sílabas de la {letter}.",
+                   "syllables": [letter + v for v in "aeiou"] + [letter.upper() + v for v in "aeiou"]},
+                  {"id": "d", "type": "dictation", "lines": 3, "show_words": False}]
+    elif series["genre"] == "coloring_book":
+        blocks = [{"id": "h", "type": "heading", "level": 2, "text": title},
+                  {"id": "i", "type": "image", "kind": "line_art", "subject": title, "size": "half"}]
+    else:
+        blocks = [{"id": "p", "type": "paragraph", "text": "; ".join(objectives) or series["topic"]},
+                  {"id": "c", "type": "callout", "variant": "key_idea", "title": "Idea clave",
+                   "text": "Así se verán los recuadros, las listas y los ejercicios de tu tomo."},
+                  {"id": "e", "type": "exercise", "kind": "multiple_choice", "prompt": "¿Te gusta este diseño?",
+                   "options": ["Sí, generar así", "Prefiero otro estilo"], "answer": "Sí, generar así"}]
+    lesson = {"content_json": {"blocks": blocks}}
+    return {"design": _parse(series["design"]), "title": title, "blocks": blocks,
+            "diagrams": _diagrams(lesson, series, {})}
 
 
 @router.post("/api/series/{series_id}/lessons/generate", status_code=202)
@@ -369,7 +447,7 @@ def _with_cover(out: dict, request: Request) -> dict:
 async def _series_detail(conn, series_id, user_id, request: Request):
     series = await _own_series(conn, series_id, user_id)
     lessons = (await conn.execute(text(
-        """select id, position, title, objectives, key_points, status, last_error, content_version, content_json,
+        """select id, position, title, objectives, key_points, pages, status, last_error, content_version, content_json,
                   updated_at
              from public.lessons where series_id = :s order by position"""), {"s": series_id})).mappings().all()
     outline_error = None

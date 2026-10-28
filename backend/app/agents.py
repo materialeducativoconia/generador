@@ -17,7 +17,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@2", "writer": "writer@3", "editor": "editor@1", "cover": "cover@3", "designer": "designer@2", "art": "art@3", "research": "research@1", "facts": "facts@1"}
+PROMPT_VERSION = {"architect": "architect@3", "writer": "writer@4", "editor": "editor@1", "cover": "cover@3", "designer": "designer@2", "art": "art@3", "research": "research@1", "facts": "facts@1"}
 
 
 @dataclass
@@ -26,13 +26,18 @@ class Brief:
     audience: str
     language: str = "es"
     section_count: int | None = None  # None: the Architect decides
+    page_count: int | None = None  # material ordered by length: about this many printed pages in total
     extra_instructions: str | None = None
     facts: list[str] | None = None  # the Researcher's fact sheet, with sources
 
     def describe(self) -> str:
         lines = [f"Pedido del usuario: {self.request}", f"Público: {self.audience}", f"Idioma: {self.language}"]
-        lines.append(f"Número de secciones: {self.section_count}" if self.section_count
-                     else "Número de secciones: decide tú (entre 1 y 20) según el pedido")
+        if self.page_count:
+            lines.append(f"Extensión: unas {self.page_count} páginas impresas en total. Decide tú cuántas secciones "
+                         "(entre 1 y 20) y reparte esas páginas entre ellas en el campo pages de cada sección")
+        else:
+            lines.append(f"Número de secciones: {self.section_count}" if self.section_count
+                         else "Número de secciones: decide tú (entre 1 y 20) según el pedido")
         if self.extra_instructions:
             lines.append(f"Instrucciones extra: {self.extra_instructions}")
         if self.facts:
@@ -74,8 +79,9 @@ diseñas el TOMO completo.
    - "tutorial": método o guía paso a paso para aprender una habilidad (instrumento, oficio, software…).
    - "lesson_series": secuencia didáctica de lecciones para docentes.
 2. Divide el tomo en secciones coherentes y progresivas (de lo simple a lo complejo).
-3. Para cada sección da un título claro, de 1 a 4 objetivos y de 1 a 8 puntos clave (conceptos, palabras,
-   dibujos o ejercicios que la sección debe incluir).
+3. Para cada sección da un título claro, de 1 a 4 objetivos, de 1 a 8 puntos clave (conceptos, palabras,
+   dibujos o ejercicios que la sección debe incluir) y "pages": cuántas páginas impresas ocupará (en un libro
+   de colorear o de fichas, una página por dibujo o por ficha; en texto, unas 300 palabras por página).
 4. Si es un método de lectoescritura (aprender a leer y escribir por letras y sílabas, como el método de los
    20 días): cada sección enseña 1 o 2 letras nuevas en "letters" (minúsculas; dígrafos como "ch", "ll", "qu"
    cuentan como una), en un orden que permita formar palabras pronto (vocales; m, p, s, l, t, d, n…), y
@@ -84,7 +90,7 @@ diseñas el TOMO completo.
 
 Responde SOLO con un objeto json con esta forma:
 {"title": "…", "genre": "coloring_book|worksheets|tutorial|lesson_series", "style_notes": "tono y estilo visual",
- "known_letters": [], "sections": [{"title": "…", "objectives": ["…"], "key_points": ["…"], "letters": []}]}"""
+ "known_letters": [], "sections": [{"title": "…", "objectives": ["…"], "key_points": ["…"], "letters": [], "pages": 2}]}"""
 
 WRITER_SYSTEM = """Eres el Redactor de un generador de material educativo imprimible. Escribes UNA sección del tomo
 como una lista de bloques de página. No escribas HTML ni Markdown: solo **negrita** y *cursiva* dentro del texto.
@@ -167,9 +173,27 @@ async def architect(llm: LLM, brief: Brief) -> AgentResult[Outline]:
         {"role": "user", "content": brief.describe()},
     ]
     result = await _json_call(llm, messages, Outline, temperature=0.7, max_tokens=4000)
-    if brief.section_count and len(result.value.sections) != brief.section_count:
+    if brief.section_count and not brief.page_count and len(result.value.sections) != brief.section_count:
         result.value.sections = result.value.sections[: brief.section_count]
+    if brief.page_count:
+        spread_pages(result.value.sections, brief.page_count)
     return result
+
+
+def spread_pages(sections: list, total: int) -> None:
+    """Make the sections' pages add up to the tome's target (minus the cover), keeping the Architect's
+    proportions; largest remainders get the leftover pages."""
+    interior = max(total - 1, len(sections))
+    weights = [s.pages or 1 for s in sections]
+    shares = [interior * w / sum(weights) for w in weights]
+    pages = [max(1, int(x)) for x in shares]
+    order = sorted(range(len(sections)), key=lambda i: shares[i] - int(shares[i]), reverse=True)
+    for i in order[:max(0, interior - sum(pages))]:
+        pages[i] += 1
+    while sum(pages) > interior and max(pages) > 1:
+        pages[pages.index(max(pages))] -= 1
+    for s, p in zip(sections, pages):
+        s.pages = min(p, 60)
 
 
 async def writer(llm: LLM, brief: Brief, outline: Outline, position: int) -> AgentResult[SectionContent]:
@@ -177,6 +201,10 @@ async def writer(llm: LLM, brief: Brief, outline: Outline, position: int) -> Age
     allowed = allowed_letters(outline, position)
     letters = (f"\nLetras que enseña esta sección: {', '.join(section.letters) or '(repaso)'}\n"
                f"Letras permitidas (el niño ya las conoce): {', '.join(sorted(allowed))}") if allowed else ""
+    if section.pages:
+        letters += (f"\nExtensión: esta sección debe llenar unas {section.pages} páginas impresas, ni más ni menos "
+                    "(una ficha o un dibujo full por página, separadas con page_break; en texto, unas 300 palabras "
+                    "por página)")
     # Most stable first, so DeepSeek's prefix cache covers everything but the last message.
     messages = [
         {"role": "system", "content": WRITER_SYSTEM},

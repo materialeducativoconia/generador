@@ -7,8 +7,8 @@ import { PageThumb } from '../components/Sheet'
 import { GENRE_LABEL } from '../lib/labels'
 import { ApiError } from '../lib/api'
 import { api } from '../lib/apiClient'
-import { useExport, useProgress, useQuality, useSeries } from '../lib/queries'
-import type { Export, LessonSummary, Preflight, Progress, Series } from '../lib/types'
+import { useExport, usePreview, useProgress, useQuality, useSeries, useStyles } from '../lib/queries'
+import type { Design, Export, LessonSummary, Preflight, Progress, Series } from '../lib/types'
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback)
 
@@ -125,6 +125,7 @@ function QualityCard({ seriesId, progress }: { seriesId: string; progress: Progr
     ['Texto', t.score === null ? 'Sin revisión del Editor' : `Editor ${String(t.score).replace('.', ',')}/5 · ${t.fixed} correcciones aplicadas`],
     ['Datos', q.facts?.needed ? `${q.facts.facts} datos verificados en ${q.facts.sources} fuentes` : 'No requiere fuentes'],
     ['Ilustraciones', q.art.total ? `${q.art.done} de ${q.art.total}${q.art.failed ? ` · ${q.art.failed} fallidas` : ''}` : 'Sin ilustraciones'],
+    ...(q.pages.target ? [['Páginas', q.pages.actual ? `${q.pages.actual} de ${q.pages.target} pedidas` : `${q.pages.target} pedidas · genera el PDF para contarlas`] as [string, string]] : []),
     ['Costo IA', `${usd(q.cost.total_usd)} · texto ${usd(q.cost.text_usd)}, portada ${usd(q.cost.cover_usd)}, ilustraciones ${usd(q.cost.images_usd + q.cost.review_usd)}`],
     ...(q.cost.minutes === null ? [] : [['Tiempo', `${String(q.cost.minutes).replace('.', ',')} min de escritura e ilustración`] as [string, string]]),
     ['Impresión', q.print ? `${{ lista: 'Lista', aceptable: 'Aceptable', baja: 'Baja resolución' }[q.print.rating]}${q.print.layout?.fixed.length ? ` · maqueta ajustada en ${q.print.layout.fixed.length} imágenes` : ''}` : 'Genera el PDF para revisarla'],
@@ -182,13 +183,69 @@ function OutlineFailed({ series }: { series: Series }) {
   )
 }
 
-type Draft = { id?: string; title: string; objectives: string; key_points: string }
+type Draft = { id?: string; title: string; objectives: string; key_points: string; pages?: number | null }
+
+const THEME_LABEL: Record<Design['theme'], string> = {
+  juego: 'Juego', cuaderno: 'Cuaderno', editorial: 'Editorial', metodo: 'Método', ciencia: 'Ciencia', clasico: 'Clásico',
+}
+const FRAME_LABEL: Record<NonNullable<Design['frame']>, string> = {
+  none: 'sin marco', line: 'marco fino', rounded: 'marco redondeado', dashed: 'marco punteado', double: 'marco doble',
+}
+
+/** The look the Designer chose with the outline, on a sample page; the user may swap it before writing. */
+function DesignPreview({ series }: { series: Series }) {
+  const qc = useQueryClient()
+  const d = series.design
+  const preview = usePreview(series.id, JSON.stringify(d)).data
+  const styles = (useStyles().data?.styles ?? []).filter((s) => s.status === 'ready')
+  const change = useMutation({
+    mutationFn: (value: string) =>
+      api.patch(`/api/series/${series.id}/design`, value.startsWith('s:') ? { style_id: value.slice(2) } : { theme: value.slice(2) }),
+    onSettled: () => Promise.all([qc.invalidateQueries({ queryKey: ['series', series.id] }), qc.invalidateQueries({ queryKey: ['preview', series.id] })]),
+  })
+  if (!d) return <div className="panel design-preview"><p className="muted">El diseño se elige con la portada…</p></div>
+  const style = styles.find((s) => s.id === d.style_id)
+  const value = d.style_id ? `s:${d.style_id}` : `t:${d.theme}`
+  return (
+    <section className="panel design-preview">
+      <div className="design-sample">
+        {preview && <PageThumb design={d} position={1} title={preview.title} blocks={preview.blocks} diagrams={preview.diagrams} />}
+      </div>
+      <div className="design-info">
+        <p className="eyebrow">Diseño propuesto</p>
+        <h2>{style ? style.name : `Tema ${THEME_LABEL[d.theme]}`}</h2>
+        {d.rationale && <p className="muted small">{d.rationale}</p>}
+        <div className="swatches">
+          {d.palette.map((c) => <span key={c} style={{ background: c }} title={c} />)}
+        </div>
+        <p className="small">
+          Títulos en {d.head_font ?? 'la letra del tema'} · {FRAME_LABEL[d.frame ?? 'none']}
+          {d.art_style ? ` · ilustración: ${d.art_style}` : ''}
+        </p>
+        <label className="field">
+          <span>Cambiar diseño</span>
+          <select value={value} onChange={(e) => change.mutate(e.target.value)} disabled={change.isPending}>
+            {styles.length > 0 && (
+              <optgroup label="Tus estilos">
+                {styles.map((s) => <option key={s.id} value={`s:${s.id}`}>{s.name}</option>)}
+              </optgroup>
+            )}
+            <optgroup label="Temas base">
+              {(Object.keys(THEME_LABEL) as Design['theme'][]).map((t) => <option key={t} value={`t:${t}`}>{THEME_LABEL[t]}</option>)}
+            </optgroup>
+          </select>
+        </label>
+        {change.error && <p className="error small" role="alert">{errorText(change.error, 'No se pudo cambiar el diseño.')}</p>}
+      </div>
+    </section>
+  )
+}
 
 function OutlineEditor({ series }: { series: Series }) {
   const qc = useQueryClient()
   const [title, setTitle] = useState(series.title ?? '')
   const [draft, setDraft] = useState<Draft[]>(() =>
-    series.lessons.map((l) => ({ id: l.id, title: l.title, objectives: l.objectives.join('\n'), key_points: l.key_points.join(', ') })),
+    series.lessons.map((l) => ({ id: l.id, title: l.title, objectives: l.objectives.join('\n'), key_points: l.key_points.join(', '), pages: l.pages })),
   )
   const [dirty, setDirty] = useState(false)
   const [redo, setRedo] = useState('')
@@ -225,6 +282,7 @@ function OutlineEditor({ series }: { series: Series }) {
             title: d.title.trim() || 'Sin título',
             objectives: d.objectives.split('\n').map((x) => x.trim()).filter(Boolean),
             key_points: d.key_points.split(',').map((x) => x.trim()).filter(Boolean),
+            pages: d.pages ?? null,
           })),
         })
       }
@@ -232,6 +290,7 @@ function OutlineEditor({ series }: { series: Series }) {
     },
     onSuccess: refresh,
   })
+  const pages = draft.some((d) => d.pages) ? draft.reduce((n, d) => n + (d.pages ?? 0), 1) : null  // + cover
   const regenerate = useMutation({
     mutationFn: () => api.post(`/api/series/${series.id}/outline/regenerate`, { instructions: redo.trim() || null }),
     onSuccess: refresh,
@@ -239,6 +298,7 @@ function OutlineEditor({ series }: { series: Series }) {
 
   return (
     <section className="outline">
+      <DesignPreview series={series} />
       <div className="panel">
         <label className="field">
           <span>Título del tomo</span>
@@ -254,6 +314,12 @@ function OutlineEditor({ series }: { series: Series }) {
               <input className="outline-title" value={d.title} onChange={(e) => update(i, { title: e.target.value })} aria-label={`Título de la sección ${i + 1}`} />
               <textarea value={d.objectives} onChange={(e) => update(i, { objectives: e.target.value })} rows={2} placeholder="Objetivos (uno por línea)" aria-label="Objetivos" />
               <input className="small" value={d.key_points} onChange={(e) => update(i, { key_points: e.target.value })} placeholder="Puntos clave, separados por comas" aria-label="Puntos clave" />
+              {d.pages != null && (
+                <label className="pages small">
+                  <input type="number" min={1} max={60} value={d.pages} onChange={(e) => update(i, { pages: Math.max(1, Math.min(60, Number(e.target.value) || 1)) })} aria-label="Páginas de la sección" />
+                  páginas
+                </label>
+              )}
             </div>
             <div className="outline-tools">
               <button className="icon" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Subir">↑</button>
@@ -275,7 +341,7 @@ function OutlineEditor({ series }: { series: Series }) {
           <button className="ghost" onClick={() => regenerate.mutate()} disabled={regenerate.isPending}>Rehacer esquema</button>
         </div>
         <button className="primary" onClick={() => approve.mutate()} disabled={approve.isPending}>
-          {approve.isPending ? 'Aprobando…' : `Aprobar y escribir ${draft.length} ${draft.length === 1 ? 'sección' : 'secciones'}`}
+          {approve.isPending ? 'Aprobando…' : `Generar así · ${draft.length} ${draft.length === 1 ? 'sección' : 'secciones'}${pages ? ` · ~${pages} páginas` : ''}`}
         </button>
       </div>
       {(approve.error || regenerate.error) && <p className="error" role="alert">{errorText(approve.error ?? regenerate.error, 'Algo salió mal.')}</p>}

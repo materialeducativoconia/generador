@@ -506,3 +506,12 @@ a.sec-row { transition: background-color 160ms ease; }
 .swatches span { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border); }
 .style-card .sample { font-size: 22px; line-height: 1.1; }
 .style-card ul { margin: 0; padding-left: 18px; }
+
+/* Proposed design, shown with the outline before anything is written */
+.design-preview { display: grid; gap: 20px; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); align-items: start; margin-bottom: 16px; }
+.design-preview h2 { margin: 2px 0 6px; font-size: 20px; }
+.design-info { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.design-info select { max-width: 100%; }
+@media (max-width: 560px) { .design-preview { grid-template-columns: 1fr; } .design-sample { max-width: 240px; } }
+.outline-item .pages { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.outline-item .pages input { width: 64px; }

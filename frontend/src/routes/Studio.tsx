@@ -18,13 +18,16 @@ const EXAMPLES = [
 
 type Created = { series: { id: string } }
 
+const PAGES = [8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 100]
+
 export function Studio() {
   const { data: me } = useMe()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [request, setRequest] = useState('')
   const [audience, setAudience] = useState(AUDIENCES[0])
-  const [sections, setSections] = useState<number | 'auto'>('auto')
+  // 'auto', 's<n>' (sections) or 'p<n>' (pages): material is ordered by length too
+  const [extent, setExtent] = useState('auto')
   const [style, setStyle] = useState('auto')
   const ready = (useStyles().data?.styles ?? []).filter((s) => s.status === 'ready')
   const idempotencyKey = useRef(crypto.randomUUID())
@@ -34,7 +37,9 @@ export function Studio() {
     mutationFn: () =>
       api.post<Created>(
         '/api/series',
-        { request: request.trim(), audience, section_count: sections === 'auto' ? null : sections, language: 'es',
+        { request: request.trim(), audience, language: 'es',
+          section_count: extent.startsWith('s') ? Number(extent.slice(1)) : null,
+          page_count: extent.startsWith('p') ? Number(extent.slice(1)) : null,
           style_id: style === 'auto' ? null : style },
         { 'Idempotency-Key': idempotencyKey.current },
       ),
@@ -81,10 +86,15 @@ export function Studio() {
               </select>
             </label>
             <label className="select-pill">
-              <span className="sr-only">Secciones</span>
-              <select value={sections} onChange={(e) => setSections(e.target.value === 'auto' ? 'auto' : Number(e.target.value))}>
-                <option value="auto">Secciones: auto</option>
-                {Array.from({ length: 20 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1} {i ? 'secciones' : 'sección'}</option>)}
+              <span className="sr-only">Extensión</span>
+              <select value={extent} onChange={(e) => setExtent(e.target.value)}>
+                <option value="auto">Extensión: auto</option>
+                <optgroup label="Por páginas">
+                  {PAGES.map((n) => <option key={n} value={`p${n}`}>{n} páginas</option>)}
+                </optgroup>
+                <optgroup label="Por secciones">
+                  {Array.from({ length: 20 }, (_, i) => <option key={i + 1} value={`s${i + 1}`}>{i + 1} {i ? 'secciones' : 'sección'}</option>)}
+                </optgroup>
               </select>
             </label>
             {ready.length > 0 && (

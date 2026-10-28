@@ -2,13 +2,17 @@ import { QueryClient, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { api, type Me } from './apiClient'
 import { supabase } from './supabase'
-import type { CoverFields, Export, Lesson, Progress, Quality, Series, SeriesSummary, Style } from './types'
+import type { CoverFields, Export, Lesson, Preview, Progress, Quality, Series, SeriesSummary, Style } from './types'
 
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, retry: 1, refetchOnWindowFocus: false } },
 })
 
 export const useMe = () => useQuery({ queryKey: ['me'], queryFn: () => api.get<Me>('/api/me') })
+
+/** The proposed look on a sample page; refetched whenever the design changes. */
+export const usePreview = (id: string, stamp: string) =>
+  useQuery({ queryKey: ['preview', id, stamp], queryFn: () => api.get<Preview>(`/api/series/${id}/preview`), placeholderData: (p) => p })
 
 type Styles = { styles: Style[]; poll_after_ms: number | null }
 

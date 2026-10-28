@@ -55,6 +55,7 @@ export type LessonSummary = {
   title: string
   objectives: string[]
   key_points: string[]
+  pages?: number | null  // printed pages the Architect gave this section
   status: LessonStatus
   last_error: ApiErrorBody | null
   content_json: { blocks: Block[] } | null
@@ -77,7 +78,12 @@ export type Series = CoverFields & {
   audience: { label: string }
   lessons: LessonSummary[]
   outline_error: ApiErrorBody | null
+  page_target?: number | null  // ordered by length instead of by sections
+  style_id?: string | null
 }
+
+/** A sample page in the tome's look, drawn before anything is written. */
+export type Preview = { design: Design | null; title: string; blocks: Block[]; diagrams: Record<string, string> }
 
 export type Progress = {
   status: SeriesStatus
@@ -99,6 +105,7 @@ export type Quality = {
   facts: { needed: boolean; facts: number; sources: number } | null
   art: { total: number; done: number; active: number; failed: number }
   print: (Preflight & { layout?: { fixed: string[]; issues: string[] } }) | null
+  pages: { target: number | null; actual: number | null }
   cost: { text_usd: number; images_usd: number; review_usd: number; cover_usd: number; total_usd: number; minutes: number | null }
 }
 
