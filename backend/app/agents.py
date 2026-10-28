@@ -17,7 +17,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@2", "writer": "writer@3", "editor": "editor@1", "cover": "cover@2", "designer": "designer@1", "art": "art@2", "research": "research@1", "facts": "facts@1"}
+PROMPT_VERSION = {"architect": "architect@2", "writer": "writer@3", "editor": "editor@1", "cover": "cover@3", "designer": "designer@2", "art": "art@3", "research": "research@1", "facts": "facts@1"}
 
 
 @dataclass
@@ -286,6 +286,8 @@ async def cover_director(llm: LLM, brief: Brief, title: str, genre: str, section
                          design: Design | None = None) -> AgentResult[CoverPlan]:
     style = (f"\nMaqueta interior elegida: tema {design.theme}, adorno {design.ornament}. Usa exactamente esta "
              f"paleta: {', '.join(design.palette)}") if design else ""
+    if design and design.art_style:
+        style += f"\nEstilo de ilustración de las referencias del usuario (respétalo): {design.art_style}"
     messages = [
         {"role": "system", "content": COVER_SYSTEM},
         {"role": "user", "content": f"Título del tomo: {title}\nTipo: {genre}\n{brief.describe()}\n"
@@ -304,17 +306,25 @@ Adornos: estrellas, notas (música), hojas (naturaleza), puntos, formas (geometr
 
 Responde solo con json:
 {"theme": "clave", "palette": ["#fondo muy claro", "#tinta oscura legible", "#acento saturado"],
- "ornament": "uno de los adornos", "rationale": "por qué, en una frase"}
+ "ornament": "uno de los adornos", "rationale": "por qué, en una frase",
+ "style_id": "id de un estilo de la biblioteca del usuario que encaje con este tomo, o null"}
+
+Si el usuario tiene estilos propios en su biblioteca (sacados de sus referencias), prefiere uno cuando encaje con
+el tipo de tomo y su público; si ninguno encaja, deja style_id en null y elige tema y paleta.
 
 La paleta se imprime: fondo casi blanco con un matiz, tinta con contraste alto sobre ese fondo, y un acento
 con carácter que combine con el tema (evita el violeta genérico salvo que el tema lo pida)."""
 
 
-async def designer(llm: LLM, brief: Brief, title: str, genre: str, sections: list[str]) -> AgentResult[Design]:
+async def designer(llm: LLM, brief: Brief, title: str, genre: str, sections: list[str],
+                   library: list[dict] = ()) -> AgentResult[Design]:
+    styles = "".join(f"\n- {s['id']} | {s['name']} | sirve para: {s.get('suits') or '—'} | "
+                     f"{'; '.join(s.get('traits') or [])}" for s in library)
     messages = [
         {"role": "system", "content": DESIGNER_SYSTEM},
         {"role": "user", "content": f"Título del tomo: {title}\nTipo: {genre}\n{brief.describe()}\n"
-                                    f"Secciones: {'; '.join(sections) or '(sin secciones aún)'}"},
+                                    f"Secciones: {'; '.join(sections) or '(sin secciones aún)'}\n"
+                                    f"Biblioteca de estilos del usuario:{styles or ' (vacía)'}"},
     ]
     return await _json_call(llm, messages, Design, temperature=0.8, max_tokens=600)
 
@@ -340,6 +350,8 @@ async def art_director(llm: LLM, brief: Brief, title: str, design: Design | None
                        requests: list) -> AgentResult[ArtPlan]:
     lines = [f"- {r.ref} | {r.kind} | {r.size} | {r.subject}" for r in requests]
     look = f"Tema {design.theme}, paleta {', '.join(design.palette)}" if design else "Tema clásico"
+    if design and design.art_style:
+        look += f"\nEstilo de ilustración de las referencias del usuario (basa tu style en él): {design.art_style}"
     messages = [
         {"role": "system", "content": ART_SYSTEM},
         {"role": "user", "content": f"Título: {title}\n{brief.describe()}\n{look}\n"

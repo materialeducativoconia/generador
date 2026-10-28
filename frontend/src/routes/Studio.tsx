@@ -5,7 +5,7 @@ import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
 import { ApiError } from '../lib/api'
 import { api } from '../lib/apiClient'
-import { useMe, useSeriesList } from '../lib/queries'
+import { useMe, useSeriesList, useStyles } from '../lib/queries'
 
 const AUDIENCES = ['Preescolar (3–5 años)', 'Primaria baja (6–8)', 'Primaria alta (9–12)', 'Secundaria', 'Adultos principiantes']
 
@@ -25,6 +25,8 @@ export function Studio() {
   const [request, setRequest] = useState('')
   const [audience, setAudience] = useState(AUDIENCES[0])
   const [sections, setSections] = useState<number | 'auto'>('auto')
+  const [style, setStyle] = useState('auto')
+  const ready = (useStyles().data?.styles ?? []).filter((s) => s.status === 'ready')
   const idempotencyKey = useRef(crypto.randomUUID())
   const textarea = useRef<HTMLTextAreaElement>(null)
 
@@ -32,7 +34,8 @@ export function Studio() {
     mutationFn: () =>
       api.post<Created>(
         '/api/series',
-        { request: request.trim(), audience, section_count: sections === 'auto' ? null : sections, language: 'es' },
+        { request: request.trim(), audience, section_count: sections === 'auto' ? null : sections, language: 'es',
+          style_id: style === 'auto' ? null : style },
         { 'Idempotency-Key': idempotencyKey.current },
       ),
     onSuccess: (data) => {
@@ -84,6 +87,15 @@ export function Studio() {
                 {Array.from({ length: 20 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1} {i ? 'secciones' : 'sección'}</option>)}
               </select>
             </label>
+            {ready.length > 0 && (
+              <label className="select-pill">
+                <span className="sr-only">Estilo</span>
+                <select value={style} onChange={(e) => setStyle(e.target.value)}>
+                  <option value="auto">Estilo: automático</option>
+                  {ready.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </label>
+            )}
             <button className="send" type="submit" disabled={request.trim().length < 3 || create.isPending} aria-label="Crear tomo">
               {create.isPending ? <span className="spinner" /> : <ArrowUp />}
             </button>

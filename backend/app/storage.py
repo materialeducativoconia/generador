@@ -1,4 +1,5 @@
-"""Supabase Storage over its REST API: private `exports` (PDFs), public `covers`. Only the server holds this key."""
+"""Supabase Storage over its REST API: private `exports` (PDFs) and `references` (style uploads), public
+`covers` and `images`. Only the server holds this key."""
 
 from urllib.parse import quote
 
@@ -29,9 +30,24 @@ class Storage:
         response.raise_for_status()
         return response.content
 
-    async def signed_url(self, key: str, expires_in: int = 60, download_name: str | None = None) -> str:
+    async def upload_url(self, key: str, bucket: str) -> str:
+        """A one-off URL the browser PUTs a file to, so big reference PDFs never pass through our server."""
         async with httpx.AsyncClient(timeout=15) as http:
-            response = await http.post(f"{self.base}/object/sign/{BUCKET}/{quote(key)}",
+            response = await http.post(f"{self.base}/object/upload/sign/{bucket}/{quote(key)}",
+                                       headers={**self.headers, "x-upsert": "true"})
+        response.raise_for_status()
+        return f"{self.base}{response.json()['url']}"
+
+    async def download_private(self, key: str, bucket: str) -> bytes:
+        async with httpx.AsyncClient(timeout=120) as http:
+            response = await http.get(f"{self.base}/object/{bucket}/{quote(key)}", headers=self.headers)
+        response.raise_for_status()
+        return response.content
+
+    async def signed_url(self, key: str, expires_in: int = 60, download_name: str | None = None,
+                         bucket: str = BUCKET) -> str:
+        async with httpx.AsyncClient(timeout=15) as http:
+            response = await http.post(f"{self.base}/object/sign/{bucket}/{quote(key)}",
                                        json={"expiresIn": expires_in}, headers=self.headers)
         response.raise_for_status()
         url = f"{self.base}{response.json()['signedURL']}"
@@ -39,8 +55,18 @@ class Storage:
             url += f"&download={quote(download_name)}"
         return url
 
-    async def delete(self, key: str) -> None:
+    async def signed_urls(self, keys: list[str], bucket: str, expires_in: int = 3600) -> dict[str, str]:
+        """Many private files in one call (the style library shows three previews per style)."""
+        if not keys:
+            return {}
         async with httpx.AsyncClient(timeout=15) as http:
-            response = await http.request("DELETE", f"{self.base}/object/{BUCKET}",
+            response = await http.post(f"{self.base}/object/sign/{bucket}", headers=self.headers,
+                                       json={"expiresIn": expires_in, "paths": keys})
+        response.raise_for_status()
+        return {r["path"]: f"{self.base}{r['signedURL']}" for r in response.json() if r.get("signedURL")}
+
+    async def delete(self, key: str, bucket: str = BUCKET) -> None:
+        async with httpx.AsyncClient(timeout=15) as http:
+            response = await http.request("DELETE", f"{self.base}/object/{bucket}",
                                           json={"prefixes": [key]}, headers=self.headers)
         response.raise_for_status()

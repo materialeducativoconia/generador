@@ -12,18 +12,21 @@
   @font-face { font-family: "{{ family }}"; font-weight: 100 1000; src: url("{{ fonts }}/{{ file }}"); }
   {% endfor %}
 
+  {# A library style's page frame sits inside the margin, so the text area keeps its size. #}
+  {% set pad = frame.pad %}
   @page {
     size: {{ geo.w }}mm {{ geo.h }}mm;
-    margin: {{ geo.top }}mm {{ geo.outer }}mm {{ geo.bottom }}mm;
+    margin: {{ geo.top - pad }}mm {{ geo.outer - pad }}mm {{ geo.bottom - pad }}mm;
+    {% if pad %}padding: {{ pad }}mm; border: {{ frame.border }} {{ c.ink }}; border-radius: {{ frame.radius }}mm;{% endif %}
     @top-left { content: string(tome-title); font: 600 8pt {{ head|safe }}; color: #8a8580; }
     @top-right { content: string(section-title); font: 600 8pt {{ head|safe }}; color: #8a8580; }
     @bottom-center { content: counter(page); font: 700 9pt {{ head|safe }}; color: #57534e; }
   }
   {% if print_edition %}
-  @page :left { margin-left: {{ geo.outer }}mm; margin-right: {{ geo.inner }}mm; }
-  @page :right { margin-left: {{ geo.inner }}mm; margin-right: {{ geo.outer }}mm; }
+  @page :left { margin-left: {{ geo.outer - pad }}mm; margin-right: {{ geo.inner - pad }}mm; }
+  @page :right { margin-left: {{ geo.inner - pad }}mm; margin-right: {{ geo.outer - pad }}mm; }
   {% endif %}
-  @page cover { margin: 0; @top-left { content: none } @top-right { content: none } @bottom-center { content: none } }
+  @page cover { margin: 0; padding: 0; border: none; @top-left { content: none } @top-right { content: none } @bottom-center { content: none } }
 
   :root { --ink: {{ c.ink }}; --muted: {{ c.muted }}; --line: {{ c.line }}; --soft: {{ c.soft }}; --accent: {{ c.accent }}; --tint: {{ c.tint }}; }
   * { box-sizing: border-box; }
@@ -121,6 +124,10 @@
 
   .diagram { margin: 4mm 0 5mm; text-align: center; page-break-inside: avoid; }
   .diagram svg { max-width: 100%; height: auto; }
+  /* "Ficha N" headings print as a workbook tab: a pencil on an accent label. */
+  h2.b.tab, h3.b.tab { display: inline-block; color: #fff; font-size: 12pt; padding: 1mm 4mm 1mm 9mm;
+                       border-radius: 0 3mm 3mm 0; margin: 0 0 3mm;
+                       background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M3 17.2V21h3.8L17.8 9.9l-3.7-3.7zM20.7 7a1 1 0 0 0 0-1.4l-2.3-2.3a1 1 0 0 0-1.4 0l-1.8 1.8 3.7 3.7z'/%3E%3C/svg%3E") no-repeat 3mm center / 4mm 4mm; }
   .ws-wrap { margin: 3mm 0 6mm; text-align: center; page-break-inside: avoid; }
   .ws-wrap svg { width: 100%; height: auto; max-height: {{ geo.content_h - 56 }}mm; }
   .page-break ~ .ws-wrap svg { max-height: {{ geo.content_h - 24 }}mm; }
@@ -204,7 +211,7 @@
   {% set ex = namespace(n=0, broke=false) %}
   {% for b in s.content.blocks %}
     {% if b.type == "heading" %}
-      <h{{ b.level }} class="b">{{ b.text|inline }}</h{{ b.level }}>
+      <h{{ b.level }} class="b{% if b.text.startswith('Ficha') %} tab{% endif %}">{{ b.text|inline }}</h{{ b.level }}>
     {% elif b.type == "paragraph" %}
       <p>{{ b.text|inline }}</p>
     {% elif b.type == "list" %}

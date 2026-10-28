@@ -17,6 +17,24 @@ export type Design = {
   palette: [string, string, string]
   ornament: 'estrellas' | 'notas' | 'hojas' | 'puntos' | 'formas' | 'ninguno'
   rationale?: string
+  // set when the design comes from a style in the user's library
+  head_font?: 'Fredoka' | 'Patrick Hand' | 'Fraunces' | 'Baloo 2' | 'Lexend' | 'Nunito' | 'Pacifico' | 'Sniglet' | null
+  frame?: 'none' | 'line' | 'rounded' | 'dashed' | 'double'
+  art_style?: string | null
+  style_id?: string | null
+}
+
+export type Style = {
+  id: string
+  name: string
+  status: 'uploading' | 'analyzing' | 'ready' | 'failed'
+  error: string | null
+  created_at: string
+  previews: string[]
+  design: Design | null
+  score: number | null
+  traits: string[]
+  suits: string | null
 }
 
 export type SeriesSummary = CoverFields & {

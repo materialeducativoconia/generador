@@ -15,7 +15,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
 from app.printing import BLEED_MM, PAPERS, SPINE_TEXT_PAGES, is_color, page_geometry, spine_mm
-from app.themes import DEFAULT_PALETTE, ORNAMENTS, THEMES, mix
+from app.themes import DEFAULT_PALETTE, FRAMES, ORNAMENTS, THEMES, mix, theme_for
 from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Design, Keyboard, LetterGrid, SectionContent, Tracing
 from app.diagrams import render_diagram
 from app.worksheets import render_worksheet
@@ -138,7 +138,7 @@ _env.globals.update(keyboard_svg=keyboard_svg, tracing_svg=tracing_svg, letter_g
 
 def theme_colors(design: Design | None, palette: list[str] | None = None):
     """The theme and its colours: the web preview's diagrams use these too."""
-    th = THEMES[design.theme if design else "clasico"]
+    th = theme_for(design)
     bg, ink, accent = (design.palette if design else None) or palette or DEFAULT_PALETTE
     return th, {"ink": ink, "accent": accent, "tint": mix(bg, accent, 0.28), "soft": mix("#FFFFFF", accent, 0.09),
                 "line": mix("#FFFFFF", ink, 0.18), "muted": mix(ink, "#FFFFFF", 0.38)}
@@ -149,8 +149,10 @@ def _look(tome: Tome) -> dict:
     th, colors = theme_colors(tome.design, tome.palette)
     theme_fonts = sorted({(th.head, th.head_file), (th.body, th.body_file)} - {("Andika", "Andika-Regular.ttf"),
                                                                               ("Nunito", "Nunito-Variable.ttf")})
+    border, radius = FRAMES[tome.design.frame if tome.design else "none"]
     return {"th": th, "c": colors, "head": f'"{th.head}"', "body": f'"{th.body}"', "theme_fonts": theme_fonts,
-            "fonts": (ASSETS / "fonts").as_uri()}
+            "fonts": (ASSETS / "fonts").as_uri(), "frame": {"border": border, "radius": radius,
+                                                         "pad": 0 if border == "none" else 4}}
 
 
 def render_html(tome: Tome, *, paper: str, include_answer_key: bool, print_edition: bool = False,

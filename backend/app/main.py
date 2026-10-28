@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.api import exports, health, me, series
+from app.api import exports, health, me, series, styles
 from app.auth import TokenVerifier
 from app.config import Settings
 from app.db import make_engine
@@ -36,4 +36,5 @@ def create_app(engine: AsyncEngine | None = None, verifier: TokenVerifier | None
     app.include_router(me.router)
     app.include_router(series.router)
     app.include_router(exports.router)
+    app.include_router(styles.router)
     return app

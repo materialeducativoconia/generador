@@ -486,3 +486,23 @@ a.sec-row { transition: background-color 160ms ease; }
 /* Diagrams arrive as the PDF's own SVG; let them shrink with the page. */
 .diagram { margin: 16px 0 20px; text-align: center; }
 .diagram svg { max-width: 100%; height: auto; }
+
+/* A library style's page frame, drawn inside the sheet like the PDF's @page border. */
+.sheet { position: relative; }
+.sheet::after { content: ''; position: absolute; inset: 12px; border: var(--t-frame, none); border-radius: 12px; pointer-events: none; }
+
+/* Style library */
+.styles-head { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; justify-content: space-between; margin-bottom: 20px; }
+.styles-head p { max-width: 60ch; }
+.uploader { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.uploader input[type='text'] { min-width: 0; flex: 1 1 180px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; background: var(--surface, #fff); }
+.style-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.style-card { display: flex; flex-direction: column; gap: 10px; }
+.style-card .previews { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.style-card .previews img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); background: #fff; }
+.style-card .previews .empty { aspect-ratio: 3 / 4; border-radius: 6px; background: var(--border); opacity: .4; }
+.style-card h3 { margin: 0; font-size: 16px; display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.swatches { display: flex; gap: 6px; align-items: center; }
+.swatches span { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border); }
+.style-card .sample { font-size: 22px; line-height: 1.1; }
+.style-card ul { margin: 0; padding-left: 18px; }

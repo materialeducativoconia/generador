@@ -24,6 +24,7 @@ from app.artwork import ImageRequest, plan_sheets, sheet_prompt, slice_sheet
 from app.illustrator import (cover_jpeg, line_art_coverage, normalize_subject, prepare_image, reference_image,
                              vectorize)
 from app.references import find_covers
+from app.styles import contact_sheet, read_spec, sample_pages, theme_from_spec
 from app.vision import Review
 
 log = logging.getLogger("worker")
@@ -76,7 +77,7 @@ async def reap_stale_jobs(engine: AsyncEngine, lease_seconds: int = 600) -> int:
 
 async def process_job(deps: Deps, job: dict) -> None:
     handler = {"outline": _outline, "lesson": _lesson, "pdf_export": _pdf_export, "cover": _cover,
-               "illustration": _illustration}[job["kind"]]
+               "illustration": _illustration, "style": _style}[job["kind"]]
     try:
         await handler(deps, job)
     except UpstreamError as exc:
@@ -249,14 +250,28 @@ async def _cover(deps: Deps, job: dict) -> None:
     # The Designer runs once per tome; asking for another cover keeps the interior's look.
     design = Design.model_validate(_json(series["design"])) if series["design"] else None
     if design is None:
-        try:
-            designed = await designer(deps.llm, brief, title, genre, list(sections))
-        except AgentFailed as exc:
-            await _log_attempts(deps.engine, job, "designer", exc.attempts)
-            raise
-        design = designed.value
+        async with deps.engine.connect() as conn:
+            library = {str(r["id"]): r for r in (await conn.execute(text(
+                """select id, name, spec, design from public.styles where user_id = :u and status = 'ready'
+                    order by created_at desc limit 12"""), {"u": job["user_id"]})).mappings().all()}
+        pinned = library.get(str(series["style_id"])) if series["style_id"] else None
+        attempts = []
+        if pinned:  # the user chose a style for this tome: no Designer call at all
+            design = Design.model_validate(_json(pinned["design"]))
+        else:
+            try:
+                designed = await designer(deps.llm, brief, title, genre, list(sections), [
+                    {"id": k, "name": r["name"], **{f: (_json(r["spec"]) or {}).get(f) for f in ("suits", "traits")}}
+                    for k, r in library.items()])
+            except AgentFailed as exc:
+                await _log_attempts(deps.engine, job, "designer", exc.attempts)
+                raise
+            design, attempts = designed.value, designed.attempts
+            chosen = library.get(design.style_id or "")
+            design = Design.model_validate(_json(chosen["design"])) if chosen else Design(
+                theme=design.theme, palette=design.palette, ornament=design.ornament, rationale=design.rationale)
         async with deps.engine.begin() as conn:
-            await _insert_logs(conn, job, "designer", designed.attempts)
+            await _insert_logs(conn, job, "designer", attempts)
             await conn.execute(text("update public.series set design = cast(:d as jsonb) where id = :s"),
                                {"s": job["series_id"], "d": design.model_dump_json()})
     if deps.images is None:
@@ -512,6 +527,43 @@ async def _attach_image(conn, lesson_id: str, block_id: str, asset_id, word: str
             return
 
 
+async def _style(deps: Deps, job: dict) -> None:
+    """Style library: sample the user's reference file, let one vision call pick the best pages and read their
+    style, and turn that into a Design (app.styles)."""
+    style_id = job["payload"]["style_id"]
+    async with deps.engine.connect() as conn:
+        style = (await conn.execute(text("select * from public.styles where id = :id and user_id = :u"),
+                                    {"id": style_id, "u": job["user_id"]})).mappings().one_or_none()
+    if style is None:  # deleted meanwhile
+        async with deps.engine.begin() as conn:
+            await _succeed(conn, job)
+        return
+    if deps.vision is None:
+        raise JobFailed("not_configured", "Falta OPENROUTER_API_KEY para analizar estilos.")
+    try:
+        data = await deps.storage.download_private(style["source_key"], bucket="references")
+        pages = await asyncio.to_thread(sample_pages, data, style["source_type"])
+    except Exception as exc:  # a broken or missing upload will not get better on retry
+        log.warning("style %s unreadable: %s", style_id, exc)
+        raise JobFailed("unreadable", "No pudimos leer el archivo. Sube un PDF o una imagen válidos.") from exc
+    raw, cost = await deps.vision.analyze_style(await asyncio.to_thread(contact_sheet, pages), len(pages))
+    spec = read_spec(raw, len(pages))
+    best = [pages[i - 1] for i in spec.best_pages] or pages[:3]
+    keys = []
+    for n, page in enumerate(best, 1):  # previews for the library page, private like the upload
+        key = f"{job['user_id']}/{style_id}/best-{n}.jpg"
+        await deps.storage.upload(key, page, "image/jpeg", bucket="references")
+        keys.append(key)
+    design = theme_from_spec(spec, name=style["name"], style_id=str(style_id))
+    async with deps.engine.begin() as conn:
+        await conn.execute(text(
+            """update public.styles set status = 'ready', spec = cast(:spec as jsonb), design = cast(:d as jsonb),
+                      pages = cast(:p as jsonb), error = null where id = :id"""),
+            {"id": style_id, "spec": json.dumps({**spec.model_dump(), "cost_usd": cost}),
+             "d": design.model_dump_json(), "p": json.dumps(keys)})
+        await _succeed(conn, job)
+
+
 async def _pdf_export(deps: Deps, job: dict) -> None:
     from app.exports import run_export  # WeasyPrint is heavy; only load it when exporting
 
@@ -566,6 +618,9 @@ async def _fail(engine: AsyncEngine, job: dict, code: str, message: str) -> None
             await conn.execute(text(
                 "update public.exports set status = 'failed', finished_at = now() where job_id = :j"
             ), {"j": job["id"]})
+        elif job["kind"] == "style":
+            await conn.execute(text("update public.styles set status = 'failed', error = :m where id = :id"),
+                               {"id": job["payload"]["style_id"], "m": message})
 
 
 # ---------------------------------------------------------------------------

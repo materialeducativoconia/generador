@@ -409,13 +409,39 @@ class CoverPlan(BaseModel):
 Hex = Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")]
 
 
+Ornament = Literal["estrellas", "notas", "hojas", "puntos", "formas", "ninguno"]
+Frame = Literal["none", "line", "rounded", "dashed", "double"]
+HeadFont = Literal["Fredoka", "Patrick Hand", "Fraunces", "Baloo 2", "Lexend", "Nunito", "Pacifico", "Sniglet"]
+
+
 class Design(BaseModel):
-    """The Designer's choice: one curated theme (app.themes), a palette and an ornament."""
+    """The Designer's choice: one curated theme (app.themes), a palette and an ornament. A style from the
+    user's library (Phase 9) also sets the heading font, a page frame and the illustration style."""
 
     theme: Literal["juego", "cuaderno", "editorial", "metodo", "ciencia", "clasico"]
     palette: list[Hex] = Field(min_length=3, max_length=3)  # light background, ink, accent
-    ornament: Literal["estrellas", "notas", "hojas", "puntos", "formas", "ninguno"] = "ninguno"
+    ornament: Ornament = "ninguno"
     rationale: str = Field(default="", max_length=400)
+    head_font: HeadFont | None = None
+    frame: Frame = "none"
+    art_style: str | None = Field(default=None, max_length=500)  # English, for the image model
+    style_id: str | None = None  # the library style it came from
+
+
+class StyleSpec(BaseModel):
+    """The Style analyst's reading of a user's reference pages: style only, never their artwork or text."""
+
+    best_pages: list[int] = Field(default_factory=list, max_length=4)  # 1-based, on the contact sheet
+    score: int = Field(default=5, ge=1, le=10)  # how professional the design looks
+    palette: list[Hex] = Field(min_length=3, max_length=3)  # background, ink, accent
+    heading_look: Literal["rounded", "handwritten", "serif", "geometric", "script", "bubbly"] = "rounded"
+    frame: Frame = "none"
+    ornament: Ornament = "ninguno"
+    density: Literal["airy", "balanced", "dense"] = "balanced"
+    color_use: Literal["bw", "accents", "full"] = "accents"
+    illustration_style: str = Field(default="", max_length=400)
+    traits: list[Annotated[str, Field(max_length=160)]] = Field(default_factory=list, max_length=8)
+    suits: str = Field(default="", max_length=240)
 
 
 class Character(BaseModel):

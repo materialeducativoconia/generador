@@ -22,6 +22,23 @@ export const ORNAMENTS: Record<Design['ornament'], string> = {
   ninguno: '',
 }
 
+/** Heading fonts a library style may use: family and its Google Fonts query, as bundled for the PDF. */
+const HEAD_FONTS: Record<NonNullable<Design['head_font']>, [number, string]> = {
+  Fredoka: [600, 'Fredoka:wght@400..700'], 'Patrick Hand': [400, 'Patrick+Hand'], Fraunces: [700, 'Fraunces:wght@300..800'],
+  'Baloo 2': [800, 'Baloo+2:wght@400..800'], Lexend: [700, 'Lexend:wght@300..800'], Nunito: [900, 'Nunito:wght@400..900'],
+  Pacifico: [400, 'Pacifico'], Sniglet: [800, 'Sniglet:wght@800'],
+}
+export const FRAMES: Record<NonNullable<Design['frame']>, string> = {
+  none: 'none', line: '1.5px solid', rounded: '2px solid', dashed: '2px dashed', double: '4px double',
+}
+
+function themeOf(d: Design): Theme {
+  const t = THEMES[d.theme]
+  if (!d.head_font) return t
+  const [headWeight, font] = HEAD_FONTS[d.head_font]
+  return { ...t, head: d.head_font, headWeight, fonts: `${t.fonts}&family=${font}` }
+}
+
 const DEFAULT: Design = { theme: 'clasico', palette: ['#F5F3FF', '#1C1917', '#4F46E5'], ornament: 'ninguno' }
 
 function mix(a: string, b: string, t: number) {
@@ -32,7 +49,7 @@ function mix(a: string, b: string, t: number) {
 /** CSS variables for a themed sheet, computed like the PDF's tints. */
 export function themeVars(design: Design | null | undefined) {
   const d = design ?? DEFAULT
-  const t = THEMES[d.theme]
+  const t = themeOf(d)
   const [bg, ink, accent] = d.palette
   return {
     theme: t,
@@ -41,6 +58,7 @@ export function themeVars(design: Design | null | undefined) {
       '--t-head': `'${t.head}', 'Geist', sans-serif`, '--t-body': `'${t.body}', 'Andika', sans-serif`, '--t-head-w': t.headWeight,
       '--t-ink': ink, '--t-accent': accent, '--t-tint': mix(bg, accent, 0.28), '--t-soft': mix('#ffffff', accent, 0.09),
       '--t-radius': `${t.radius}px`,
+      '--t-frame': d.frame && d.frame !== 'none' ? `${FRAMES[d.frame]} ${ink}` : 'none',
     } as React.CSSProperties,
   }
 }
@@ -49,7 +67,7 @@ const loaded = new Set<string>()
 
 /** Theme fonts load on demand from Google Fonts, the same OFL families the PDF bundles. */
 export function useThemeFonts(design: Design | null | undefined) {
-  const fonts = THEMES[(design ?? DEFAULT).theme].fonts
+  const fonts = themeOf(design ?? DEFAULT).fonts
   useEffect(() => {
     if (loaded.has(fonts)) return
     loaded.add(fonts)

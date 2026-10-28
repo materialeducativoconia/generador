@@ -13,10 +13,10 @@ from uuid6 import uuid7
 from app.api.deps import current_user_id
 from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Block, Design, OutlineSection, block_assets
 from app.diagrams import render_diagram
-from app.worksheets import render_worksheet
 from app.errors import ApiError
 from app.jobs import enqueue_cover
 from app.llm import USD_PER_M
+from app.worksheets import render_worksheet
 
 router = APIRouter()
 UserId = Annotated[uuid.UUID, Depends(current_user_id)]
@@ -33,6 +33,7 @@ class NewTome(BaseModel):
     language: str = Field(default="es", pattern=r"^[a-z]{2}(-[A-Z]{2})?$")
     section_count: int | None = Field(default=None, ge=1, le=20)
     extra_instructions: str | None = Field(default=None, max_length=2000)
+    style_id: uuid.UUID | None = None  # a ready style from the user's library; None lets the Designer choose
 
 
 class OutlineLesson(OutlineSection):
@@ -67,15 +68,17 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
         series_id, job_id = uuid7(), uuid7()
         await conn.execute(text(
             """insert into public.series (id, user_id, topic, audience, language, lesson_count,
-                                          extra_instructions, status)
-               values (:id, :u, :topic, cast(:audience as jsonb), :lang, :n, :extra, 'outlining')"""
+                                          extra_instructions, status, style_id)
+               values (:id, :u, :topic, cast(:audience as jsonb), :lang, :n, :extra, 'outlining',
+                       (select id from public.styles where id = :st and user_id = :u and status = 'ready'))"""
         ), {"id": series_id, "u": user_id, "topic": body.request, "audience": json.dumps({"label": body.audience}),
-            "lang": body.language, "n": body.section_count or 10, "extra": body.extra_instructions})
+            "lang": body.language, "n": body.section_count or 10, "extra": body.extra_instructions,
+            "st": body.style_id})
         await conn.execute(text(
             """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, idempotency_key)
                values (:id, :u, :s, 'outline', 'queued', cast(:payload as jsonb), :k)"""
         ), {"id": job_id, "u": user_id, "s": series_id, "k": idempotency_key,
-            "payload": json.dumps({"brief": body.model_dump()})})
+            "payload": json.dumps({"brief": body.model_dump(exclude={"style_id"})})})
         return await _created(conn, series_id, job_id)
 
 

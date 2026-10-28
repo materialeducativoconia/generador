@@ -2,13 +2,23 @@ import { QueryClient, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { api, type Me } from './apiClient'
 import { supabase } from './supabase'
-import type { CoverFields, Export, Lesson, Progress, Quality, Series, SeriesSummary } from './types'
+import type { CoverFields, Export, Lesson, Progress, Quality, Series, SeriesSummary, Style } from './types'
 
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, retry: 1, refetchOnWindowFocus: false } },
 })
 
 export const useMe = () => useQuery({ queryKey: ['me'], queryFn: () => api.get<Me>('/api/me') })
+
+type Styles = { styles: Style[]; poll_after_ms: number | null }
+
+/** The style library; polls while a reference is being analysed (~20 s). */
+export const useStyles = () =>
+  useQuery({
+    queryKey: ['styles'],
+    queryFn: () => api.get<Styles>('/api/styles'),
+    refetchInterval: (q) => q.state.data?.poll_after_ms ?? false,
+  })
 
 /** A cover takes ~20–60 s to paint; poll only while one is on its way. */
 export const coverPending = (s: CoverFields & { status: string }) =>

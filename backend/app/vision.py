@@ -32,6 +32,23 @@ con un elemento por ilustración, en el mismo orden. ok es false solo si tiene t
 pedido, si es inapropiada para niños, o si {extra}"""
 
 
+STYLE_PROMPT = """Eres directora de arte de una editorial de material educativo impreso. La imagen tiene {n} páginas
+de referencia numeradas (portadas y páginas interiores de cuadernillos o libros). Lee su ESTILO, no su contenido:
+1. Elige hasta 3 páginas con el diseño más profesional y vendible (best_pages, por su número).
+2. Describe el estilo común de esas páginas para reproducirlo en libros nuevos, sin copiar dibujos, textos,
+   personajes ni marcas.
+Responde solo con json:
+{{"best_pages": [1, 3], "score": 1-10 (qué tan profesional es el diseño),
+ "palette": ["#fondo de página muy claro", "#tinta del texto", "#color de acento principal"],
+ "heading_look": "rounded|handwritten|serif|geometric|script|bubbly" (cómo son los títulos),
+ "frame": "none|line|rounded|dashed|double" (marco alrededor de cada página),
+ "ornament": "estrellas|notas|hojas|puntos|formas|ninguno",
+ "density": "airy|balanced|dense", "color_use": "bw|accents|full" (interior en blanco y negro, con acentos o a color),
+ "illustration_style": "en inglés, una frase: técnica y trazo de las ilustraciones (p. ej. thick black outline clip-art, flat vector, watercolor)",
+ "traits": ["hasta 8 rasgos de maquetación en español, breves (p. ej. pestaña 'Ficha N' arriba a la izquierda, casillas de autoevaluación)"],
+ "suits": "para qué tomos sirve este estilo, en una frase en español"}}"""
+
+
 @dataclass
 class Review:
     ok: bool
@@ -59,9 +76,13 @@ class OpenRouterVision:
         return [_review(panels[i] if i < len(panels) and isinstance(panels[i], dict) else {"ok": True},
                         cost if i == 0 else None) for i in range(len(subjects))]
 
-    async def _ask(self, image: bytes, prompt: str) -> tuple[dict, float | None]:
+    async def analyze_style(self, sheet: bytes, pages: int) -> tuple[dict, float | None]:
+        """Curator and Style analyst in one call over a numbered contact sheet of reference pages."""
+        return await self._ask(sheet, STYLE_PROMPT.format(n=pages), max_tokens=1200)
+
+    async def _ask(self, image: bytes, prompt: str, max_tokens: int = 800) -> tuple[dict, float | None]:
         url = f"data:{_sniff(image)};base64,{base64.b64encode(image).decode()}"
-        body = {"model": self.model, "temperature": 0, "max_tokens": 800,
+        body = {"model": self.model, "temperature": 0, "max_tokens": max_tokens,
                 "reasoning": {"exclude": True}, "response_format": {"type": "json_object"},
                 "messages": [{"role": "user", "content": [
                     {"type": "text", "text": prompt},

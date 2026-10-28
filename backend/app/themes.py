@@ -4,7 +4,7 @@ Every font here is bundled (OFL) under assets/fonts for WeasyPrint and is also o
 so the web preview (frontend/src/lib/themes.ts) matches the PDF.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -36,6 +36,29 @@ THEMES: dict[str, Theme] = {
     "clasico": Theme("Clásico", "cuando ninguno encaja: neutro y claro",
                      "Nunito", "Nunito-Variable.ttf", 900, "Andika", "Andika-Regular.ttf", 11.5, "plain", 4),
 }
+
+# Heading fonts a library style may pick (all bundled under assets/fonts and on Google Fonts): file, weight.
+FONTS: dict[str, tuple[str, int]] = {
+    "Fredoka": ("Fredoka-Variable.ttf", 600), "Patrick Hand": ("PatrickHand-Regular.ttf", 400),
+    "Fraunces": ("Fraunces-Variable.ttf", 700), "Baloo 2": ("Baloo2-Variable.ttf", 800),
+    "Lexend": ("Lexend-Variable.ttf", 700), "Nunito": ("Nunito-Variable.ttf", 900),
+    "Pacifico": ("Pacifico-Regular.ttf", 400), "Sniglet": ("Sniglet-ExtraBold.ttf", 800),
+}
+# Page frames drawn by @page (inside the margin, so the text area stays the same): CSS border, radius in mm.
+FRAMES: dict[str, tuple[str, float]] = {
+    "none": ("none", 0), "line": ("1.2pt solid", 0), "rounded": ("1.6pt solid", 6),
+    "dashed": ("1.4pt dashed", 4), "double": ("3pt double", 3),
+}
+
+
+def theme_for(design) -> Theme:
+    """The curated theme, with a library style's heading font when it has one."""
+    th = THEMES[design.theme if design else "clasico"]
+    if design and design.head_font:
+        file, weight = FONTS[design.head_font]
+        th = replace(th, head=design.head_font, head_file=file, head_weight=weight)
+    return th
+
 
 DEFAULT_PALETTE = ["#F5F3FF", "#1C1917", "#4F46E5"]  # background tint, ink, accent
 

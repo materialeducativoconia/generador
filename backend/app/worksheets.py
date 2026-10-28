@@ -3,7 +3,8 @@ fill-in sentences, word search, classify and drawing frames.
 
 Like app.diagrams, each renderer returns one inline <svg>, so the PDF and the web preview are the same picture.
 Pictures come from `picture(asset_id) -> href | None` (a data URI in the PDF, a public URL on the web); a word
-without a drawing yet gets a dashed placeholder. Children's text uses Andika, a typeface made for learning to read.
+without a drawing yet gets a dashed placeholder. Everything a child reads — letters, syllables, words — is set in
+Andika, a typeface made for learning to read; the theme's heading font only dresses titles and numbers.
 """
 
 import random
@@ -100,10 +101,10 @@ def _fit(room: float, rows: int, lo: float, hi: float) -> float:
 def syllable_chart(b, c, font, pic, top, room):
     letter = b.letter.strip()
     body = [_box(0, top, W, 104, c, fill=c["soft"], rx=14),
-            _text(76, top + 82, f"{letter[:1].upper()}{letter[1:]} {letter.lower()}", font, size=76,
+            _text(76, top + 82, f"{letter[:1].upper()}{letter[1:]} {letter.lower()}", KID, size=76,
                   fill=c["accent"], weight=800)]
     syllables = list(dict.fromkeys(w.syllable for w in b.words))
-    body += [_text(212 + i * 88, top + 66, s, font, size=36, fill=c["ink"], weight=700)
+    body += [_text(212 + i * 88, top + 66, s, KID, size=36, fill=c["ink"], weight=700)
              for i, s in enumerate(syllables[:5])]
     cols = 3 if len(b.words) > 8 else 2
     rows = -(-len(b.words) // cols)
@@ -117,7 +118,7 @@ def syllable_chart(b, c, font, pic, top, room):
                     f'stroke="{c["ink"]}" stroke-width="1.6"/>')
         body.append(_word(x + 16, y + 34, [(before, c["ink"]), (syl, c["accent"]), (after, c["ink"])], size=24,
                           anchor="start"))
-        body.append(_text(x + 16, y + ch - 24, w.syllable, font, size=40, fill=c["accent"], weight=800, anchor="start"))
+        body.append(_text(x + 16, y + ch - 24, w.syllable, KID, size=40, fill=c["accent"], weight=700, anchor="start"))
         body.append(pic(w.word, x + cw - p - 12, y + (ch - 8 - p) / 2, p, p))
     return W, y0 + rows * ch, body
 
@@ -183,7 +184,7 @@ def _pw_circle(b, c, font, pic, top, room):
             oy = y + 12 + gap * (k + 0.5)
             body.append(f'<ellipse cx="{x + cw - 70:.1f}" cy="{oy:.1f}" rx="46" ry="{min(22, gap / 2 - 3):.1f}" '
                         f'fill="none" stroke="{c["ink"]}" stroke-width="1.6"/>')
-            body.append(_text(x + cw - 70, oy + 10, s, font, size=28, fill=c["ink"], weight=700))
+            body.append(_text(x + cw - 70, oy + 10, s, KID, size=28, fill=c["ink"], weight=700))
     return W, top + rows * ch, body
 
 
@@ -198,7 +199,7 @@ def _pw_match(b, c, font, pic, top, room):
         body.append(f'<circle cx="{50 + p:.1f}" cy="{y + rh / 2:.1f}" r="7" fill="{c["ink"]}"/>')
         body.append(f'<circle cx="430" cy="{y + rh / 2:.1f}" r="7" fill="{c["ink"]}"/>')
         body.append(_box(460, y + rh / 2 - 34, 150, 68, c, rx=14))
-        body.append(_text(535, y + rh / 2 + 14, syllables[i], font, size=40, fill=c["accent"], weight=800))
+        body.append(_text(535, y + rh / 2 + 14, syllables[i], KID, size=40, fill=c["accent"], weight=700))
     return W, top + len(b.items) * rh, body
 
 
@@ -211,7 +212,7 @@ def syllable_cards(b, c, font, pic, top, room):
     for i, s in enumerate(b.syllables):
         x, y = (i % cols) * cw, top + (i // cols) * ch
         body.append(_box(x + 3, y + 3, cw - 6, ch - 6, c, dashed=b.cut, rx=6))
-        body.append(_text(x + cw / 2, y + ch / 2 + 15, s, font, size=min(44, ch * 0.45), fill=c["ink"], weight=700))
+        body.append(_text(x + cw / 2, y + ch / 2 + 15, s, KID, size=min(44, ch * 0.45), fill=c["ink"], weight=700))
     return W, top + rows * ch, body
 
 
@@ -333,7 +334,7 @@ def classify(b, c, font, pic, top, room):
     for i, s in enumerate(b.columns):
         x = i * cw
         body.append(_box(x + 6, top, cw - 12, 60, c, fill=c["tint"], rx=12))
-        body.append(_text(x + cw / 2, top + 44, s, font, size=36, fill=c["ink"], weight=800))
+        body.append(_text(x + cw / 2, top + 44, s, KID, size=36, fill=c["ink"], weight=700))
         body.append(_box(x + 6, top + 68, cw - 12, rows * gap + 10, c, rx=12))
         body += [f'<line x1="{x + 20:.1f}" x2="{x + cw - 20:.1f}" y1="{top + 68 + (r + 1) * gap:.1f}" '
                  f'y2="{top + 68 + (r + 1) * gap:.1f}" stroke="{c["muted"]}" stroke-width="1.2"/>' for r in range(rows)]
