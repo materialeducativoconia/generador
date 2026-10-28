@@ -11,13 +11,14 @@ type Props = {
   blocks?: Block[]
   assets?: Record<string, string>
   credits?: Record<string, string>
+  diagrams?: Record<string, string>
   painting?: boolean
   children?: ReactNode
   className?: string
 }
 
 /** A printed page in the tome's theme: same opener, fonts and palette as the PDF. */
-export function Sheet({ design, position, title, blocks, assets = {}, credits = {}, painting = false, children, className = '' }: Props) {
+export function Sheet({ design, position, title, blocks, assets = {}, credits = {}, diagrams = {}, painting = false, children, className = '' }: Props) {
   useThemeFonts(design)
   const { theme, ornament, style } = themeVars(design)
   const label = theme.opener === 'blob' ? String(position) : theme.opener === 'numeral' ? String(position).padStart(2, '0') : `Sección ${position}`
@@ -29,7 +30,7 @@ export function Sheet({ design, position, title, blocks, assets = {}, credits = 
         <span className="num">{label}</span>
         <h1 className="sheet-title">{title}</h1>
       </header>
-      <AssetsContext.Provider value={{ urls: assets, credits, painting }}>{blocks ? <Blocks blocks={blocks} /> : children}</AssetsContext.Provider>
+      <AssetsContext.Provider value={{ urls: assets, credits, diagrams, painting }}>{blocks ? <Blocks blocks={blocks} /> : children}</AssetsContext.Provider>
     </article>
   )
 }

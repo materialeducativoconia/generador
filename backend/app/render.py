@@ -16,7 +16,8 @@ from markupsafe import Markup
 
 from app.printing import BLEED_MM, PAPERS, SPINE_TEXT_PAGES, is_color, page_geometry, spine_mm
 from app.themes import DEFAULT_PALETTE, ORNAMENTS, THEMES, mix
-from app.content import Design, Keyboard, LetterGrid, SectionContent, Tracing
+from app.content import DIAGRAM_TYPES, Design, Keyboard, LetterGrid, SectionContent, Tracing
+from app.diagrams import render_diagram
 
 ASSETS = Path(__file__).parent / "assets"
 TEMPLATES = Path(__file__).parent / "templates"
@@ -130,15 +131,20 @@ _env = Environment(loader=FileSystemLoader(TEMPLATES), autoescape=select_autoesc
                    trim_blocks=True, lstrip_blocks=True)
 _env.filters["inline"] = inline
 _env.globals.update(keyboard_svg=keyboard_svg, tracing_svg=tracing_svg, letter_grid_cells=letter_grid_cells,
-                    GENRE_LABEL=GENRE_LABEL)
+                    GENRE_LABEL=GENRE_LABEL, render_diagram=render_diagram, DIAGRAM_TYPES=DIAGRAM_TYPES)
+
+
+def theme_colors(design: Design | None, palette: list[str] | None = None):
+    """The theme and its colours: the web preview's diagrams use these too."""
+    th = THEMES[design.theme if design else "clasico"]
+    bg, ink, accent = (design.palette if design else None) or palette or DEFAULT_PALETTE
+    return th, {"ink": ink, "accent": accent, "tint": mix(bg, accent, 0.28), "soft": mix("#FFFFFF", accent, 0.09),
+                "line": mix("#FFFFFF", ink, 0.18), "muted": mix(ink, "#FFFFFF", 0.38)}
 
 
 def _look(tome: Tome) -> dict:
     """Theme, colours and fonts shared by the interior and the cover wrap."""
-    th = THEMES[tome.design.theme if tome.design else "clasico"]
-    bg, ink, accent = (tome.design.palette if tome.design else None) or tome.palette or DEFAULT_PALETTE
-    colors = {"ink": ink, "accent": accent, "tint": mix(bg, accent, 0.28), "soft": mix("#FFFFFF", accent, 0.09),
-              "line": mix("#FFFFFF", ink, 0.18), "muted": mix(ink, "#FFFFFF", 0.38)}
+    th, colors = theme_colors(tome.design, tome.palette)
     theme_fonts = sorted({(th.head, th.head_file), (th.body, th.body_file)} - {("Andika", "Andika-Regular.ttf"),
                                                                               ("Nunito", "Nunito-Variable.ttf")})
     return {"th": th, "c": colors, "head": f'"{th.head}"', "body": f'"{th.body}"', "theme_fonts": theme_fonts,

@@ -474,3 +474,7 @@ a.sec-row { transition: background-color 160ms ease; }
   .thumb, .thumb-link { transition: none; }
   .progress span, .chev, .card, .book, .book-card, .book-art { transition: none; }
 }
+
+/* Diagrams arrive as the PDF's own SVG; let them shrink with the page. */
+.diagram { margin: 16px 0 20px; text-align: center; }
+.diagram svg { max-width: 100%; height: auto; }

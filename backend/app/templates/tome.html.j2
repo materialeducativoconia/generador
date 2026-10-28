@@ -7,6 +7,7 @@
   @font-face { font-family: "Andika"; src: url("{{ fonts }}/Andika-Regular.ttf"); }
   @font-face { font-family: "Andika"; font-weight: 700; src: url("{{ fonts }}/Andika-Bold.ttf"); }
   @font-face { font-family: "Nunito"; font-weight: 200 1000; src: url("{{ fonts }}/Nunito-Variable.ttf"); }
+  @font-face { font-family: "Noto Music"; src: url("{{ fonts }}/NotoMusic-Regular.ttf"); }
   {% for family, file in theme_fonts %}
   @font-face { font-family: "{{ family }}"; font-weight: 100 1000; src: url("{{ fonts }}/{{ file }}"); }
   {% endfor %}
@@ -117,6 +118,8 @@
   .keyboard-wrap { margin: 4mm 0; text-align: center; page-break-inside: avoid; }
   .figcap { font: 600 9pt {{ head|safe }}; color: var(--muted); margin-top: 1.5mm; }
 
+  .diagram { margin: 4mm 0 5mm; text-align: center; page-break-inside: avoid; }
+  .diagram svg { max-width: 100%; height: auto; }
   .tracing-wrap { margin: 3mm 0 5mm; page-break-inside: avoid; }
 
   .grid { display: grid; gap: 2.5mm; margin: 4mm 0; page-break-inside: avoid; }
@@ -231,6 +234,8 @@
       </div>
     {% elif b.type == "keyboard" %}
       <div class="keyboard-wrap">{{ keyboard_svg(b, c.tint, c.accent) }}{% if b.caption %}<div class="figcap">{{ b.caption }}</div>{% endif %}</div>
+    {% elif b.type in DIAGRAM_TYPES %}
+      <div class="diagram">{{ render_diagram(b, c, th.head) }}{% if b.caption %}<div class="figcap">{{ b.caption }}</div>{% endif %}</div>
     {% elif b.type == "tracing" %}
       <div class="tracing-wrap">{% if b.instruction %}<p><strong>{{ b.instruction }}</strong></p>{% endif %}{{ tracing_svg(b) }}</div>
     {% elif b.type == "letter_grid" %}

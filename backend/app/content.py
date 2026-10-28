@@ -114,6 +114,109 @@ class Image(_Block):
     asset_id: str | None = None
 
 
+# Diagrams drawn exactly by code (app.diagrams): free, instant, real text, never a garbled picture.
+Label = Annotated[str, Field(min_length=1, max_length=80)]
+
+
+class StaffNote(BaseModel):
+    pitch: Note | Literal["rest"]
+    duration: Literal["whole", "half", "quarter", "eighth"] = "quarter"
+
+
+class Staff(_Block):
+    """Musical staff: clef, optional time signature, notes or rests, optional note names."""
+
+    type: Literal["staff"]
+    clef: Literal["treble", "bass"] = "treble"
+    time: Literal["2/4", "3/4", "4/4"] | None = None
+    notes: list[StaffNote] = Field(min_length=1, max_length=16)
+    show_names: bool = False
+    caption: Short | None = None
+
+
+class TimelineEvent(BaseModel):
+    when: Annotated[str, Field(min_length=1, max_length=40)]
+    label: Label
+
+
+class Timeline(_Block):
+    type: Literal["timeline"]
+    events: list[TimelineEvent] = Field(min_length=2, max_length=10)
+    caption: Short | None = None
+
+
+class Cycle(_Block):
+    """Steps joined by arrows: a closed cycle (water, life cycle) or an open process."""
+
+    type: Literal["cycle"]
+    steps: list[Label] = Field(min_length=3, max_length=8)
+    closed: bool = True
+    caption: Short | None = None
+
+
+class BarChart(_Block):
+    type: Literal["bar_chart"]
+    labels: list[Annotated[str, Field(min_length=1, max_length=30)]] = Field(min_length=2, max_length=10)
+    values: list[Annotated[float, Field(ge=0)]] = Field(min_length=2, max_length=10)
+    unit: Annotated[str, Field(max_length=30)] | None = None
+    caption: Short | None = None
+
+    @model_validator(mode="after")
+    def _same_length(self):
+        if len(self.labels) != len(self.values):
+            raise ValueError("labels y values deben tener la misma cantidad de elementos.")
+        return self
+
+
+class NumberLine(_Block):
+    """Ticks from start to end; `marks` are highlighted, `blanks` become empty boxes for the student."""
+
+    type: Literal["number_line"]
+    start: int = Field(ge=-1000, le=1000)
+    end: int = Field(ge=-1000, le=1000)
+    step: int = Field(default=1, ge=1, le=1000)
+    marks: list[int] = Field(default_factory=list, max_length=10)
+    blanks: list[int] = Field(default_factory=list, max_length=10)
+    caption: Short | None = None
+
+    @model_validator(mode="after")
+    def _range(self):
+        if self.end <= self.start or (self.end - self.start) // self.step > 30:
+            raise ValueError("La recta va de start a end (end > start) con 30 marcas como máximo.")
+        return self
+
+
+class FractionPart(BaseModel):
+    numerator: int = Field(ge=0, le=12)
+    denominator: int = Field(ge=1, le=12)
+
+    @model_validator(mode="after")
+    def _proper(self):
+        if self.numerator > self.denominator:
+            raise ValueError("El numerador no puede superar al denominador.")
+        return self
+
+
+class Fraction(_Block):
+    type: Literal["fraction"]
+    fractions: list[FractionPart] = Field(min_length=1, max_length=4)
+    shape: Literal["circle", "bar"] = "circle"
+    shaded: bool = True  # False: every part blank, for the student to colour
+    show_label: bool = True
+    caption: Short | None = None
+
+
+class Clock(_Block):
+    type: Literal["clock"]
+    times: list[Annotated[str, Field(pattern=r"^([01]?\d|2[0-3]):[0-5]\d$")]] = Field(min_length=1, max_length=4)
+    show_hands: bool = True  # False: an empty face for the student to draw the hands
+    show_time: bool = False  # the written time under each clock
+    caption: Short | None = None
+
+
+DIAGRAM_TYPES = ("staff", "timeline", "cycle", "bar_chart", "number_line", "fraction", "clock")
+
+
 class WritingLines(_Block):
     type: Literal["writing_lines"]
     lines: int = Field(default=4, ge=1, le=20)
@@ -126,7 +229,8 @@ class PageBreak(_Block):
 
 Block = Annotated[
     Heading | Paragraph | ListBlock | Callout | Table | Example | Activity | Exercise
-    | Keyboard | Tracing | LetterGrid | Image | WritingLines | PageBreak,
+    | Keyboard | Tracing | LetterGrid | Image | WritingLines | PageBreak
+    | Staff | Timeline | Cycle | BarChart | NumberLine | Fraction | Clock,
     Field(discriminator="type"),
 ]
 

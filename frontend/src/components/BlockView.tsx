@@ -1,6 +1,6 @@
 import { Fragment, useContext, type ReactNode } from 'react'
 import { AssetsContext } from '../lib/assets'
-import type { Block } from '../lib/types'
+import type { Block, DiagramType } from '../lib/types'
 
 /** **bold** and *italic* only, as React nodes: model output never becomes HTML. */
 export function Inline({ text }: { text: string }) {
@@ -173,7 +173,22 @@ export function BlockView({ block, index }: { block: Block; index: number }) {
       )
     case 'page_break':
       return <hr className="page-break" />
+    default:
+      return <Diagram block={block} />
   }
+}
+
+function Diagram({ block }: { block: Extract<Block, { type: DiagramType }> }) {
+  const { diagrams } = useContext(AssetsContext)
+  const svg = diagrams[block.id]
+  if (!svg) return null
+  return (
+    <figure className="diagram">
+      {/* Drawn by our backend from validated data, every model string escaped; never raw model output. */}
+      <div dangerouslySetInnerHTML={{ __html: svg }} />
+      {block.caption && <figcaption className="figcap">{block.caption}</figcaption>}
+    </figure>
+  )
 }
 
 export function Blocks({ blocks }: { blocks: Block[] }) {

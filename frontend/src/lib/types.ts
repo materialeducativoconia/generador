@@ -40,6 +40,7 @@ export type LessonSummary = {
   status: LessonStatus
   last_error: ApiErrorBody | null
   content_json: { blocks: Block[] } | null
+  diagrams?: Record<string, string>  // block id -> SVG drawn by the backend, same as the PDF
 }
 
 export type Source = { title: string; url: string }
@@ -106,6 +107,10 @@ export type Block =
   | { id: string; type: 'image'; kind: 'line_art' | 'illustration' | 'photo' | 'diagram'; subject: string; caption?: string | null; size: 'full' | 'half' | 'small'; asset_id?: string | null }
   | { id: string; type: 'writing_lines'; lines: number; label?: string | null }
   | { id: string; type: 'page_break' }
+  | { id: string; type: DiagramType; caption?: string | null }
+
+export const DIAGRAM_TYPES = ['staff', 'timeline', 'cycle', 'bar_chart', 'number_line', 'fraction', 'clock'] as const
+export type DiagramType = (typeof DIAGRAM_TYPES)[number]
 
 export type Lesson = LessonSummary & {
   series_id: string

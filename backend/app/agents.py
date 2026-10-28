@@ -16,7 +16,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@1", "writer": "writer@1", "cover": "cover@2", "designer": "designer@1", "art": "art@2", "research": "research@1", "facts": "facts@1"}
+PROMPT_VERSION = {"architect": "architect@1", "writer": "writer@2", "cover": "cover@2", "designer": "designer@1", "art": "art@2", "research": "research@1", "facts": "facts@1"}
 
 
 @dataclass
@@ -95,8 +95,24 @@ Catálogo de bloques (usa solo estos "type"):
 - keyboard {start: "C4", octaves: 1-3, highlight: ["C4","E4"], caption?}  ← teclado de piano dibujado por código
 - tracing {text, repeat, instruction?}  ← letras/sílabas punteadas para repasar
 - letter_grid {targets: ["A","a"], distractors: [..], rows, cols, instruction?}  ← círculos para colorear
+- staff {clef: treble|bass, time?: "2/4"|"3/4"|"4/4", notes: [{pitch: "C4"|"F#4"|"rest", duration:
+  whole|half|quarter|eighth}], show_names?, caption?}  ← pentagrama con notas reales
+- timeline {events: [{when: "1810", label}], caption?}  ← línea de tiempo (2 a 10 hechos, en orden)
+- cycle {steps: [..3 a 8..], closed: true|false, caption?}  ← ciclo (agua, vida) o proceso con flechas
+- bar_chart {labels: [..], values: [números], unit?, caption?}  ← gráfica de barras con datos reales
+- number_line {start, end, step?, marks?: [..], blanks?: [..], caption?}  ← recta numérica; blanks = casillas
+  vacías para que el alumno escriba el número
+- fraction {fractions: [{numerator, denominator}], shape: circle|bar, shaded?, show_label?, caption?}
+  ← shaded false = partes en blanco para colorear
+- clock {times: ["7:30"], show_hands?, show_time?, caption?}  ← reloj de agujas; show_hands false = esfera
+  vacía para dibujar las agujas; show_time false si la hora es la respuesta
 - image {kind: line_art|illustration|photo|diagram, subject, caption?, size: full|half|small}
   ← describe qué dibujar; un ilustrador lo hará después. Para colorear usa line_art.
+
+Diagramas: los bloques staff, timeline, cycle, bar_chart, number_line, fraction, clock, keyboard, tracing y
+letter_grid los dibuja el código: son exactos, con texto real y gratis. Úsalos siempre que sirvan y nunca pidas
+una image para un pentagrama, una línea de tiempo, un ciclo, una gráfica, una recta, fracciones o un reloj.
+Las image nunca llevan texto ni rótulos: reserva image diagram para lo que esos bloques no cubren.
 - writing_lines {lines, label?}
 - page_break {}
 
@@ -106,6 +122,8 @@ Reglas según el género:
   letter_grid, image line_art, writing_lines y exercise; separa fichas con page_break.
 - tutorial: explica paso a paso; usa keyboard, table, callout tip, activity y exercises de práctica.
 - lesson_series: introducción, explicación, ejemplos, una activity y al menos 3 exercise con answer.
+Según el tema: música → staff y keyboard; historia → timeline; ciencias → cycle y bar_chart; matemáticas →
+number_line, fraction y clock (también dentro de fichas y ejercicios).
 Cada bloque lleva un "id" único ("b1", "b2", …). Los ejercicios llevan "answer" (va al solucionario).
 
 Responde SOLO con un objeto json: {"schema_version": 1, "summary": "…", "blocks": [ … ]}"""

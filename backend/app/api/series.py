@@ -6,12 +6,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from sqlalchemy import text
 from uuid6 import uuid7
 
 from app.api.deps import current_user_id
-from app.content import OutlineSection
+from app.content import DIAGRAM_TYPES, Block, Design, OutlineSection
+from app.diagrams import render_diagram
 from app.errors import ApiError
 from app.jobs import enqueue_cover
 
@@ -314,6 +315,8 @@ async def _series_detail(conn, series_id, user_id, request: Request):
         "select status::text from public.generation_jobs where series_id = :s and kind = 'cover'"
         " order by created_at desc limit 1"), {"s": series_id})).scalar_one_or_none()
     out["lessons"] = [_jsonable(lesson) for lesson in lessons]
+    for lesson in out["lessons"]:
+        lesson["diagrams"] = _diagrams(lesson, series)
     out["assets"], out["credits"] = await _asset_urls(conn, request, out["lessons"])
     research = out.pop("research", None) or {}
     out["research"] = {"needed": research.get("needed", False), "sources": research.get("sources", []),
@@ -351,6 +354,30 @@ async def get_lesson(lesson_id: uuid.UUID, request: Request, user_id: UserId):
     async with request.app.state.engine.connect() as conn:
         out = _jsonable(await _own_lesson(conn, lesson_id, user_id))
         out["assets"], out["credits"] = await _asset_urls(conn, request, [out])
+        series = (await conn.execute(text("select design, cover from public.series where id = :s"),
+                                     {"s": out["series_id"]})).mappings().one()
+    out["diagrams"] = _diagrams(out, series)
+    return out
+
+
+_block = TypeAdapter(Block)
+
+
+def _diagrams(lesson: dict, series) -> dict[str, str]:
+    """Block id -> the same SVG the PDF prints, drawn in the tome's theme, so the preview never drifts."""
+    blocks = [b for b in ((lesson.get("content_json") or {}).get("blocks") or []) if b.get("type") in DIAGRAM_TYPES]
+    if not blocks:
+        return {}
+    from app.render import theme_colors  # render pulls in Jinja; only pay for it when there is a diagram
+
+    design = Design.model_validate(_parse(series["design"])) if series["design"] else None
+    th, colors = theme_colors(design, (_parse(series["cover"]) or {}).get("palette"))
+    out = {}
+    for b in blocks:
+        try:
+            out[b["id"]] = str(render_diagram(_block.validate_python(b), colors, th.head))
+        except ValidationError:  # an edit left it half-written: the preview shows nothing rather than failing
+            continue
     return out
 
 

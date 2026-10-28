@@ -267,7 +267,7 @@ function Sections({ series, progress }: { series: Series; progress: Progress }) 
             <li key={l.id} className={`thumb-item ${l.status}`} style={{ '--i': i } as React.CSSProperties}>
               {ready && blocks ? (
                 <Link to={`/app/secciones/${l.id}`} className="thumb-link" aria-label={`Abrir sección ${l.position}: ${l.title}`}>
-                  <PageThumb design={series.design} position={l.position} title={l.title} blocks={blocks} assets={series.assets} credits={series.credits} painting={progress.images.active > 0} />
+                  <PageThumb design={series.design} position={l.position} title={l.title} blocks={blocks} assets={series.assets} credits={series.credits} diagrams={byId.get(l.id)?.diagrams} painting={progress.images.active > 0} />
                   {caption}
                 </Link>
               ) : (
