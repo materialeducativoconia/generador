@@ -11,8 +11,14 @@ from PIL import Image
 
 from app.content import ArtPlan, Design
 from app.illustrator import ASPECT, NO_TEXT, THEME_STYLE
+from app.printing import PAPERS, page_geometry
 
 SLOTS = {(1, 1): ["the only panel"], (2, 2): ["top-left", "top-right", "bottom-left", "bottom-right"]}
+# Pixels the image model returns at "1K" per aspect; "2K" and "4K" double and quadruple them.
+PIXELS_1K = {"1:1": (1024, 1024), "3:4": (896, 1200), "4:3": (1200, 896)}
+RESOLUTIONS = {"1K": 1, "2K": 2, "4K": 4}
+# Colour art must print at 300 dpi on its own; colouring pages are traced to vectors and only need the shapes.
+TARGET_DPI = {"colour": 300, "line": 150}
 
 
 @dataclass
@@ -36,6 +42,24 @@ class Sheet:
         return 1 if len(self.requests) == 1 else 2
 
     rows = cols
+
+    @property
+    def resolution(self) -> str:
+        """The cheapest resolution at which every panel reaches its target dpi on the largest page size."""
+        for name, scale in RESOLUTIONS.items():
+            w, h = (v * scale / self.cols for v in PIXELS_1K[self.aspect])
+            if all(_dpi(w, h, r.size) >= TARGET_DPI[self.family] for r in self.requests):
+                return name
+        return "4K"
+
+
+def _dpi(w: float, h: float, size: str) -> float:
+    def on(paper: str) -> float:
+        geo = page_geometry(paper, print_edition=False)
+        box_w = geo.content_w * (0.6 if size == "small" else 1)
+        return 25.4 / min(box_w / w, getattr(geo, size) / h)
+
+    return min(on(paper) for paper in PAPERS)
 
 
 def plan_sheets(requests: list[ImageRequest], per_sheet: int = 4) -> list[Sheet]:

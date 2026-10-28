@@ -19,6 +19,10 @@ class Completion:
     time_to_first_token_ms: int | None = None
 
 
+# deepseek-chat list prices, USD per million tokens: prompt served from the prefix cache, prompt not cached, output.
+USD_PER_M = {"hit": 0.028, "miss": 0.28, "out": 0.42}
+
+
 class LLM(Protocol):
     async def complete(
         self, messages: list[dict], *, temperature: float, max_tokens: int, json_mode: bool = True

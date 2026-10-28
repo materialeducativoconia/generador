@@ -81,6 +81,7 @@ export type Quality = {
   facts: { needed: boolean; facts: number; sources: number } | null
   art: { total: number; done: number; active: number; failed: number }
   print: (Preflight & { layout?: { fixed: string[]; issues: string[] } }) | null
+  cost: { text_usd: number; images_usd: number; review_usd: number; cover_usd: number; total_usd: number; minutes: number | null }
 }
 
 export type Export = {

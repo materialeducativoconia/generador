@@ -10,7 +10,7 @@ import logging
 import random
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from sqlalchemy import text
@@ -269,7 +269,10 @@ async def _cover(deps: Deps, job: dict) -> None:
         references=[r.data for r in references], aspect_ratio="3:4", resolution="4K")  # 300+ dpi on the shelf
     key = f"{job['user_id']}/{job['series_id']}/{job['id']}.jpg"
     await deps.storage.upload(key, await asyncio.to_thread(cover_jpeg, image.data), "image/jpeg", bucket="covers")
+    prior = _json(series["cover"]) or {}  # "Otra portada" adds up: the tome paid for every cover it painted
+    spent = (prior.get("spent_usd") or prior.get("cost_usd") or 0) + (image.cost_usd or 0)
     cover = {"concept": plan.concept, "palette": plan.palette, "model": image.model, "cost_usd": image.cost_usd,
+             "spent_usd": round(spent, 4),
              "references": [{"title": r.title, "source_url": r.source_url, "image_url": r.image_url}
                             for r in references]}
     async with deps.engine.begin() as conn:
@@ -314,7 +317,9 @@ async def _illustration(deps: Deps, job: dict) -> None:
             await _succeed(conn, job)
         return
     design = Design.model_validate(_json(series["design"])) if series["design"] else None
-    key = f"tome:{job['series_id']}"  # the style is this tome's own, so library reuse stays inside it
+    key = f"tome:{job['series_id']}"  # colour art and pages with the tome's characters stay in the tome
+    # Generic colouring pages (no recurring character) are shared by every tome for the same audience.
+    shared = f"line:{normalize_subject((_json(series['audience']) or {}).get('label', ''))}"
 
     # Curator: one picture per distinct subject; repeats (and earlier runs) reuse it.
     unique: dict[tuple[str, str], list[ImageRequest]] = {}
@@ -324,9 +329,11 @@ async def _illustration(deps: Deps, job: dict) -> None:
         for (kind, norm), group in list(unique.items()):
             asset_id = (await conn.execute(text(
                 """update public.assets set use_count = use_count + :n
-                    where id = (select id from public.assets where kind = :k and style_key = :st and subject_norm = :sn
-                                 order by created_at desc limit 1) returning id"""),
-                {"n": len(group), "k": kind, "st": key, "sn": norm})).scalar_one_or_none()
+                    where id = (select id from public.assets where kind = :k and subject_norm = :sn
+                                   and style_key = any(cast(:st as text[]))
+                                 order by style_key = :own desc, created_at desc limit 1) returning id"""),
+                {"n": len(group), "k": kind, "own": key, "sn": norm,
+                 "st": [key, shared] if kind == "line_art" else [key]})).scalar_one_or_none()
             if asset_id:
                 for r in group:
                     await _attach_image(conn, r.lesson_id, r.block_id, asset_id)
@@ -358,7 +365,7 @@ async def _illustration(deps: Deps, job: dict) -> None:
             photo = await deps.web.commons_photo(plan.photo_queries.get(r.ref) or plan.prompts.get(r.ref) or r.subject)
             if photo:
                 data, media_type = prepare_image(photo.data, "photo")
-                await _store_image(deps, job, key, r, unique[(r.kind, normalize_subject(r.subject))], data,
+                await _store_image(deps, job, (key, shared), r, unique[(r.kind, normalize_subject(r.subject))], data,
                                    media_type, None, 1, Review(ok=True), 1, plan,
                                    attribution={"author": photo.author, "license": photo.license,
                                                 "source_url": photo.source_url, "credit": photo.credit})
@@ -382,14 +389,14 @@ async def _illustration(deps: Deps, job: dict) -> None:
             note = "; ".join(f"{r.ref}: {feedback[r.ref]}" for r in sheet.requests if r.ref in feedback) or None
             image = await deps.images.generate(sheet_prompt(sheet, plan, design, note), references=references,
                                                aspect_ratio=sheet.aspect,
-                                               resolution=_resolution(sheet))
+                                               resolution=sheet.resolution)
             panels = [prepare_image(p, sheet.requests[0].kind) for p in
                       slice_sheet(image.data, sheet.cols, sheet.rows)[:len(sheet.requests)]]
             reviews = await _review_sheet(deps, image.data, panels, sheet)
             last_round = round_ == 1
             for r, (data, media_type), review in zip(sheet.requests, panels, reviews):
                 if review.ok or last_round:
-                    await _store_image(deps, job, key, r, unique[(r.kind, normalize_subject(r.subject))], data,
+                    await _store_image(deps, job, (key, shared), r, unique[(r.kind, normalize_subject(r.subject))], data,
                                        media_type, image, len(sheet.requests), review, round_ + 1, plan)
                 else:
                     failed.append(r)
@@ -424,20 +431,15 @@ async def _review_sheet(deps: Deps, sheet_image: bytes, panels: list[tuple[bytes
         log.warning("image review skipped: %s", exc)
         seen = [Review(ok=True, issues="sin revisar") for _ in sheet.requests]
     # Only hard failures earn a repaint: text in the picture, the wrong subject, or a deterministic check.
-    return [c or (v if v.has_text or not v.matches_subject else Review(ok=True, issues=v.issues))
-            for c, v in zip(checks, seen)]
+    return [replace(c or (v if v.has_text or not v.matches_subject else Review(ok=True, issues=v.issues)),
+                    cost_usd=v.cost_usd) for c, v in zip(checks, seen)]
 
 
-def _resolution(sheet) -> str:
-    """Colouring pages are traced to vectors, so pixels only need to carry the shapes; colour art must
-    reach print resolution on its own."""
-    if sheet.family == "line":
-        return "1K" if sheet.cols == 1 else "2K"
-    return "2K" if sheet.cols == 1 else "4K"
-
-
-async def _store_image(deps, job, key, request, group, data, media_type, image, share, review, attempts, plan,
+async def _store_image(deps, job, keys, request, group, data, media_type, image, share, review, attempts, plan,
                        attribution=None):
+    prompt = plan.prompts.get(request.ref) or request.subject
+    generic = not any(c.name.lower() in f"{prompt} {request.subject}".lower() for c in plan.characters)
+    key = keys[1] if request.kind == "line_art" and generic else keys[0]
     if request.kind == "line_art" and media_type == "image/png":
         svg = await asyncio.to_thread(vectorize, data)
         if svg:
@@ -448,14 +450,16 @@ async def _store_image(deps, job, key, request, group, data, media_type, image, 
     async with deps.engine.begin() as conn:
         await conn.execute(text(
             """insert into public.assets (id, kind, subject, subject_norm, style_key, storage_key, media_type, model,
-                                          cost_usd, review, created_by, use_count, attribution)
+                                          cost_usd, review, created_by, use_count, attribution, series_id)
                values (:id, :k, :subj, :n, :st, :key, :mt, :model, :cost, cast(:review as jsonb), :u, :uses,
-                       cast(:attr as jsonb))"""
+                       cast(:attr as jsonb), :s)"""
         ), {"id": asset_id, "k": request.kind, "subj": request.subject, "n": normalize_subject(request.subject),
             "st": key, "key": storage_key, "mt": media_type, "model": image.model if image else "wikimedia-commons",
-            "u": job["user_id"], "cost": ((image.cost_usd or 0) / share) if image else 0, "uses": len(group),
+            "u": job["user_id"], "s": job["series_id"], "uses": len(group),
+            "cost": ((image.cost_usd or 0) / share) if image else 0,
             "attr": json.dumps(attribution) if attribution else None,
             "review": json.dumps({"ok": review.ok, "has_text": review.has_text, "issues": review.issues,
+                                  "cost_usd": review.cost_usd,
                                   "attempts": attempts, "prompt": plan.prompts.get(request.ref)})})
         for r in group:  # every block in the tome that asked for this same subject
             await _attach_image(conn, r.lesson_id, r.block_id, asset_id)

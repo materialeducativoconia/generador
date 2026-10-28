@@ -102,3 +102,16 @@ async def test_sheet_review_returns_one_verdict_per_panel():
     reviews = await vision.review_sheet(grid(2, 1), ["un ratón", "una mano"], kind="line_art")
 
     assert [r.ok for r in reviews] == [True, False] and reviews[1].has_text
+
+
+def test_each_sheet_is_painted_at_the_lowest_resolution_that_still_prints_sharp():
+    def res(kind, *sizes):
+        return plan_sheets([req(str(i), kind=kind, size=s) for i, s in enumerate(sizes)])[0].resolution
+
+    # Colour art must reach 300 dpi on the largest page; small pictures get there with fewer pixels.
+    assert res("illustration", "full", "full") == "4K" and res("illustration", "half", "half") == "4K"
+    assert res("illustration", "small", "small") == "2K" and res("illustration", "small") == "1K"
+    assert res("illustration", "full") == "2K" and res("illustration", "half") == "2K"
+    # Colouring pages are traced to vectors, so the pixels only need to carry the shapes.
+    assert res("line_art", "full") == "1K" and res("line_art", "full", "full") == "2K"
+    assert res("line_art", "small", "small") == "1K"

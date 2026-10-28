@@ -15,6 +15,7 @@ from app.content import DIAGRAM_TYPES, Block, Design, OutlineSection
 from app.diagrams import render_diagram
 from app.errors import ApiError
 from app.jobs import enqueue_cover
+from app.llm import USD_PER_M
 
 router = APIRouter()
 UserId = Annotated[uuid.UUID, Depends(current_user_id)]
@@ -136,6 +137,7 @@ async def get_quality(series_id: uuid.UUID, request: Request, user_id: UserId):
             "select position, review from public.lessons where series_id = :s order by position"),
             {"s": series_id})).mappings().all()
         images = await _image_progress(conn, series_id)
+        cost = await _cost(conn, series)
         export = (await conn.execute(text(
             """select preflight from public.exports where series_id = :s and status = 'succeeded'
                 order by created_at desc limit 1"""), {"s": series_id})).scalar_one_or_none()
@@ -161,7 +163,28 @@ async def get_quality(series_id: uuid.UUID, request: Request, user_id: UserId):
     pending = series["status"] != "ready" or images["active"] > 0 or preflight is None
     verdict = "revisar" if reasons else ("pendiente" if pending else "lista")
     return {"verdict": verdict, "reasons": reasons, "text": textcard, "facts": facts, "art": images,
-            "print": preflight}
+            "print": preflight, "cost": cost}
+
+
+async def _cost(conn, series) -> dict:
+    """What the tome cost in AI calls, and how long it took from approving the outline to the last picture."""
+    row = (await conn.execute(text(
+        """select (select coalesce(sum(coalesce(prompt_cache_hit_tokens, 0) * cast(:hit as numeric)
+                                       + coalesce(prompt_cache_miss_tokens, prompt_tokens, 0) * cast(:miss as numeric)
+                                       + coalesce(completion_tokens, 0) * cast(:out as numeric)), 0) / 1e6
+                     from public.generation_logs where series_id = :s) as text_usd,
+                  (select coalesce(sum(cost_usd), 0) from public.assets where series_id = :s) as images_usd,
+                  (select coalesce(sum((review->>'cost_usd')::numeric), 0) from public.assets
+                    where series_id = :s) as review_usd,
+                  (select extract(epoch from max(finished_at) - min(created_at)) / 60 from public.generation_jobs
+                    where series_id = :s and kind in ('lesson', 'illustration') and status = 'succeeded') as minutes"""
+    ), {"s": series["id"], **USD_PER_M})).mappings().one()
+    cover = _parse(series["cover"]) or {}
+    out = {k: round(float(row[k]), 4) for k in ("text_usd", "images_usd", "review_usd")}
+    out["cover_usd"] = round(float(cover.get("spent_usd") or cover.get("cost_usd") or 0), 4)
+    out["total_usd"] = round(sum(out.values()), 4)
+    out["minutes"] = round(float(row["minutes"]), 1) if row["minutes"] is not None else None
+    return out
 
 
 @router.patch("/api/series/{series_id}/outline")

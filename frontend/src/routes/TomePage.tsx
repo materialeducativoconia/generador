@@ -112,6 +112,8 @@ const VERDICT = {
   pendiente: { label: 'Falta generar el PDF', pill: 'idle' },
 } as const
 
+const usd = (n: number) => `$${n.toFixed(n < 0.1 ? 3 : 2)}`
+
 function QualityCard({ seriesId, progress }: { seriesId: string; progress: Progress }) {
   const e = progress.latest_export
   const stamp = `${progress.counts.generated}:${progress.images.done}:${progress.images.failed}:${e?.id ?? ''}:${e?.status ?? ''}`
@@ -123,6 +125,8 @@ function QualityCard({ seriesId, progress }: { seriesId: string; progress: Progr
     ['Texto', t.score === null ? 'Sin revisión del Editor' : `Editor ${String(t.score).replace('.', ',')}/5 · ${t.fixed} correcciones aplicadas`],
     ['Datos', q.facts?.needed ? `${q.facts.facts} datos verificados en ${q.facts.sources} fuentes` : 'No requiere fuentes'],
     ['Ilustraciones', q.art.total ? `${q.art.done} de ${q.art.total}${q.art.failed ? ` · ${q.art.failed} fallidas` : ''}` : 'Sin ilustraciones'],
+    ['Costo IA', `${usd(q.cost.total_usd)} · texto ${usd(q.cost.text_usd)}, portada ${usd(q.cost.cover_usd)}, ilustraciones ${usd(q.cost.images_usd + q.cost.review_usd)}`],
+    ...(q.cost.minutes === null ? [] : [['Tiempo', `${String(q.cost.minutes).replace('.', ',')} min de escritura e ilustración`] as [string, string]]),
     ['Impresión', q.print ? `${{ lista: 'Lista', aceptable: 'Aceptable', baja: 'Baja resolución' }[q.print.rating]}${q.print.layout?.fixed.length ? ` · maqueta ajustada en ${q.print.layout.fixed.length} imágenes` : ''}` : 'Genera el PDF para revisarla'],
   ]
   return (
