@@ -32,12 +32,11 @@ class Brief:
 
     def describe(self) -> str:
         lines = [f"Pedido del usuario: {self.request}", f"Público: {self.audience}", f"Idioma: {self.language}"]
+        lines.append(f"Número de secciones: {self.section_count}" if self.section_count
+                     else "Número de secciones: decide tú (entre 1 y 20) según el pedido")
         if self.page_count:
-            lines.append(f"Extensión: unas {self.page_count} páginas impresas en total. Decide tú cuántas secciones "
-                         "(entre 1 y 20) y reparte esas páginas entre ellas en el campo pages de cada sección")
-        else:
-            lines.append(f"Número de secciones: {self.section_count}" if self.section_count
-                         else "Número de secciones: decide tú (entre 1 y 20) según el pedido")
+            lines.append(f"Extensión: unas {self.page_count} páginas impresas en total; repártelas entre las "
+                         "secciones en el campo pages de cada una")
         if self.extra_instructions:
             lines.append(f"Instrucciones extra: {self.extra_instructions}")
         if self.facts:
@@ -173,7 +172,7 @@ async def architect(llm: LLM, brief: Brief) -> AgentResult[Outline]:
         {"role": "user", "content": brief.describe()},
     ]
     result = await _json_call(llm, messages, Outline, temperature=0.7, max_tokens=4000)
-    if brief.section_count and not brief.page_count and len(result.value.sections) != brief.section_count:
+    if brief.section_count and len(result.value.sections) != brief.section_count:
         result.value.sections = result.value.sections[: brief.section_count]
     if brief.page_count:
         spread_pages(result.value.sections, brief.page_count)

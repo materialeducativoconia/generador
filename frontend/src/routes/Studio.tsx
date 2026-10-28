@@ -1,11 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
 import { ApiError } from '../lib/api'
 import { api } from '../lib/apiClient'
-import { useMe, useSeriesList, useStyles } from '../lib/queries'
+import { useEstimate, useMe, useSeriesList, useStyles } from '../lib/queries'
 
 const AUDIENCES = ['Preescolar (3–5 años)', 'Primaria baja (6–8)', 'Primaria alta (9–12)', 'Secundaria', 'Adultos principiantes']
 
@@ -18,7 +18,7 @@ const EXAMPLES = [
 
 type Created = { series: { id: string } }
 
-const PAGES = [8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 100]
+const PAGES = [3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64, 80, 100]
 
 export function Studio() {
   const { data: me } = useMe()
@@ -26,8 +26,9 @@ export function Studio() {
   const qc = useQueryClient()
   const [request, setRequest] = useState('')
   const [audience, setAudience] = useState(AUDIENCES[0])
-  // 'auto', 's<n>' (sections) or 'p<n>' (pages): material is ordered by length too
-  const [extent, setExtent] = useState('auto')
+  const [sections, setSections] = useState<number | null>(null)  // null: the Architect decides
+  const [pages, setPages] = useState<number | null>(null)
+  const [quoting, setQuoting] = useState(false)  // the cost window, shown before anything is created
   const [style, setStyle] = useState('auto')
   const ready = (useStyles().data?.styles ?? []).filter((s) => s.status === 'ready')
   const idempotencyKey = useRef(crypto.randomUUID())
@@ -38,12 +39,13 @@ export function Studio() {
       api.post<Created>(
         '/api/series',
         { request: request.trim(), audience, language: 'es',
-          section_count: extent.startsWith('s') ? Number(extent.slice(1)) : null,
-          page_count: extent.startsWith('p') ? Number(extent.slice(1)) : null,
+          section_count: sections,
+          page_count: pages,
           style_id: style === 'auto' ? null : style },
         { 'Idempotency-Key': idempotencyKey.current },
       ),
     onSuccess: (data) => {
+      setQuoting(false)
       idempotencyKey.current = crypto.randomUUID()
       void qc.invalidateQueries({ queryKey: ['series'] })
       navigate(`/app/tomos/${data.series.id}`)
@@ -52,7 +54,7 @@ export function Studio() {
 
   function submit(e?: FormEvent) {
     e?.preventDefault()
-    if (request.trim().length >= 3 && !create.isPending) create.mutate()
+    if (request.trim().length >= 3 && !create.isPending) setQuoting(true)
   }
 
   const firstName = me?.display_name?.split(' ')[0]
@@ -86,15 +88,17 @@ export function Studio() {
               </select>
             </label>
             <label className="select-pill">
-              <span className="sr-only">Extensión</span>
-              <select value={extent} onChange={(e) => setExtent(e.target.value)}>
-                <option value="auto">Extensión: auto</option>
-                <optgroup label="Por páginas">
-                  {PAGES.map((n) => <option key={n} value={`p${n}`}>{n} páginas</option>)}
-                </optgroup>
-                <optgroup label="Por secciones">
-                  {Array.from({ length: 20 }, (_, i) => <option key={i + 1} value={`s${i + 1}`}>{i + 1} {i ? 'secciones' : 'sección'}</option>)}
-                </optgroup>
+              <span className="sr-only">Secciones</span>
+              <select value={sections ?? ''} onChange={(e) => setSections(e.target.value ? Number(e.target.value) : null)}>
+                <option value="">Secciones: auto</option>
+                {Array.from({ length: 20 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1} {i ? 'secciones' : 'sección'}</option>)}
+              </select>
+            </label>
+            <label className="select-pill">
+              <span className="sr-only">Páginas</span>
+              <select value={pages ?? ''} onChange={(e) => setPages(e.target.value ? Number(e.target.value) : null)}>
+                <option value="">Páginas: auto</option>
+                {PAGES.map((n) => <option key={n} value={n}>{n} páginas</option>)}
               </select>
             </label>
             {ready.length > 0 && (
@@ -111,6 +115,10 @@ export function Studio() {
             </button>
           </div>
         </form>
+        {quoting && (
+          <CostDialog sections={sections} pages={pages} pending={create.isPending}
+                      onConfirm={() => create.mutate()} onCancel={() => setQuoting(false)} />
+        )}
         {create.error && <p className="error" role="alert">{create.error instanceof ApiError ? create.error.message : 'No pudimos crear el tomo.'}</p>}
 
         <div className="examples">
@@ -167,5 +175,50 @@ function ArrowUp() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M12 19V5M5 12l7-7 7 7" />
     </svg>
+  )
+}
+
+const usd = (n: number) => `$${n.toFixed(2)}`
+
+/** What the chosen tome will cost in AI calls, confirmed before anything is created. USD while testing;
+ * this is where credits will be charged later. */
+function CostDialog({ sections, pages, pending, onConfirm, onCancel }: {
+  sections: number | null; pages: number | null; pending: boolean; onConfirm: () => void; onCancel: () => void
+}) {
+  const q = useEstimate(sections, pages).data
+  const confirm = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    confirm.current?.focus()
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onCancel()
+    window.addEventListener('keydown', esc)
+    return () => window.removeEventListener('keydown', esc)
+  }, [onCancel])
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="cost-title" onClick={(e) => e.stopPropagation()}>
+        <h2 id="cost-title">Costo estimado</h2>
+        {!q ? <div className="skeleton" /> : (
+          <>
+            <p className="muted small">
+              {q.sections} {q.sections === 1 ? 'sección' : 'secciones'}{q.assumed.sections ? ' (estimadas)' : ''} · {q.pages} páginas{q.assumed.pages ? ' (estimadas)' : ''}
+            </p>
+            <dl className="cost-rows">
+              <div><dt>Texto (redacción y revisión)</dt><dd>{usd(q.text_usd)}</dd></div>
+              <div><dt>Portada</dt><dd>{usd(q.cover_usd)}</dd></div>
+              <div><dt>Ilustraciones</dt><dd>{usd(q.art_usd[0])} – {usd(q.art_usd[1])}</dd></div>
+              <div className="total"><dt>Total</dt><dd>{usd(q.total_usd[0])} – {usd(q.total_usd[1])} {q.currency}</dd></div>
+            </dl>
+            <p className="small muted">
+              Las ilustraciones dependen de lo que planifique el arquitecto; los dibujos que ya están en tu biblioteca no se vuelven a pagar.
+              {q.history_usd != null && ` Con lo que costaron tus tomos anteriores, este saldría por unos ${usd(q.history_usd)}.`}
+            </p>
+          </>
+        )}
+        <div className="modal-actions">
+          <button className="ghost" onClick={onCancel} disabled={pending}>Cancelar</button>
+          <button ref={confirm} className="primary" onClick={onConfirm} disabled={!q || pending}>{pending ? 'Creando…' : 'Crear el esquema'}</button>
+        </div>
+      </div>
+    </div>
   )
 }

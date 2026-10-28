@@ -16,6 +16,7 @@ from app.diagrams import render_diagram
 from app.errors import ApiError
 from app.jobs import enqueue_cover
 from app.llm import USD_PER_M
+from app.pricing import estimate
 from app.themes import DEFAULT_PALETTE
 from app.worksheets import render_worksheet
 
@@ -33,7 +34,7 @@ class NewTome(BaseModel):
     audience: str = Field(min_length=1, max_length=200)
     language: str = Field(default="es", pattern=r"^[a-z]{2}(-[A-Z]{2})?$")
     section_count: int | None = Field(default=None, ge=1, le=20)
-    page_count: int | None = Field(default=None, ge=4, le=200)  # by length: the Architect splits the pages
+    page_count: int | None = Field(default=None, ge=3, le=200)  # by length: the Architect splits the pages
     extra_instructions: str | None = Field(default=None, max_length=2000)
     style_id: uuid.UUID | None = None  # a ready style from the user's library; None lets the Designer choose
 
@@ -177,6 +178,20 @@ async def get_quality(series_id: uuid.UUID, request: Request, user_id: UserId):
     verdict = "revisar" if reasons else ("pendiente" if pending else "lista")
     return {"verdict": verdict, "reasons": reasons, "text": textcard, "facts": facts, "art": images,
             "print": preflight, "cost": cost, "pages": pages}
+
+
+@router.get("/api/estimate")
+async def estimate_cost(request: Request, user_id: UserId, sections: int | None = None, pages: int | None = None):
+    """Shown before a tome is created: the AI cost of what the user picked, and what theirs really cost."""
+    if (sections is not None and not 1 <= sections <= 20) or (pages is not None and not 3 <= pages <= 200):
+        raise ApiError(422, "validation_error", "Entre 1 y 20 secciones y entre 3 y 200 páginas.")
+    async with request.app.state.engine.connect() as conn:
+        done = (await conn.execute(text(
+            """select distinct on (s.id) s.*, e.page_count from public.series s
+                 join public.exports e on e.series_id = s.id and e.status = 'succeeded' and e.page_count > 0
+                where s.user_id = :u order by s.id, e.created_at desc limit 10"""), {"u": user_id})).mappings().all()
+        per_page = [(await _cost(conn, r))["total_usd"] / r["page_count"] for r in done]
+    return estimate(sections, pages, sum(per_page) / len(per_page) if per_page else None)
 
 
 async def _cost(conn, series) -> dict:

@@ -14,6 +14,25 @@ export const useMe = () => useQuery({ queryKey: ['me'], queryFn: () => api.get<M
 export const usePreview = (id: string, stamp: string) =>
   useQuery({ queryKey: ['preview', id, stamp], queryFn: () => api.get<Preview>(`/api/series/${id}/preview`), placeholderData: (p) => p })
 
+export type Estimate = {
+  sections: number
+  pages: number
+  assumed: { sections: boolean; pages: boolean }
+  text_usd: number
+  cover_usd: number
+  art_usd: [number, number]
+  total_usd: [number, number]
+  currency: 'USD'
+  history_usd?: number
+}
+
+/** The AI cost of what the user picked, before the tome is created. */
+export const useEstimate = (sections: number | null, pages: number | null) =>
+  useQuery({
+    queryKey: ['estimate', sections, pages],
+    queryFn: () => api.get<Estimate>(`/api/estimate?${new URLSearchParams({ ...(sections ? { sections: String(sections) } : {}), ...(pages ? { pages: String(pages) } : {}) })}`),
+  })
+
 type Styles = { styles: Style[]; poll_after_ms: number | null }
 
 /** The style library; polls while a reference is being analysed (~20 s). */

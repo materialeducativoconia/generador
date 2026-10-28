@@ -77,3 +77,14 @@ async def test_the_user_swaps_the_look_before_writing(raw_db, google_user, clien
     assert styled["design"]["style_id"] == style and styled["design"]["head_font"] == "Pacifico"
     assert bad.status_code == 422
     assert str(await raw_db.fetchval("select style_id from public.series where id = $1", sid)) == style
+
+
+async def test_the_estimate_is_shown_before_creating(raw_db, google_user, client, key, engine):
+    user = await google_user()
+
+    quote = (await client.get("/api/estimate?sections=3&pages=12", headers=bearer(key, user))).json()
+    bad = await client.get("/api/estimate?pages=2", headers=bearer(key, user))
+
+    assert quote["sections"] == 3 and quote["pages"] == 12 and quote["currency"] == "USD"
+    assert quote["total_usd"][0] < quote["total_usd"][1] and "history_usd" not in quote
+    assert bad.status_code == 422
