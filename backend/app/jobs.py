@@ -21,7 +21,8 @@ from app.agents import (PROMPT_VERSION, AgentFailed, Attempt, Brief, architect, 
 from app.content import ArtPlan, Design, Outline, OutlineSection
 from app.llm import LLM, UpstreamAuthError, UpstreamError
 from app.artwork import ImageRequest, plan_sheets, sheet_prompt, slice_sheet
-from app.illustrator import line_art_coverage, normalize_subject, prepare_image
+from app.illustrator import (cover_jpeg, line_art_coverage, normalize_subject, prepare_image, reference_image,
+                             vectorize)
 from app.references import find_covers
 from app.vision import Review
 
@@ -252,10 +253,9 @@ async def _cover(deps: Deps, job: dict) -> None:
     references = await deps.references(plan.search_queries, limit=4)
     image = await deps.images.generate(
         f"{plan.illustration_prompt}\n\n{COVER_RULES.format(palette=', '.join(plan.palette))}",
-        references=[r.data for r in references], aspect_ratio="3:4")
-    ext = {"image/png": "png", "image/webp": "webp"}.get(image.media_type, "jpg")
-    key = f"{job['user_id']}/{job['series_id']}/{job['id']}.{ext}"
-    await deps.storage.upload(key, image.data, image.media_type, bucket="covers")
+        references=[r.data for r in references], aspect_ratio="3:4", resolution="4K")  # 300+ dpi on the shelf
+    key = f"{job['user_id']}/{job['series_id']}/{job['id']}.jpg"
+    await deps.storage.upload(key, await asyncio.to_thread(cover_jpeg, image.data), "image/jpeg", bucket="covers")
     cover = {"concept": plan.concept, "palette": plan.palette, "model": image.model, "cost_usd": image.cost_usd,
              "references": [{"title": r.title, "source_url": r.source_url, "image_url": r.image_url}
                             for r in references]}
@@ -267,6 +267,7 @@ async def _cover(deps: Deps, job: dict) -> None:
 
 
 MAX_IMAGES_PER_TOME = 48
+EXTENSION = {"image/png": "png", "image/svg+xml": "svg", "image/jpeg": "jpg"}
 
 
 async def _queue_artwork(conn, job: dict) -> None:
@@ -356,7 +357,7 @@ async def _illustration(deps: Deps, job: dict) -> None:
     references = []
     if series["cover_key"]:
         try:
-            references = [await deps.storage.download(series["cover_key"])]
+            references = [reference_image(await deps.storage.download(series["cover_key"]))]
         except Exception:  # the cover is a style anchor, not a requirement
             log.warning("cover %s unavailable as reference", series["cover_key"])
 
@@ -368,7 +369,7 @@ async def _illustration(deps: Deps, job: dict) -> None:
             note = "; ".join(f"{r.ref}: {feedback[r.ref]}" for r in sheet.requests if r.ref in feedback) or None
             image = await deps.images.generate(sheet_prompt(sheet, plan, design, note), references=references,
                                                aspect_ratio=sheet.aspect,
-                                               resolution="1K" if sheet.cols == 1 else "2K")
+                                               resolution=_resolution(sheet))
             panels = [prepare_image(p, sheet.requests[0].kind) for p in
                       slice_sheet(image.data, sheet.cols, sheet.rows)[:len(sheet.requests)]]
             reviews = await _review_sheet(deps, image.data, panels, sheet)
@@ -414,10 +415,22 @@ async def _review_sheet(deps: Deps, sheet_image: bytes, panels: list[tuple[bytes
             for c, v in zip(checks, seen)]
 
 
+def _resolution(sheet) -> str:
+    """Colouring pages are traced to vectors, so pixels only need to carry the shapes; colour art must
+    reach print resolution on its own."""
+    if sheet.family == "line":
+        return "1K" if sheet.cols == 1 else "2K"
+    return "2K" if sheet.cols == 1 else "4K"
+
+
 async def _store_image(deps, job, key, request, group, data, media_type, image, share, review, attempts, plan,
                        attribution=None):
+    if request.kind == "line_art" and media_type == "image/png":
+        svg = await asyncio.to_thread(vectorize, data)
+        if svg:
+            data, media_type = svg, "image/svg+xml"
     asset_id = uuid.uuid4()
-    storage_key = f"{asset_id}.{'png' if media_type == 'image/png' else 'jpg'}"
+    storage_key = f"{asset_id}.{EXTENSION.get(media_type, 'jpg')}"
     await deps.storage.upload(storage_key, data, media_type, bucket="images")
     async with deps.engine.begin() as conn:
         await conn.execute(text(

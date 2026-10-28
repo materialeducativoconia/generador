@@ -14,6 +14,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
+from app.printing import BLEED_MM, PAPERS, SPINE_TEXT_PAGES, is_color, page_geometry, spine_mm
 from app.themes import DEFAULT_PALETTE, ORNAMENTS, THEMES, mix
 from app.content import Design, Keyboard, LetterGrid, SectionContent, Tracing
 
@@ -132,24 +133,42 @@ _env.globals.update(keyboard_svg=keyboard_svg, tracing_svg=tracing_svg, letter_g
                     GENRE_LABEL=GENRE_LABEL)
 
 
-def render_html(tome: Tome, *, paper: str, include_answer_key: bool) -> str:
-    answers = [
-        (section, block)
-        for section in tome.sections
-        for block in section.content.blocks
-        if block.type == "exercise" and block.answer
-    ]
+def _look(tome: Tome) -> dict:
+    """Theme, colours and fonts shared by the interior and the cover wrap."""
     th = THEMES[tome.design.theme if tome.design else "clasico"]
     bg, ink, accent = (tome.design.palette if tome.design else None) or tome.palette or DEFAULT_PALETTE
     colors = {"ink": ink, "accent": accent, "tint": mix(bg, accent, 0.28), "soft": mix("#FFFFFF", accent, 0.09),
               "line": mix("#FFFFFF", ink, 0.18), "muted": mix(ink, "#FFFFFF", 0.38)}
     theme_fonts = sorted({(th.head, th.head_file), (th.body, th.body_file)} - {("Andika", "Andika-Regular.ttf"),
                                                                               ("Nunito", "Nunito-Variable.ttf")})
+    return {"th": th, "c": colors, "head": f'"{th.head}"', "body": f'"{th.body}"', "theme_fonts": theme_fonts,
+            "fonts": (ASSETS / "fonts").as_uri()}
+
+
+def render_html(tome: Tome, *, paper: str, include_answer_key: bool, print_edition: bool = False) -> str:
+    """The interior. The print edition swaps the cover for a title page (the cover is its own file) and
+    mirrors the margins so the binding side is wider."""
+    answers = [
+        (section, block)
+        for section in tome.sections
+        for block in section.content.blocks
+        if block.type == "exercise" and block.answer
+    ]
     return _env.get_template("tome.html.j2").render(
-        tome=tome, paper=paper, answers=answers if include_answer_key else [], fonts=(ASSETS / "fonts").as_uri(),
-        th=th, c=colors, head=f'"{th.head}"', body=f'"{th.body}"', theme_fonts=theme_fonts,
-        ornament=ORNAMENTS[tome.design.ornament] if tome.design else "",
+        tome=tome, paper=paper, answers=answers if include_answer_key else [], print_edition=print_edition,
+        geo=page_geometry(paper, print_edition=print_edition),
+        ornament=ORNAMENTS[tome.design.ornament] if tome.design else "", **_look(tome),
     )
+
+
+def render_cover_wrap(tome: Tome, *, paper: str, pages: int) -> tuple[bytes, str]:
+    """One sheet for the printer: back cover, spine and front, with bleed on every edge."""
+    w, h = PAPERS[paper]
+    spine = spine_mm(pages, color=is_color(tome))
+    wrap = {"bleed": BLEED_MM, "w": w, "h": h, "spine": spine, "total_w": round(2 * w + spine + 2 * BLEED_MM, 3),
+            "total_h": round(h + 2 * BLEED_MM, 3), "spine_text": pages >= SPINE_TEXT_PAGES}
+    html = _env.get_template("cover_wrap.html.j2").render(tome=tome, wrap=wrap, **_look(tome))
+    return _write_pdf(html)[0], html
 
 
 def _asset_fetcher():
@@ -165,11 +184,16 @@ def _asset_fetcher():
     return AssetFetcher(allowed_protocols=["file", "data"])
 
 
-def render_pdf(tome: Tome, *, paper: str, include_answer_key: bool) -> tuple[bytes, int]:
+def _write_pdf(html: str) -> tuple[bytes, int]:
     from weasyprint import HTML
     from weasyprint.text.fonts import FontConfiguration
 
     # Without a FontConfiguration, WeasyPrint silently ignores @font-face.
-    document = HTML(string=render_html(tome, paper=paper, include_answer_key=include_answer_key),
-                    base_url=ASSETS.as_uri(), url_fetcher=_asset_fetcher()).render(font_config=FontConfiguration())
+    document = HTML(string=html, base_url=ASSETS.as_uri(), url_fetcher=_asset_fetcher()).render(
+        font_config=FontConfiguration())
     return document.write_pdf(), len(document.pages)
+
+
+def render_pdf(tome: Tome, *, paper: str, include_answer_key: bool, print_edition: bool = False) -> tuple[bytes, int]:
+    return _write_pdf(render_html(tome, paper=paper, include_answer_key=include_answer_key,
+                                  print_edition=print_edition))

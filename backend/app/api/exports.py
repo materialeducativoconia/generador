@@ -22,8 +22,9 @@ UserId = Annotated[uuid.UUID, Depends(current_user_id)]
 
 
 class ExportOptions(BaseModel):
-    paper: Literal["A4", "Letter"] = "A4"
+    paper: Literal["A4", "Letter", "8x10", "6x9"] = "A4"
     include_answer_key: bool = True
+    edition: Literal["digital", "print"] = "digital"  # print: KDP-ready interior plus a separate cover wrap
 
 
 @router.post("/api/series/{series_id}/exports", status_code=202)
@@ -65,16 +66,19 @@ async def get_export(export_id: uuid.UUID, request: Request, user_id: UserId):
 
 
 @router.get("/api/exports/{export_id}/file")
-async def download_export(export_id: uuid.UUID, request: Request, user_id: UserId):
+async def download_export(export_id: uuid.UUID, request: Request, user_id: UserId,
+                          part: Literal["interior", "cover"] = "interior"):
     async with request.app.state.engine.connect() as conn:
         export = await _own_export(conn, export_id, user_id)
         title = (await conn.execute(text("select coalesce(title, topic) from public.series where id = :s"),
                                     {"s": export["series_id"]})).scalar_one()
-    if export["status"] != "succeeded" or not export["storage_key"]:
+    storage_key = export["cover_storage_key"] if part == "cover" else export["storage_key"]
+    if export["status"] != "succeeded" or not storage_key:
         raise ApiError(404, "not_found", "Este PDF no está disponible.")
     # Signed at click time, so a link in the UI never expires. JSON rather than a 302: the browser
     # fetches this with a Bearer token, which a plain <a href> navigation could not send.
-    url = await request.app.state.storage.signed_url(export["storage_key"], 60, f"{_slug(title)}.pdf")
+    name = f"{_slug(title)}-portada.pdf" if part == "cover" else f"{_slug(title)}.pdf"
+    url = await request.app.state.storage.signed_url(storage_key, 60, name)
     return {"url": url}
 
 
@@ -89,7 +93,9 @@ async def _own_export(conn, export_id, user_id):
 def _export(row) -> dict:
     out = _jsonable(row)
     out.pop("user_id", None)
-    out["download_url"] = f"/api/exports/{out['id']}/file" if out["status"] == "succeeded" else None
+    done = out["status"] == "succeeded"
+    out["download_url"] = f"/api/exports/{out['id']}/file" if done else None
+    out["cover_download_url"] = f"/api/exports/{out['id']}/file?part=cover" if done and out.get("cover_storage_key") else None
     return out
 
 

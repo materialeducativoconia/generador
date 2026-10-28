@@ -80,7 +80,7 @@ class Web:
                 r = await http.get("https://commons.wikimedia.org/w/api.php", params={
                     "action": "query", "generator": "search", "gsrsearch": f"{query} filetype:bitmap",
                     "gsrnamespace": 6, "gsrlimit": 10, "prop": "imageinfo", "iiprop": "url|extmetadata|mime",
-                    "iiurlwidth": 1600, "format": "json"})
+                    "iiurlwidth": 3000, "format": "json"})
                 r.raise_for_status()
                 pages = sorted(r.json().get("query", {}).get("pages", {}).values(), key=lambda p: p.get("index", 99))
             except (httpx.HTTPError, ValueError):

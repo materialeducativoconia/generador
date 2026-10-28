@@ -8,7 +8,7 @@ import { GENRE_LABEL } from '../lib/labels'
 import { ApiError } from '../lib/api'
 import { api } from '../lib/apiClient'
 import { useExport, useProgress, useSeries } from '../lib/queries'
-import type { Export, LessonSummary, Progress, Series } from '../lib/types'
+import type { Export, LessonSummary, Preflight, Progress, Series } from '../lib/types'
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback)
 
@@ -290,15 +290,24 @@ function Sections({ series, progress }: { series: Series; progress: Progress }) 
   )
 }
 
+type Edition = 'digital' | 'print'
+type Paper = 'A4' | 'Letter' | '8x10' | '6x9'
+const PAPERS: Record<Edition, { value: Paper; label: string }[]> = {
+  digital: [{ value: 'A4', label: 'A4' }, { value: 'Letter', label: 'Carta' }],
+  print: [{ value: 'Letter', label: '8.5×11' }, { value: '8x10', label: '8×10' }, { value: '6x9', label: '6×9' }, { value: 'A4', label: 'A4' }],
+}
+const RATING: Record<Preflight['rating'], string> = { lista: 'Lista para imprenta', aceptable: 'Aceptable', baja: 'Baja resolución' }
+
 function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: Progress['latest_export']; images: Progress['images'] }) {
-  const [paper, setPaper] = useState<'A4' | 'Letter'>('A4')
+  const [edition, setEdition] = useState<Edition>('digital')
+  const [paper, setPaper] = useState<Paper>('A4')
   const [answers, setAnswers] = useState(true)
   // A PDF made before the last pictures arrived would miss them: start a fresh one instead.
   const [exportId, setExportId] = useState<string | null>(latest && latest.status !== 'failed' && !latest.stale ? latest.id : null)
   const illustrating = images.active > 0
   const current = useExport(exportId)
   const create = useMutation({
-    mutationFn: () => api.post<{ export: Export }>(`/api/series/${seriesId}/exports`, { paper, include_answer_key: answers }),
+    mutationFn: () => api.post<{ export: Export }>(`/api/series/${seriesId}/exports`, { paper, include_answer_key: answers, edition }),
     onSuccess: (data) => setExportId(data.export.id),
   })
   const download = useMutation({
@@ -307,6 +316,9 @@ function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: P
   })
   const status = current.data?.status
   const busy = create.isPending || status === 'queued' || status === 'running'
+  // Any new option means a different PDF: offer to generate it rather than download the old one.
+  const change = (fn: () => void) => () => { fn(); setExportId(null) }
+  const preflight = status === 'succeeded' ? current.data?.preflight : null
 
   return (
     <section className="panel export">
@@ -315,30 +327,58 @@ function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: P
         <p className="muted small">
           {illustrating
             ? `Ilustrando ${images.done} de ${images.total} imágenes… el PDF estará listo al terminar.`
-            : `Portada, índice, secciones${images.total ? ', ilustraciones' : ''}${answers ? ' y solucionario' : ''}, listo para imprimir.`}
+            : edition === 'print'
+              ? 'Interior y portada con lomo por separado, a medida de KDP y otras imprentas.'
+              : `Portada, índice, secciones${images.total ? ', ilustraciones' : ''}${answers ? ' y solucionario' : ''}, listo para imprimir.`}
         </p>
       </div>
       <div className="export-opts">
+        <div className="segmented" role="radiogroup" aria-label="Edición">
+          {(['digital', 'print'] as const).map((e) => (
+            <button key={e} role="radio" aria-checked={edition === e} className={edition === e ? 'on' : ''}
+              onClick={change(() => { setEdition(e); setPaper(PAPERS[e][0].value) })}>
+              {e === 'digital' ? 'Digital' : 'Imprenta'}
+            </button>
+          ))}
+        </div>
         <div className="segmented" role="radiogroup" aria-label="Tamaño de papel">
-          {(['A4', 'Letter'] as const).map((p) => (
-            <button key={p} role="radio" aria-checked={paper === p} className={paper === p ? 'on' : ''} onClick={() => setPaper(p)}>
-              {p === 'A4' ? 'A4' : 'Carta'}
+          {PAPERS[edition].map((p) => (
+            <button key={p.value} role="radio" aria-checked={paper === p.value} className={paper === p.value ? 'on' : ''}
+              onClick={change(() => setPaper(p.value))}>
+              {p.label}
             </button>
           ))}
         </div>
         <label className="check">
-          <input type="checkbox" checked={answers} onChange={(e) => setAnswers(e.target.checked)} /> Solucionario
+          <input type="checkbox" checked={answers} onChange={(e) => { setAnswers(e.target.checked); setExportId(null) }} /> Solucionario
         </label>
         {status === 'succeeded' && current.data?.download_url ? (
-          <button className="primary" onClick={() => download.mutate(current.data!.download_url!)} disabled={download.isPending}>
-            Descargar PDF · {current.data.page_count} págs.
-          </button>
+          <>
+            {current.data.cover_download_url && (
+              <button className="ghost" onClick={() => download.mutate(current.data!.cover_download_url!)} disabled={download.isPending}>
+                Portada con lomo
+              </button>
+            )}
+            <button className="primary" onClick={() => download.mutate(current.data!.download_url!)} disabled={download.isPending}>
+              Descargar {current.data.cover_download_url ? 'interior' : 'PDF'} · {current.data.page_count} págs.
+            </button>
+          </>
         ) : (
           <button className="primary" onClick={() => create.mutate()} disabled={busy || illustrating}>
             {busy ? <><span className="spinner" /> Maquetando…</> : illustrating ? <><span className="spinner" /> Ilustrando…</> : 'Generar PDF'}
           </button>
         )}
       </div>
+      {preflight && (
+        <div className={`preflight ${preflight.rating}`}>
+          <strong>{RATING[preflight.rating]}</strong>
+          <span className="muted small">
+            {preflight.min_dpi ? ` · imágenes desde ${preflight.min_dpi} dpi` : ''}
+            {preflight.vector ? ` · ${preflight.vector} dibujo${preflight.vector > 1 ? 's' : ''} vectorial${preflight.vector > 1 ? 'es' : ''}` : ''}
+          </span>
+          {preflight.issues.length > 0 && <ul>{preflight.issues.map((i) => <li key={i}>{i}</li>)}</ul>}
+        </div>
+      )}
       {(status === 'failed' || create.error) && <p className="error">{errorText(create.error, 'No pudimos generar el PDF. Inténtalo de nuevo.')}</p>}
     </section>
   )

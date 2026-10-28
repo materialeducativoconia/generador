@@ -15,8 +15,9 @@ class FakeImages:
     def __init__(self):
         self.calls = []
 
-    async def generate(self, prompt, *, references=(), aspect_ratio="3:4"):
-        self.calls.append({"prompt": prompt, "references": list(references), "aspect_ratio": aspect_ratio})
+    async def generate(self, prompt, *, references=(), aspect_ratio="3:4", resolution="1K"):
+        self.calls.append({"prompt": prompt, "references": list(references), "aspect_ratio": aspect_ratio,
+                           "resolution": resolution})
         return GeneratedImage(data=PNG, media_type="image/png", model="fake-image", cost_usd=0.04)
 
 
@@ -62,9 +63,11 @@ async def test_cover_job_paints_with_references_and_stores_the_cover(raw_db, goo
     assert job["kind"] == "cover"
     row = await raw_db.fetchrow("select cover_key, cover from public.series where id = $1", sid)
     assert ("covers", row["cover_key"]) in storage.uploads
+    assert row["cover_key"].endswith(".jpg") and storage.uploads[("covers", row["cover_key"])][1] == "image/jpeg"
     cover = json.loads(row["cover"])
     assert cover["palette"] == DESIGN["palette"] and cover["references"][0]["title"] == "Piano for Kids"
     call = images.calls[0]
+    assert call["resolution"] == "4K"  # sharp enough for a printed cover
     assert call["references"] == [PNG] and "no text" in call["prompt"].lower()
     assert PLAN["illustration_prompt"] in call["prompt"]
     logs = await raw_db.fetch("select prompt_version from public.generation_logs where job_id = $1 order by created_at",

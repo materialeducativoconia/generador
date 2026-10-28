@@ -148,4 +148,32 @@ async def test_export_prints_the_illustrations(raw_db, google_user, client_with_
     link = (await client.get(f"/api/exports/{created.json()['export']['id']}/file", headers=bearer(key, user))).json()
     async with httpx.AsyncClient() as http:
         pdf = PdfReader(io.BytesIO((await http.get(link["url"])).content))
-    assert any(page.images for page in pdf.pages[1:])
+    text = "".join(page.extract_text() for page in pdf.pages)
+    assert "Dibujo para colorear" not in text  # the picture printed, not its placeholder
+    media = await raw_db.fetchval("select media_type from public.assets where subject_norm = 'vaca feliz'")
+    assert media == "image/svg+xml" or any(page.images for page in pdf.pages[1:])  # vector when potrace is there
+
+
+async def test_print_edition_ships_a_cover_wrap_and_a_preflight(raw_db, google_user, client_with_storage, key, engine,
+                                                               storage):
+    import io
+
+    from pypdf import PdfReader
+
+    client = client_with_storage
+    user = await google_user()
+    sid = await ready_tome(client, key, user, engine)
+
+    created = await client.post(f"/api/series/{sid}/exports", json={"paper": "8x10", "edition": "print"},
+                                headers=bearer(key, user))
+    await run_next_with_storage(engine, storage)
+
+    status = (await client.get(f"/api/exports/{created.json()['export']['id']}", headers=bearer(key, user))).json()
+    assert status["preflight"]["rating"] in {"lista", "aceptable", "baja"}
+    assert any("24 páginas" in i for i in status["preflight"]["issues"])  # a 3-section test tome is short
+    link = (await client.get(status["cover_download_url"], headers=bearer(key, user))).json()["url"]
+    async with httpx.AsyncClient() as http:
+        wrap = PdfReader(io.BytesIO((await http.get(link)).content))
+    assert len(wrap.pages) == 1 and float(wrap.pages[0].mediabox.width) > 2 * 576  # back + spine + front
+    await storage.delete(status["storage_key"])
+    await storage.delete(status["cover_storage_key"])

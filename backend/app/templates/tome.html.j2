@@ -12,12 +12,16 @@
   {% endfor %}
 
   @page {
-    size: {{ "letter" if paper == "Letter" else "A4" }};
-    margin: 20mm 18mm 22mm;
+    size: {{ geo.w }}mm {{ geo.h }}mm;
+    margin: {{ geo.top }}mm {{ geo.outer }}mm {{ geo.bottom }}mm;
     @top-left { content: string(tome-title); font: 600 8pt {{ head|safe }}; color: #8a8580; }
     @top-right { content: string(section-title); font: 600 8pt {{ head|safe }}; color: #8a8580; }
     @bottom-center { content: counter(page); font: 700 9pt {{ head|safe }}; color: #57534e; }
   }
+  {% if print_edition %}
+  @page :left { margin-left: {{ geo.outer }}mm; margin-right: {{ geo.inner }}mm; }
+  @page :right { margin-left: {{ geo.inner }}mm; margin-right: {{ geo.outer }}mm; }
+  {% endif %}
   @page cover { margin: 0; @top-left { content: none } @top-right { content: none } @bottom-center { content: none } }
 
   :root { --ink: {{ c.ink }}; --muted: {{ c.muted }}; --line: {{ c.line }}; --soft: {{ c.soft }}; --accent: {{ c.accent }}; --tint: {{ c.tint }}; }
@@ -25,7 +29,7 @@
   body { font: {{ th.body_size_pt }}pt/1.55 {{ body|safe }}, sans-serif; color: var(--ink); margin: 0; }
   h1, h2, h3, .ui { font-family: {{ head|safe }}, sans-serif; }
 
-  .cover { page: cover; height: {{ "279mm" if paper == "Letter" else "297mm" }}; position: relative; padding: 34mm 24mm; display: flex; flex-direction: column;
+  .cover { page: cover; height: {{ geo.h }}mm; position: relative; padding: 34mm 24mm; display: flex; flex-direction: column;
            background: linear-gradient(160deg, {{ c.tint }} 0%, {{ c.soft }} 60%, #ffffff 100%); }
   .cover .kicker { font: 800 10pt {{ head|safe }}; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
   .cover h1 { font: {{ th.head_weight }} 40pt/1.05 {{ head|safe }}; margin: 8mm 0 6mm; letter-spacing: -.02em; string-set: tome-title content(); }
@@ -44,6 +48,13 @@
   .cover.art .name { bottom: 30mm; left: 16mm; }
   .cover.art .by { bottom: 18mm; left: 16mm; }
 
+  .title-page { page: cover; height: {{ geo.h }}mm; position: relative; padding: {{ geo.h * 0.2 }}mm {{ geo.inner + 6 }}mm 0; text-align: center; }
+  .title-page .kicker { font: 800 10pt {{ head|safe }}; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+  .title-page h1 { font: {{ th.head_weight }} 32pt/1.08 {{ head|safe }}; margin: 6mm 0 4mm; string-set: tome-title content(); }
+  .title-page .audience { font: 600 13pt {{ head|safe }}; color: var(--muted); }
+  .title-page .owner { position: absolute; left: 0; right: 0; bottom: {{ geo.h * 0.22 }}mm; font: 600 12pt {{ head|safe }}; }
+  .title-page .owner span { display: block; margin: 9mm auto 0; width: 70%; border-bottom: 1.2pt solid var(--ink); }
+  .title-page .by { position: absolute; left: 0; right: 0; bottom: {{ geo.h * 0.12 }}mm; font: 500 10pt {{ head|safe }}; color: var(--muted); }
   .toc { page-break-after: always; }
   .toc h2 { font: {{ th.head_weight }} 22pt {{ head|safe }}; margin: 0 0 8mm; }
   .toc a { display: block; color: var(--ink); text-decoration: none; padding: 2.4mm 0; border-bottom: .5pt solid var(--line); font: 600 11pt {{ head|safe }}; }
@@ -115,10 +126,10 @@
   .image { border: 1.4pt dashed #a8a29e; border-radius: 5mm; display: flex; flex-direction: column;
            align-items: center; justify-content: center; text-align: center; color: var(--muted);
            font: 600 10pt {{ head|safe }}; margin: 4mm auto; padding: 6mm; page-break-inside: avoid; }
-  .image.full { height: 190mm; width: 100%; } .image.half { height: 85mm; width: 100%; } .image.small { height: 50mm; width: 60%; }
+  .image.full { height: {{ geo.full - 10 }}mm; width: 100%; } .image.half { height: {{ geo.half - 3 }}mm; width: 100%; } .image.small { height: {{ geo.small }}mm; width: 60%; }
   .figure { margin: 4mm auto; text-align: center; page-break-inside: avoid; }
   .figure img { max-width: 100%; object-fit: contain; }
-  .figure.full img { height: 200mm; } .figure.half img { height: 88mm; } .figure.small img { height: 50mm; }
+  .figure.full img { height: {{ geo.full }}mm; } .figure.half img { height: {{ geo.half }}mm; } .figure.small img { height: {{ geo.small }}mm; max-width: 60%; }
   .figure.illustration img, .figure.photo img, .figure.diagram img { border-radius: {{ th.radius_mm }}mm; }
   .credit { font: 500 7pt {{ head|safe }}; color: var(--muted); text-align: center; margin-top: -2mm; margin-bottom: 4mm; }
   .fuentes { page-break-before: always; }
@@ -138,6 +149,15 @@
 </head>
 <body>
 
+{% if print_edition %}
+<div class="title-page">
+  <div class="kicker">{{ GENRE_LABEL.get(tome.genre, "Material educativo") }}</div>
+  <h1>{{ tome.title }}</h1>
+  <div class="audience">{{ tome.audience }}</div>
+  <div class="owner">Este libro pertenece a:<span></span></div>
+  {% if tome.author %}<div class="by">Elaborado por {{ tome.author }}</div>{% endif %}
+</div>
+{% else %}
 {% if tome.cover_data_uri %}
 <div class="cover art">
   <img class="cover-art" src="{{ tome.cover_data_uri }}" alt="">
@@ -155,6 +175,7 @@
   <div class="name">Nombre:</div>
   {% if tome.author %}<div class="by">Elaborado por {{ tome.author }}</div>{% endif %}
 </div>
+{% endif %}
 
 {% if tome.sections|length > 1 %}
 <nav class="toc">

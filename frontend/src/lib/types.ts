@@ -71,7 +71,16 @@ export type Progress = {
 }
 
 export type ExportStatus = 'queued' | 'running' | 'succeeded' | 'failed'
-export type Export = { id: string; status: ExportStatus; page_count: number | null; download_url: string | null }
+export type Preflight = { rating: 'lista' | 'aceptable' | 'baja'; min_dpi: number | null; issues: string[]; vector: number }
+
+export type Export = {
+  id: string
+  status: ExportStatus
+  page_count: number | null
+  download_url: string | null
+  cover_download_url: string | null
+  preflight: Preflight | null
+}
 
 export type Block =
   | { id: string; type: 'heading'; level: 2 | 3; text: string }

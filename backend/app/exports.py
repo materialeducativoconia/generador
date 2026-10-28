@@ -7,7 +7,9 @@ import logging
 from sqlalchemy import text
 
 from app.content import Design, SectionContent
-from app.render import Tome, TomeSection, render_pdf
+from app.illustrator import vectorize
+from app.printing import preflight
+from app.render import Tome, TomeSection, render_cover_wrap, render_pdf
 
 log = logging.getLogger("worker")
 
@@ -27,18 +29,23 @@ async def run_export(deps, job: dict) -> None:
         asset_ids = list({b["asset_id"] for lesson in lessons for b in (_json(lesson["content_json"]) or {}).get("blocks", [])
                           if b.get("type") == "image" and b.get("asset_id")})
         assets = (await conn.execute(text(
-            "select id::text, storage_key, media_type, attribution from public.assets where id = any(cast(:ids as uuid[]))"
+            "select id::text, storage_key, media_type, attribution, kind from public.assets where id = any(cast(:ids as uuid[]))"
         ), {"ids": asset_ids})).all() if asset_ids else []
 
     options = _json(export["options"])
     images, credits = {}, {}
-    for asset_id, key, media_type, attribution in assets:
+    for asset_id, key, media_type, attribution, kind in assets:
         if attribution:
             credits[asset_id] = _json(attribution)["credit"]
         try:
-            images[asset_id] = (await deps.storage.download(key, bucket="images"), media_type)
+            data = await deps.storage.download(key, bucket="images")
         except Exception:  # a missing picture prints as its placeholder
             log.exception("image %s unavailable", key)
+            continue
+        if kind == "line_art" and media_type == "image/png":  # painted before colouring pages were traced
+            svg = await asyncio.to_thread(vectorize, data)
+            data, media_type = (svg, "image/svg+xml") if svg else (data, media_type)
+        images[asset_id] = (data, media_type)
     cover_image, media_type = None, "image/png"
     if series["cover_key"]:
         try:
@@ -60,20 +67,28 @@ async def run_export(deps, job: dict) -> None:
         images=images, credits=credits,
         sources=(_json(series["research"]) or {}).get("sources") or [],
     )
+    paper, print_edition = options.get("paper", "A4"), options.get("edition") == "print"
     # WeasyPrint is CPU-bound; keep the event loop free for the other jobs in flight.
     pdf, pages = await asyncio.wait_for(
-        asyncio.to_thread(render_pdf, tome, paper=options.get("paper", "A4"),
-                          include_answer_key=options.get("include_answer_key", True)),
+        asyncio.to_thread(render_pdf, tome, paper=paper, include_answer_key=options.get("include_answer_key", True),
+                          print_edition=print_edition),
         timeout=120,
     )
-    storage_key = f"{job['user_id']}/{job['series_id']}/{export_id}.pdf"
+    base = f"{job['user_id']}/{job['series_id']}/{export_id}"
+    storage_key, cover_key = f"{base}.pdf", None
     await deps.storage.upload(storage_key, pdf)
+    if print_edition:  # the printer takes the cover as its own file, sized by the page count
+        wrap, _ = await asyncio.wait_for(asyncio.to_thread(render_cover_wrap, tome, paper=paper, pages=pages),
+                                         timeout=60)
+        cover_key = f"{base}-cover.pdf"
+        await deps.storage.upload(cover_key, wrap)
+    report = preflight(tome, paper=paper, print_edition=print_edition, pages=pages)
 
     async with deps.engine.begin() as conn:
         await conn.execute(text(
             """update public.exports set status = 'succeeded', storage_key = :k, page_count = :p, size_bytes = :b,
-                      finished_at = now() where id = :e"""
-        ), {"e": export_id, "k": storage_key, "p": pages, "b": len(pdf)})
+                      cover_storage_key = :ck, preflight = cast(:pf as jsonb), finished_at = now() where id = :e"""
+        ), {"e": export_id, "k": storage_key, "p": pages, "b": len(pdf), "ck": cover_key, "pf": json.dumps(report)})
         await conn.execute(text(
             "update public.generation_jobs set status = 'succeeded', finished_at = now(), locked_at = null,"
             " locked_by = null where id = :j"), {"j": job["id"]})

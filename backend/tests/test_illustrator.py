@@ -40,10 +40,10 @@ def test_an_empty_page_has_no_line_coverage():
 
 
 def test_colour_art_is_shrunk_to_a_printable_jpeg():
-    data, media_type = prepare_image(png(size=(3000, 4000), color=(200, 120, 40)), "illustration")
+    data, media_type = prepare_image(png(size=(4000, 5000), color=(200, 120, 40)), "illustration")
 
     im = Image.open(io.BytesIO(data))
-    assert media_type == "image/jpeg" and max(im.size) <= 1800
+    assert media_type == "image/jpeg" and max(im.size) <= 3200
 
 
 async def test_vision_review_parses_the_verdict():

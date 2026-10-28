@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>{{ tome.title }} — portada</title>
+<style>
+  @font-face { font-family: "Andika"; src: url("{{ fonts }}/Andika-Regular.ttf"); }
+  @font-face { font-family: "Nunito"; font-weight: 200 1000; src: url("{{ fonts }}/Nunito-Variable.ttf"); }
+  {% for family, file in theme_fonts %}
+  @font-face { font-family: "{{ family }}"; font-weight: 100 1000; src: url("{{ fonts }}/{{ file }}"); }
+  {% endfor %}
+  {% set b = wrap.bleed %}
+  @page { size: {{ wrap.total_w }}mm {{ wrap.total_h }}mm; margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: {{ c.ink }}; font: 11pt/1.5 {{ body|safe }}, sans-serif; }
+  .sheet { position: relative; width: {{ wrap.total_w }}mm; height: {{ wrap.total_h }}mm; overflow: hidden; }
+  .back { position: absolute; left: 0; top: 0; width: {{ b + wrap.w }}mm; height: 100%; background: {{ c.tint }};
+          padding: {{ b + 22 }}mm 16mm 0 {{ b + 16 }}mm; }
+  .back h2 { font: {{ th.head_weight }} 20pt/1.1 {{ head|safe }}; margin: 0 0 4mm; }
+  .back .audience { font: 700 10pt {{ head|safe }}; letter-spacing: .1em; text-transform: uppercase; color: {{ c.accent }}; margin-bottom: 8mm; }
+  .back .inside { font: 800 9pt {{ head|safe }}; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 2mm; }
+  .back ol { margin: 0; padding-left: 6mm; font-size: 11pt; }
+  .back li { margin-bottom: 1.5mm; }
+  .back .by { position: absolute; left: {{ b + 16 }}mm; bottom: {{ b + 14 }}mm; font: 600 9pt {{ head|safe }}; color: {{ c.muted }}; }
+  /* KDP prints its barcode here: keep it clear. */
+  .barcode { position: absolute; left: {{ b + wrap.w - 6.35 - 50.8 }}mm; top: {{ b + wrap.h - 6.35 - 30.5 }}mm;
+             width: 50.8mm; height: 30.5mm; background: #fff; }
+  .spine { position: absolute; left: {{ b + wrap.w }}mm; top: 0; width: {{ wrap.spine }}mm; height: 100%; background: {{ c.accent }}; }
+  .spine-t { position: absolute; left: {{ wrap.spine / 2 - (wrap.h - 24) / 2 }}mm; top: {{ b + wrap.h / 2 - wrap.spine / 2 }}mm;
+             width: {{ wrap.h - 24 }}mm; height: {{ wrap.spine }}mm; transform: rotate(90deg); text-align: center; color: #fff;
+             font: {{ th.head_weight }} {{ [wrap.spine * 0.45, 6]|min }}mm/{{ wrap.spine }}mm {{ head|safe }}; white-space: nowrap; overflow: hidden; }
+  .front { position: absolute; left: {{ b + wrap.w + wrap.spine }}mm; top: 0; width: {{ wrap.w + b }}mm; height: 100%; overflow: hidden;
+           background: linear-gradient(160deg, {{ c.tint }} 0%, {{ c.soft }} 60%, #ffffff 100%); }
+  .front img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; }
+  .plate { position: absolute; top: {{ b + 18 }}mm; left: 16mm; right: {{ b + 16 }}mm; padding: 9mm 11mm 8mm; border-radius: 6mm;
+           background: rgba(255, 255, 255, .9); }
+  .plate .kicker { font: 800 10pt {{ head|safe }}; letter-spacing: .14em; text-transform: uppercase; color: {{ c.accent }}; }
+  .plate h1 { font: {{ th.head_weight }} 36pt/1.05 {{ head|safe }}; margin: 4mm 0 3mm; letter-spacing: -.02em; }
+  .plate .audience { font: 600 13pt {{ head|safe }}; opacity: .75; }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="back">
+    <h2>{{ tome.title }}</h2>
+    <div class="audience">{{ tome.audience }}</div>
+    <div class="inside">En este libro</div>
+    <ol>{% for s in tome.sections[:10] %}<li>{{ s.title }}</li>{% endfor %}</ol>
+    {% if tome.author %}<div class="by">Elaborado por {{ tome.author }}</div>{% endif %}
+  </div>
+  <div class="barcode"></div>
+  <div class="spine">{% if wrap.spine_text %}<div class="spine-t">{{ tome.title }}</div>{% endif %}</div>
+  <div class="front">
+    {% if tome.cover_data_uri %}<img src="{{ tome.cover_data_uri }}" alt="">{% endif %}
+    <div class="plate">
+      <div class="kicker">{{ GENRE_LABEL.get(tome.genre, "Material educativo") }}</div>
+      <h1>{{ tome.title }}</h1>
+      <div class="audience">{{ tome.audience }}</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -274,6 +274,11 @@ a.sec-row { transition: background-color 160ms ease; }
 .export .section-h { margin: 0 0 2px; }
 .export p { margin: 0; }
 .export-opts { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.preflight { flex-basis: 100%; font-size: 13px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+.preflight strong::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; background: #16a34a; vertical-align: 1px; }
+.preflight.aceptable strong::before { background: #d97706; }
+.preflight.baja strong::before { background: #dc2626; }
+.preflight ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
 .segmented { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--surface-2); }
 .segmented button { border: 0; background: transparent; border-radius: 999px; padding: 5px 12px; font-size: 13px; color: var(--muted); }
 .segmented button.on { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }

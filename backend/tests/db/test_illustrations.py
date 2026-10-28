@@ -1,6 +1,7 @@
 """Phase 2: once a tome is written, the Art director styles every picture and the Illustrator paints them in sheets."""
 
 import json
+import shutil
 
 import pytest
 
@@ -105,6 +106,24 @@ async def test_pictures_are_painted_four_per_call_in_one_style(raw_db, google_us
     assert art["characters"][0]["name"] == "Rito"
 
 
+@pytest.mark.skipif(shutil.which("potrace") is None, reason="potrace not installed")
+async def test_colouring_pages_are_stored_as_vectors_and_colour_art_is_painted_at_4k(raw_db, google_user, client,
+                                                                                     key, engine):
+    user = await google_user()
+    await written_tome(client, key, user, engine, {**SECTION, "blocks": [
+        image("a", "una vaca"), image("b", "un granero", kind="illustration"), image("c", "un tractor",
+                                                                                   kind="illustration")]})
+    images = FakeImages()
+
+    storage = await illustrate(engine, images)
+
+    assert sorted(c["resolution"] for c in images.calls) == ["1K", "4K"]
+    stored = {r["kind"]: (r["media_type"], r["storage_key"]) for r in
+              await raw_db.fetch("select kind, media_type, storage_key from public.assets")}
+    assert stored["line_art"][0] == "image/svg+xml" and stored["line_art"][1].endswith(".svg")
+    assert storage.uploads[("images", stored["line_art"][1])][0].startswith(b"<?xml")
+
+
 async def test_the_cover_is_the_style_reference(raw_db, google_user, client, key, engine):
     from tests.test_covers import PNG
 
@@ -118,7 +137,8 @@ async def test_the_cover_is_the_style_reference(raw_db, google_user, client, key
 
     await illustrate(engine, images, storage=storage)
 
-    assert images.calls and all(c["references"] == [PNG] for c in images.calls)
+    assert images.calls and all(len(c["references"]) == 1 for c in images.calls)
+    assert all(c["references"][0].startswith(b"\xff\xd8") for c in images.calls)  # a light JPEG, not the 4K file
 
 
 async def test_repeated_subjects_are_painted_once(raw_db, google_user, client, key, engine):
