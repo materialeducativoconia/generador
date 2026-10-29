@@ -72,3 +72,13 @@ def test_illustrated_image_blocks_print_the_picture():
 
     assert html.count('class="figure full line_art"') == 1 and "data:image/png;base64," in html
     assert 'class="image half"' in html  # not illustrated yet: placeholder
+
+
+def test_signature_prints_author_school_and_logo():
+    t = tome({"id": "b1", "type": "paragraph", "text": "Hola"})
+    t.school, t.logo = "Colegio Montessori", (b"\x89PNG\r\n\x1a\nfake", "image/png")
+
+    html = render_html(t, paper="A4", include_answer_key=False)
+
+    assert "Elaborado por Marta Pérez · Colegio Montessori" in html
+    assert 'class="logo" src="data:image/png;base64,' in html

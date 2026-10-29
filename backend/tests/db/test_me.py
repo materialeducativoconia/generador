@@ -72,3 +72,25 @@ async def test_me_for_a_deactivated_account_is_403(raw_db, google_user, client, 
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "forbidden"
+
+
+async def test_profile_edit_sets_the_signature_and_blank_falls_back(google_user, client, key):
+    user = await google_user()
+
+    body = (await client.patch("/api/me", headers=bearer(key, user),
+                               json={"author_name": " Profa. Marta ", "school": "Colegio Sol"})).json()
+    assert body["author_name"] == "Profa. Marta" and body["school"] == "Colegio Sol"
+    assert body["organization"]["role"] == "owner" and body["plan"]["logo"] is True
+
+    body = (await client.patch("/api/me", headers=bearer(key, user), json={"author_name": ""})).json()
+    assert body["author_name"] is None and body["display_name"] == "Marta Pérez"
+
+
+async def test_logo_needs_creador_and_a_key_of_the_own_organization(google_user, client, key):
+    trial = await google_user(email="prueba-logo@example.com", plan=None)
+    response = await client.put("/api/me/logo", headers=bearer(key, trial), json={"key": "logos/x/y.png"})
+    assert response.status_code == 403 and response.json()["error"]["code"] == "plan_required"
+
+    user = await google_user()
+    response = await client.put("/api/me/logo", headers=bearer(key, user), json={"key": "logos/otra/y.png"})
+    assert response.status_code == 422

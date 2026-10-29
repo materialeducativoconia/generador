@@ -56,6 +56,18 @@ class Tome:
     collection: str | None = None  # the collection's name and the tome's level in it, printed on the cover
     level: int | None = None
     watermark: bool = False  # Prueba and Docente plans: classroom use only
+    school: str | None = None  # printed after the author: "Elaborado por Ana Ruiz · Colegio Montessori"
+    logo: tuple[bytes, str] | None = None  # the organization's logo (Creador and up), beside the signature
+
+    @property
+    def signature(self) -> str | None:
+        return " · ".join(p for p in (self.author, self.school) if p) or None
+
+    @property
+    def logo_data_uri(self) -> str | None:
+        if not self.logo:
+            return None
+        return f"data:{self.logo[1]};base64,{base64.b64encode(self.logo[0]).decode()}"
 
     @property
     def kicker(self) -> str:

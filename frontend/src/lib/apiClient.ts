@@ -15,11 +15,15 @@ export type Me = {
   avatar_url: string | null
   quota: { daily_lessons: number; used_today: number; remaining_today: number }
   platform_role: 'user' | 'staff' | 'admin'
+  author_name: string | null
+  school: string | null
+  organization: { name: string; role: 'owner' | 'editor' | 'viewer'; logo_url: string | null }
   plan: {
     key: 'prueba' | 'docente' | 'creador' | 'editorial'
     label: string
     status: string | null
     word: boolean
+    logo: boolean
     print_edition: boolean
     styles: number
     identities: number

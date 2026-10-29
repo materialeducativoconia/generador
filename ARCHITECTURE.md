@@ -9,6 +9,8 @@
 
 > **Revisión 5 (2026-10-28): planes y créditos.** Planes mensuales en USD: Docente $9 (150 créditos), Creador $24 (500), Editorial $69 (1500); prueba de 40 créditos al registrarse. 1 crédito ≈ 1 página: esquema 1, portada 4, cada página 1, identidad 3, estilo 2. Plan, créditos y Stripe viven en la **organización** (`organizations`, `memberships.role`; `profiles.platform_role` para staff; `subscriptions` por app). Los créditos son bolsas (`credit_buckets`: plan, paquete, prueba) con historial en `credit_ledger`; se cobran al encolar el job y se reembolsan si falla (`app/credits.py`). Stripe (`app/stripe_gateway.py`, precios por *lookup key*, `scripts/stripe_setup.py`): Checkout, portal y webhook idempotente (`stripe_events`). Lo que incluye cada plan: `app/plans.py`.
 
+> **Revisión 6 (2026-10-29): panel lateral y perfil.** La app navega con un panel lateral (cajón en móvil) con saldo y plan. `/app/perfil` guarda la firma del material: `profiles.author_name` (si está vacía, el nombre de Google) y `profiles.school` se imprimen como «Elaborado por …»; el logo es de la organización (`organizations.logo_key`, bucket público `covers`, desde Creador) y va junto a la firma en el PDF, la portada de imprenta y el Word. La firma entra en el hash de la exportación.
+
 ## 0. Resumen en una página
 
 Un docente describe una serie (tema, nivel, nº de lecciones). La app genera primero un **esquema** (títulos + objetivos por lección), el docente lo corrige y aprueba, y entonces se genera **cada lección como un bloque independiente** en paralelo, respetando el rate limit de DeepSeek. El docente revisa, edita o regenera lecciones sueltas, y exporta un **PDF maquetado** con portada, índice, lecciones y solucionario.

@@ -41,6 +41,7 @@
   .cover h1 { font: {{ th.head_weight }} 40pt/1.05 {{ head|safe }}; margin: 8mm 0 6mm; letter-spacing: -.02em; string-set: tome-title content(); }
   .cover .audience { font: 600 14pt {{ head|safe }}; color: var(--muted); }
   .cover .name { position: absolute; bottom: 34mm; left: 24mm; font: 600 12pt {{ head|safe }}; border-top: 1.5pt solid var(--ink); padding-top: 3mm; width: 110mm; }
+  .by .logo { height: 10mm; max-width: 28mm; object-fit: contain; vertical-align: middle; margin-right: 2.5mm; }
   .cover .by { position: absolute; bottom: 24mm; left: 24mm; font: 500 10pt {{ head|safe }}; color: var(--muted); }
 
   .cover.art { padding: 0; background: {{ c.tint }}; }
@@ -195,7 +196,7 @@
   <h1>{{ tome.title }}</h1>
   <div class="audience">{{ tome.audience }}</div>
   <div class="owner">Este libro pertenece a:<span></span></div>
-  {% if tome.author %}<div class="by">Elaborado por {{ tome.author }}</div>{% endif %}
+  {% if tome.signature or tome.logo %}<div class="by">{% if tome.logo %}<img class="logo" src="{{ tome.logo_data_uri }}" alt="">{% endif %}{% if tome.signature %}Elaborado por {{ tome.signature }}{% endif %}</div>{% endif %}
   {% if seal %}<div class="imprint">{{ seal }}<span>{{ tome.brand.name }}</span></div>{% endif %}
 </div>
 {% else %}
@@ -214,7 +215,7 @@
   <div class="audience">{{ tome.audience }}</div>
 {% endif %}
   <div class="name">Nombre:</div>
-  {% if tome.author %}<div class="by">Elaborado por {{ tome.author }}</div>{% endif %}
+  {% if tome.signature or tome.logo %}<div class="by">{% if tome.logo %}<img class="logo" src="{{ tome.logo_data_uri }}" alt="">{% endif %}{% if tome.signature %}Elaborado por {{ tome.signature }}{% endif %}</div>{% endif %}
   {% if seal %}<div class="imprint">{{ seal }}<span>{{ tome.brand.name }}</span></div>{% endif %}
 </div>
 {% endif %}

@@ -67,10 +67,19 @@ async def run_export(deps, job: dict) -> None:
                 "image/png" if series["cover_key"].endswith(".png") else "image/jpeg")
         except Exception:  # a missing cover must not cost the user their PDF
             log.exception("cover %s unavailable, exporting with the plain cover", series["cover_key"])
+    signature = job["payload"].get("signature") or {"author": series["display_name"]}
+    logo = None
+    if signature.get("logo"):
+        try:
+            key = signature["logo"]
+            logo = (await deps.storage.download(key), "image/png" if key.endswith(".png") else
+                    "image/webp" if key.endswith(".webp") else "image/jpeg")
+        except Exception:  # the signature prints without the logo
+            log.exception("logo %s unavailable", signature["logo"])
     audience = (_json(series["audience"]) or {}).get("label", "")
     tome = Tome(
         title=series["title"] or series["topic"], genre=series["genre"] or "lesson_series", audience=audience,
-        author=series["display_name"],
+        author=signature.get("author"), school=signature.get("school"), logo=logo,
         sections=[TomeSection(position=lesson["position"], title=lesson["title"],
                               content=SectionContent.model_validate(_json(lesson["content_json"])))
                   for lesson in lessons if lesson["content_json"]],

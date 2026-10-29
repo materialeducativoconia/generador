@@ -55,8 +55,10 @@ def render_docx(tome: Tome, *, paper: str, include_answer_key: bool) -> bytes:
     doc.add_paragraph(tome.title, style="Title")
     doc.add_paragraph(tome.audience)
     doc.add_paragraph("Nombre: ______________________________")
-    if tome.author:
-        doc.add_paragraph(f"Elaborado por {tome.author}")
+    if tome.logo:
+        doc.add_picture(io.BytesIO(_word_image(tome.logo[0])), height=Mm(15))
+    if tome.signature:
+        doc.add_paragraph(f"Elaborado por {tome.signature}")
     if len(tome.sections) > 1:
         _page_break(doc)
         doc.add_heading("Contenido", level=1)
