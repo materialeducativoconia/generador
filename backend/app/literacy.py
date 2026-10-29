@@ -101,6 +101,7 @@ def check_section(content: SectionContent, allowed: set[str] | None) -> list[str
     return problems
 
 
+ARRAY = re.compile(r"(\d+)\s+filas?\s+de\s+(\d+)", re.I)
 QUANTITY = re.compile(r"[+−×÷=]|\b\d{1,2}\s+[a-záéíóúñ]", re.I)  # "2 manzanas", "3 + 1"
 
 
@@ -110,6 +111,11 @@ def check_blocks(content: SectionContent) -> list[str]:
     for b in content.blocks:
         if b.type == "picture_words" and any(re.search(r"\d", i.syllable or "") for i in b.items):
             problems.append(f"{b.id}: picture_words es para sílabas; para contar dibujos usa counting")
+        elif b.type == "counting" and b.instruction and (m := ARRAY.search(b.instruction)):
+            rows, per_row = int(m.group(1)), int(m.group(2))
+            if not any(i.rows == rows and i.count == rows * per_row for i in b.items):
+                problems.append(f"{b.id}: la instrucción pide {rows} filas de {per_row}: pon count "
+                                f"{rows * per_row} y rows {rows}")
         elif b.type == "image" and b.kind in ("line_art", "illustration") and QUANTITY.search(b.subject):
             problems.append(f"{b.id}: una image no muestra cantidades ni operaciones («{b.subject}»); usa counting "
                             "o picture_math")

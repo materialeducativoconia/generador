@@ -77,11 +77,20 @@ export type Program = {
   findings: { query: string; text: string }[] | null
 }
 
+export type Level = {
+  relation: 'anterior' | 'siguiente'
+  audience: string
+  grade: string
+  focus: string
+  request: string
+  source: number | null
+}
+
 export type Series = CoverFields & {
   design: Design | null
   assets: Record<string, string>
   credits: Record<string, string>
-  research: { needed: boolean; facts: number; sources: Source[]; program: Program | null } | null
+  research: { needed: boolean; facts: number; sources: Source[]; levels?: Level[]; program: Program | null } | null
   id: string
   title: string | null
   topic: string

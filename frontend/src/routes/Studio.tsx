@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
 import { ApiError } from '../lib/api'
@@ -24,8 +24,10 @@ export function Studio() {
   const { data: me } = useMe()
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [request, setRequest] = useState('')
-  const [audience, setAudience] = useState(AUDIENCES[0])
+  const [params] = useSearchParams()  // "Crear este nivel" arrives with the request and audience filled in
+  const [request, setRequest] = useState(params.get('pedido') ?? '')
+  const [audience, setAudience] = useState(params.get('publico') ?? AUDIENCES[0])
+  const audiences = AUDIENCES.includes(audience) ? AUDIENCES : [audience, ...AUDIENCES]
   const [sections, setSections] = useState<number | null>(null)  // null: the Architect decides
   const [pages, setPages] = useState<number | null>(null)
   const [quoting, setQuoting] = useState(false)  // the cost window, shown before anything is created
@@ -84,7 +86,7 @@ export function Studio() {
             <label className="select-pill">
               <span className="sr-only">Público</span>
               <select value={audience} onChange={(e) => setAudience(e.target.value)}>
-                {AUDIENCES.map((a) => <option key={a}>{a}</option>)}
+                {audiences.map((a) => <option key={a}>{a}</option>)}
               </select>
             </label>
             <label className="select-pill">

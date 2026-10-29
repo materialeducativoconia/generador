@@ -485,6 +485,7 @@ async def _series_detail(conn, series_id, user_id, request: Request):
     program = research.get("program") or {}
     out["research"] = {"needed": research.get("needed", False), "sources": research.get("sources", []),
                        "facts": len(research.get("facts", [])),
+                       "levels": program.get("levels") or [],  # suggested tomes below and above, for a series
                        # Testing aid: where the syllabus came from (to be hidden from end users later).
                        "program": {k: program.get(k) for k in ("program", "method", "points", "sources", "queries",
                                                                "review", "findings")} if program else None,

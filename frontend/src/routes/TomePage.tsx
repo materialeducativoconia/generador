@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
 import { PageThumb } from '../components/Sheet'
@@ -8,7 +8,7 @@ import { GENRE_LABEL } from '../lib/labels'
 import { ApiError } from '../lib/api'
 import { api } from '../lib/apiClient'
 import { useExport, usePreview, useProgress, useQuality, useSeries, useStyles } from '../lib/queries'
-import type { Design, Export, LessonSummary, Preflight, Progress, Series } from '../lib/types'
+import type { Design, Export, LessonSummary, Level, Preflight, Progress, Series } from '../lib/types'
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback)
 
@@ -38,6 +38,7 @@ export function TomePage() {
 
       {status === 'outlining' && <Planning />}
       {status === 'outline_failed' && <OutlineFailed series={s} />}
+      {s.research?.levels?.length ? <LevelsPanel series={s} levels={s.research.levels} /> : null}
       {s.research?.program && <ProgramPanel program={s.research.program} />}
       {status === 'outline_ready' && <OutlineEditor key={s.version} series={s} />}
       {['generating', 'needs_attention', 'ready'].includes(status) && progress.data && (
@@ -149,6 +150,46 @@ function QualityCard({ seriesId, progress }: { seriesId: string; progress: Progr
         </ul>
       )}
     </details>
+  )
+}
+
+/** A series by levels: the tomes before and after this one on the same topic, as the programs found by the
+ * Researcher lay it out by grade. Each one opens the studio with its request ready to send. */
+function LevelsPanel({ series: s, levels }: { series: Series; levels: Level[] }) {
+  const navigate = useNavigate()
+  const sources = s.research?.program?.sources ?? []
+  const card = (lv: Level) => (
+    <li key={lv.request} className={`level ${lv.relation}`}>
+      <span className="eyebrow">{lv.relation === 'anterior' ? 'Nivel anterior' : 'Nivel siguiente'} · {lv.audience}</span>
+      <p className="small">{lv.focus}</p>
+      {lv.grade && (
+        <p className="muted small">
+          {lv.source && sources[lv.source - 1]
+            ? <a href={sources[lv.source - 1].url} target="_blank" rel="noreferrer noopener">{lv.grade}</a>
+            : lv.grade}
+        </p>
+      )}
+      <button className="ghost small"
+        onClick={() => navigate(`/app?${new URLSearchParams({ pedido: lv.request, publico: lv.audience })}`)}>
+        Crear este nivel
+      </button>
+    </li>
+  )
+  const before = levels.filter((lv) => lv.relation === 'anterior')
+  const after = levels.filter((lv) => lv.relation === 'siguiente')
+  return (
+    <section className="panel levels">
+      <h2 className="section-h">Niveles sugeridos para la serie</h2>
+      <p className="muted small">Según los programas de estudio encontrados, este tema se trabaja así antes y después de este tomo.</p>
+      <ol className="level-list">
+        {before.map(card)}
+        <li className="level current">
+          <span className="eyebrow">Este tomo · {s.audience.label}</span>
+          <p className="small">{s.title ?? s.topic}</p>
+        </li>
+        {after.map(card)}
+      </ol>
+    </section>
   )
 }
 

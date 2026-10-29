@@ -366,11 +366,18 @@ def draw_frames(b, c, font, pic, top, room):
 
 # --- counting and picture maths: the code draws the exact quantity, the model only names the object --------------
 
-def _icons(pic, word: str, n: int, x: float, y: float, w: float, h: float, crossed: int = 0) -> list[str]:
-    """n copies of a word's picture in a tidy grid inside the box; the last `crossed` are struck out."""
+def _icons(pic, word: str, n: int, x: float, y: float, w: float, h: float, crossed: int = 0,
+           rows: int | None = None) -> list[str]:
+    """n copies of a word's picture in a tidy grid inside the box; the last `crossed` are struck out.
+    `rows` asks for an exact array (2 rows of 5); otherwise full rows are preferred to a ragged last one."""
     if n <= 0:
         return []
-    cols = max(1, min(n, math.ceil(math.sqrt(n * w / h))))
+    if rows:
+        cols = math.ceil(n / rows)
+    else:
+        best = max(1, min(n, math.ceil(math.sqrt(n * w / h))))
+        even = [k for k in range(max(1, best - 2), min(n, best + 2) + 1) if n % k == 0]
+        cols = min(even, key=lambda k: abs(k - best)) if even else best
     rows = math.ceil(n / cols)
     size = min(w / cols, h / rows) * 0.88
     out = []
@@ -401,7 +408,7 @@ def counting(b, c, font, pic, top, room):
     for i, item in enumerate(b.items):
         y = top + i * rh
         body.append(_box(0, y, W - 132, rh - 12, c, rx=14))
-        body += _icons(pic, item.object, item.count, 12, y + 8, W - 156, rh - 28)
+        body += _icons(pic, item.object, item.count, 12, y + 8, W - 156, rh - 28, rows=item.rows)
         body.append(_sign(W - 106, y + rh / 2 + 10, "=", c, font))
         body.append(_answer_box(W - 76, y + rh / 2 - 38, c))
     return W, top + len(b.items) * rh, body

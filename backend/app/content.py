@@ -344,6 +344,13 @@ def block_assets(block: dict) -> list[str]:
 class CountItem(BaseModel):
     object: Word  # one word, drawn once in the picture library and repeated `count` times by code
     count: int = Field(ge=1, le=20)
+    rows: int | None = Field(default=None, ge=1, le=10)  # a rectangular array: rows of count / rows each
+
+    @model_validator(mode="after")
+    def _array(self):
+        if self.rows and self.count % self.rows:
+            raise ValueError(f"{self.count} no se reparte en {self.rows} filas iguales: ajusta count o rows.")
+        return self
 
 
 class Counting(_Pictured):
@@ -525,12 +532,24 @@ class FactSheet(BaseModel):
     facts: list[Fact] = Field(default_factory=list, max_length=40)
 
 
+class Level(BaseModel):
+    """A level below or above the tome's, for a series by levels: what the programs teach on this topic there."""
+
+    relation: Literal["anterior", "siguiente"]
+    audience: str = Field(min_length=2, max_length=60)  # e.g. "Preescolar (5–6 años)"
+    grade: str = Field(default="", max_length=160)  # where the program puts it, e.g. "SEP 2022, Fase 3, 1.º"
+    focus: str = Field(min_length=5, max_length=300)  # what this topic covers at that level
+    request: str = Field(min_length=10, max_length=400)  # a ready-to-send request for that tome
+    source: int | None = Field(default=None, ge=1)
+
+
 class ProgramSheet(BaseModel):
     """The reference syllabus the Architect follows: what an official or proven program teaches, in order."""
 
     program: str = Field(default="", max_length=300)  # e.g. "SEP 2022, Fase 3 (1.º y 2.º de primaria), Lenguajes"
     method: str = Field(default="", max_length=800)  # the teaching approach or the method's steps
     points: list[Fact] = Field(default_factory=list, max_length=30)  # contents in teaching order, with source
+    levels: list[Level] = Field(default_factory=list, max_length=6)  # suggested tomes below and above this one
 
 
 class ProgramReview(BaseModel):

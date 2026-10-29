@@ -528,4 +528,10 @@ a.sec-row { transition: background-color 160ms ease; }
 .cost-rows .total dt { color: inherit; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .program .pre { white-space: pre-wrap; }
+.level-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.level { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; }
+.level .eyebrow { margin: 0; }
+.level p { margin: 0; }
+.level button { align-self: flex-start; margin-top: auto; }
+.level.current { background: var(--accent-soft); border-color: transparent; }
 .program ol, .program ul { padding-left: 20px; }

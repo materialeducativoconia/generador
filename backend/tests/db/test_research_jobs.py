@@ -40,14 +40,15 @@ async def test_research_grounds_the_outline_and_the_sections(raw_db, google_user
     assert research["sources"][0]["title"] == "Ciclo hidrológico" and len(research["facts"]) == 1
     versions = await raw_db.fetch("select prompt_version from public.generation_logs where series_id = $1"
                                   " order by created_at", sid)
-    assert [v["prompt_version"] for v in versions] == ["research@2", "facts@1", "architect@5"]
+    assert [v["prompt_version"] for v in versions] == ["research@3", "facts@1", "architect@5"]
 
     await client.post(f"/api/series/{sid}/lessons/generate", json={}, headers=bearer(key, user))
     writer_llm = ScriptedLLM(json.dumps(SECTION))
     await run_next(engine, writer_llm)
     assert "El agua se evapora con el calor del Sol." in writer_llm.calls[0][1]["content"]
     detail = (await client.get(f"/api/series/{sid}", headers=bearer(key, user))).json()
-    assert detail["research"] == {"needed": True, "facts": 1, "sources": research["sources"], "program": None}
+    assert detail["research"] == {"needed": True, "facts": 1, "sources": research["sources"], "levels": [],
+                                  "program": None}
 
 
 async def test_topics_without_facts_skip_the_reading(raw_db, google_user, client, key, engine):

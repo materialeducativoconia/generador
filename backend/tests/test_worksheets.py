@@ -127,3 +127,18 @@ def test_the_answer_key_gets_results_computed_by_code():
     key = html[html.index('id="solucionario"'):]
     assert "4 + 3 (manzana)" in key and "8 ÷ 2 (galleta)" in key
     assert all(f"<br>{n}" in key for n in ("7", "3", "4", "12"))
+
+
+def test_counting_draws_the_array_the_instruction_asks_for():
+    from app.content import Counting
+    from app.worksheets import _icons
+
+    def centers(svg_parts):
+        return sorted({round(float(p.split('y="')[1].split('"')[0])) for p in svg_parts})
+
+    pic = lambda word, x, y, w, h: f'<rect x="{x}" y="{y}" width="{w}" height="{h}"/>'  # noqa: E731
+    assert len(centers(_icons(pic, "huevo", 10, 0, 0, 480, 160, rows=2))) == 2  # 2 rows of 5
+    assert len(centers(_icons(pic, "huevo", 10, 0, 0, 480, 160))) == 2  # full rows rather than 6 + 4
+    assert len(centers(_icons(pic, "huevo", 12, 0, 0, 480, 300, rows=3))) == 3
+    with pytest.raises(ValueError):
+        Counting.model_validate({"id": "c", "type": "counting", "items": [{"object": "huevo", "count": 10, "rows": 3}]})

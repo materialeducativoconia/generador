@@ -85,3 +85,10 @@ def test_tidy_drops_a_repeated_title_and_blank_pages():
     tidy(content, "Sumas hasta 5")
 
     assert [b.id for b in content.blocks] == ["b2", "b4", "b5"]
+
+
+def test_an_array_instruction_needs_its_rows():
+    content = section({"id": "c1", "type": "counting", "instruction": "Cuenta por filas (2 filas de 5).",
+                       "items": [{"object": "huevo", "count": 10}]})
+
+    assert check_blocks(content) == ["c1: la instrucción pide 2 filas de 5: pon count 10 y rows 2"]

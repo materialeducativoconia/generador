@@ -215,7 +215,8 @@ async def _program_search(deps: Deps, job: dict, brief: Brief, queries: list[str
         return out
     await _log_attempts(deps.engine, job, "program", sheet.attempts)
     out.update(program=sheet.value.program, method=sheet.value.method,
-               points=[p.model_dump() for p in sheet.value.points])
+               points=[p.model_dump() for p in sheet.value.points],
+               levels=[lv.model_dump() for lv in sheet.value.levels])
     return out
 
 

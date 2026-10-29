@@ -11,7 +11,13 @@ PLAN = {"needed": False, "queries": [], "reason": "método práctico",
         "program_queries": ["programa SEP primer grado lectoescritura", "método de los 20 días pasos"]}
 SHEET = {"program": "SEP 2022, Fase 3, Lenguajes", "method": "Silábico: vocales, luego m, p, s, l",
          "points": [{"text": "Reconoce las vocales", "source": 1}, {"text": "Lee sílabas con m", "source": 2},
-                    {"text": "Dato sin fuente válida", "source": 9}]}
+                    {"text": "Dato sin fuente válida", "source": 9}],
+         "levels": [{"relation": "anterior", "audience": "Preescolar (5–6 años)", "grade": "SEP 2022, Fase 2",
+                     "focus": "Conciencia fonológica y vocales", "request": "Cuadernillo de vocales para preescolar",
+                     "source": 1},
+                    {"relation": "siguiente", "audience": "Primaria baja (6–8)", "grade": "SEP 2022, Fase 3, 2.º",
+                     "focus": "Sílabas trabadas y lectura de frases", "request": "Fichas de sílabas trabadas",
+                     "source": 7}]}
 REVIEW = {"score": 4, "covered": ["vocales"], "missing": ["sílabas con p"], "issues": ["Falta la p"]}
 
 
@@ -46,6 +52,9 @@ async def test_the_outline_is_built_on_an_official_program_and_checked_against_i
     detail = (await client.get(f"/api/series/{sid}", headers=bearer(key, user))).json()
     assert detail["research"]["program"]["program"] == "SEP 2022, Fase 3, Lenguajes"
     assert detail["research"]["program"]["findings"][0]["text"] == "Hallazgo 1"
+    levels = detail["research"]["levels"]
+    assert [lv["relation"] for lv in levels] == ["anterior", "siguiente"]
+    assert levels[0]["source"] == 1 and levels[1]["source"] is None  # source 7 does not exist
     card = (await client.get(f"/api/series/{sid}/quality", headers=bearer(key, user))).json()
     assert card["cost"]["search_usd"] == 0.012
 
