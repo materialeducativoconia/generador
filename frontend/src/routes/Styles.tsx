@@ -1,8 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
+import { Link } from 'react-router'
 import { AppShell } from '../components/AppShell'
+import { errorText } from '../components/ErrorNote'
 import { api } from '../lib/apiClient'
-import { useStyles } from '../lib/queries'
+import { useMe, useStyles } from '../lib/queries'
 import { useThemeFonts } from '../lib/themes'
 import type { Style } from '../lib/types'
 
@@ -43,6 +45,7 @@ export function Styles() {
   }
 
   const styles = data?.styles ?? []
+  const allowed = useMe().data?.plan.styles ?? 0
   return (
     <AppShell>
       <section className="styles-head">
@@ -54,7 +57,7 @@ export function Styles() {
             (colores, tipografía, marcos, ilustración) para tus tomos; nunca copiamos sus dibujos, textos ni marca.
           </p>
         </div>
-        <form className="uploader" onSubmit={submit}>
+        {allowed === 0 ? <Upsell what="La biblioteca de estilos" /> : <form className="uploader" onSubmit={submit}>
           <input ref={input} type="file" accept={TYPES.join(',')} aria-label="Archivo de referencia"
                  onChange={(e) => {
                    const f = e.target.files?.[0] ?? null
@@ -63,15 +66,24 @@ export function Styles() {
                  }} />
           <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre del estilo" maxLength={80} />
           <button type="submit" disabled={!file || upload.isPending}>{upload.isPending ? 'Subiendo…' : 'Subir referencia'}</button>
-        </form>
+        </form>}
       </section>
-      {upload.error && <p className="error" role="alert">{upload.error instanceof Error ? upload.error.message : 'No se pudo subir.'}</p>}
+      {upload.error && <p className="error" role="alert">{errorText(upload.error, upload.error instanceof Error ? upload.error.message : 'No se pudo subir.')}</p>}
       {isLoading ? <p className="muted">Cargando…</p> : styles.length === 0 ? (
         <p className="muted">Aún no tienes estilos. Sube tu primera referencia (máx. 50 MB).</p>
       ) : (
         <div className="style-grid">{styles.map((s) => <StyleCard key={s.id} style={s} />)}</div>
       )}
     </AppShell>
+  )
+}
+
+function Upsell({ what }: { what: string }) {
+  return (
+    <div className="panel upsell">
+      <p><strong>{what}</strong> está disponible desde el plan <strong>Creador</strong>.</p>
+      <Link to="/app/plan" className="primary">Ver planes</Link>
+    </div>
   )
 }
 

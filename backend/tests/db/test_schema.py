@@ -12,7 +12,7 @@ async def test_first_google_login_creates_profile_from_google_metadata(db):
     assert profile["email"] == "marta@gmail.com"
     assert profile["display_name"] == "Marta Pérez"
     assert profile["avatar_url"] == "https://lh3.googleusercontent.com/a/x"
-    assert profile["daily_lesson_quota"] == 60
+    assert profile["daily_lesson_quota"] == 300
     assert profile["is_active"] is True
 
 

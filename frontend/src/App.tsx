@@ -9,6 +9,7 @@ import { SectionPage } from './routes/SectionPage'
 import { Studio } from './routes/Studio'
 import { Styles } from './routes/Styles'
 import { Identities } from './routes/Identities'
+import { Plan } from './routes/Plan'
 import { TomePage } from './routes/TomePage'
 import { Welcome } from './routes/Welcome'
 
@@ -27,6 +28,7 @@ export default function App() {
             <Route path="/app/secciones/:id" element={authed(<SectionPage />)} />
             <Route path="/app/estilos" element={authed(<Styles />)} />
             <Route path="/app/identidades" element={authed(<Identities />)} />
+            <Route path="/app/plan" element={authed(<Plan />)} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

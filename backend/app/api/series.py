@@ -10,10 +10,12 @@ from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from sqlalchemy import text
 from uuid6 import uuid7
 
+from app import credits
 from app.api.deps import current_user_id
 from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Block, Design, OutlineSection, block_assets
 from app.diagrams import render_diagram
 from app.errors import ApiError
+from app.plans import COVER, OUTLINE, tome_credits
 from app.jobs import enqueue_cover
 from app.llm import USD_PER_M
 from app.pricing import estimate
@@ -71,6 +73,17 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
             if existing:
                 return await _created(conn, existing.series_id, existing.id)
         await _require_active(conn, user_id)
+        acc = await credits.account(conn, user_id)
+        if body.page_count and body.page_count > acc.plan.max_pages:
+            raise ApiError(403, "plan_required", f"Tu plan {acc.plan.label} admite tomos de hasta "
+                           f"{acc.plan.max_pages} páginas.", {"feature": "max_pages", "plan": acc.plan_key})
+        busy = (await conn.execute(text(
+            """select count(*) from public.series s join public.memberships m on m.user_id = s.user_id
+                where m.org_id = :o and s.status in ('outlining', 'generating')"""), {"o": acc.org_id})).scalar_one()
+        if busy >= acc.plan.concurrent:
+            raise ApiError(429, "too_many_running", f"Tu plan {acc.plan.label} genera {acc.plan.concurrent} "
+                           f"{'tomo' if acc.plan.concurrent == 1 else 'tomos'} a la vez; espera a que termine.",
+                           {"plan": acc.plan_key})
         series_id, job_id = uuid7(), uuid7()
         await conn.execute(text(
             """insert into public.series (id, user_id, topic, audience, language, lesson_count,
@@ -86,6 +99,8 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
         ), {"id": job_id, "u": user_id, "s": series_id, "k": idempotency_key,
             "payload": json.dumps({"brief": body.model_dump(exclude={"style_id", "identity_id", "collection_id",
                                                                     "place"})})})
+        await credits.charge(conn, user_id, OUTLINE, "Esquema", job_id)
+        await credits.charge(conn, user_id, COVER, "Portada", job_id)  # moves to the cover job when it is queued
         identity_id = body.identity_id
         if body.collection_id:
             from app.api.collections import own_collection, place_in  # collections imports this module
@@ -210,7 +225,11 @@ async def estimate_cost(request: Request, user_id: UserId, sections: int | None 
                  join public.exports e on e.series_id = s.id and e.status = 'succeeded' and e.page_count > 0
                 where s.user_id = :u order by s.id, e.created_at desc limit 10"""), {"u": user_id})).mappings().all()
         per_page = [(await _cost(conn, r))["total_usd"] / r["page_count"] for r in done]
-    return estimate(sections, pages, sum(per_page) / len(per_page) if per_page else None)
+        acc = await credits.account(conn, user_id)
+        wallet = await credits.balance(conn, acc.org_id)
+    out = estimate(sections, pages, sum(per_page) / len(per_page) if per_page else None)
+    return {**out, "credits": tome_credits(out["pages"]), "balance": wallet["total"], "plan": acc.plan_key,
+            "max_pages": acc.plan.max_pages}
 
 
 async def _cost(conn, series) -> dict:
@@ -286,6 +305,7 @@ async def regenerate_outline(series_id: uuid.UUID, body: Regenerate, request: Re
             """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload)
                values (:id, :u, :s, 'outline', 'queued', cast(:payload as jsonb))"""
         ), {"id": job_id, "u": user_id, "s": series_id, "payload": json.dumps({"instructions": body.instructions})})
+        await credits.charge(conn, user_id, OUTLINE, "Rehacer esquema", job_id)
         return await _created(conn, series_id, job_id)
 
 
@@ -305,7 +325,7 @@ async def request_cover(series_id: uuid.UUID, request: Request, user_id: UserId)
             " and created_at > now() - interval '1 day'"), {"u": user_id})).scalar_one()
         if today >= COVERS_PER_DAY:
             raise ApiError(429, "quota_exceeded", f"Puedes crear hasta {COVERS_PER_DAY} portadas al día.")
-        await enqueue_cover(conn, user_id, series_id)
+        await credits.charge(conn, user_id, COVER, "Portada nueva", await enqueue_cover(conn, user_id, series_id))
     return {"cover_status": "queued"}
 
 
@@ -355,7 +375,8 @@ async def apply_design(conn, user_id, series_id, current: Design | None, design:
         " order by created_at desc limit 1"), {"s": series_id})).scalar_one_or_none()
     changed = current is None or current.palette != design.palette or current.brand != design.brand
     if cover in ("running", "succeeded") and changed:
-        await enqueue_cover(conn, user_id, series_id)
+        cover_job = await enqueue_cover(conn, user_id, series_id)
+        await credits.charge(conn, user_id, COVER, "Portada con el nuevo diseño", cover_job)
         return "queued"
     return cover
 
@@ -398,23 +419,25 @@ async def generate_lessons(series_id: uuid.UUID, body: Generate, request: Reques
         if series["status"] not in ("outline_ready", "needs_attention", "ready"):
             raise ApiError(409, "invalid_state", "El esquema todavía no está listo para aprobarse.")
         if body.lesson_ids:
-            targets = (await conn.execute(text(
-                "select id from public.lessons where series_id = :s and id = any(:ids) and status not in"
-                " ('queued','generating')"), {"s": series_id, "ids": body.lesson_ids})).scalars().all()
+            rows = (await conn.execute(text(
+                "select id, pages from public.lessons where series_id = :s and id = any(:ids) and status not in"
+                " ('queued','generating')"), {"s": series_id, "ids": body.lesson_ids})).all()
         else:
-            targets = (await conn.execute(text(
-                "select id from public.lessons where series_id = :s and status in ('pending','failed')"
-                " order by position"), {"s": series_id})).scalars().all()
+            rows = (await conn.execute(text(
+                "select id, pages from public.lessons where series_id = :s and status in ('pending','failed')"
+                " order by position"), {"s": series_id})).all()
+        targets = [r.id for r in rows]
         if not targets:
             raise ApiError(409, "invalid_state", "No hay secciones pendientes de generar.")
         await _check_quota(conn, user_id, len(targets))
         jobs = []
-        for lesson_id in targets:
+        for lesson_id, pages in rows:
             job_id = uuid7()
             await conn.execute(text(
                 """insert into public.generation_jobs (id, user_id, series_id, lesson_id, kind, status, payload)
                    values (:id, :u, :s, :l, 'lesson', 'queued', '{}')"""
             ), {"id": job_id, "u": user_id, "s": series_id, "l": lesson_id})
+            await credits.charge(conn, user_id, max(pages or 1, 1), "Sección", job_id)
             jobs.append({"id": str(job_id), "kind": "lesson", "lesson_id": str(lesson_id), "status": "queued"})
         await conn.execute(text(
             "update public.lessons set status = 'queued', last_error = null where id = any(:ids)"
@@ -614,6 +637,7 @@ async def regenerate_lesson(lesson_id: uuid.UUID, body: Regenerate, request: Req
                values (:id, :u, :s, :l, 'lesson', 'queued', cast(:p as jsonb))"""
         ), {"id": job_id, "u": user_id, "s": lesson["series_id"], "l": lesson_id,
             "p": json.dumps({"instructions": body.instructions})})
+        await credits.charge(conn, user_id, max(lesson["pages"] or 1, 1), "Regenerar sección", job_id)
         await conn.execute(text("update public.lessons set status = 'queued', last_error = null where id = :l"),
                            {"l": lesson_id})
         await conn.execute(text("update public.series set status = 'generating' where id = :s"),

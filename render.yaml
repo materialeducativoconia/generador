@@ -13,6 +13,12 @@ envVarGroups:
         value: "50"
       - key: DEEPSEEK_MAX_INFLIGHT
         value: "16"
+      - key: STRIPE_SECRET_KEY # vacío desactiva los pagos; productos y precios: backend/scripts/stripe_setup.py
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET # whsec_… que imprime stripe_setup.py
+        sync: false
+      - key: APP_URL # https://<frontend>; a donde Stripe devuelve al usuario
+        sync: false
 
 services:
   - type: web

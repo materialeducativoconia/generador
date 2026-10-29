@@ -3,14 +3,13 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
+import { errorText } from '../components/ErrorNote'
 import { PageThumb } from '../components/Sheet'
 import { ART_LABEL, COVER_LABEL, FRAME_LABEL, GENRE_LABEL, THEME_LABEL } from '../lib/labels'
-import { ApiError } from '../lib/api'
 import { api } from '../lib/apiClient'
-import { useExport, useIdentities, usePreview, useProgress, useQuality, useSeries, useStyles } from '../lib/queries'
+import { useExport, useIdentities, useMe, usePreview, useProgress, useQuality, useSeries, useStyles } from '../lib/queries'
 import type { Design, Export, LessonSummary, Level, Preflight, Progress, Series } from '../lib/types'
 
-const errorText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback)
 
 export function TomePage() {
   const { id = '' } = useParams()
@@ -507,6 +506,11 @@ function Sections({ series, progress }: { series: Series; progress: Progress }) 
   )
 }
 
+/** Marks an option the user's plan does not include; choosing it explains which plan does. */
+function Lock() {
+  return <span className="lock" title="Desde el plan Creador"> · Creador</span>
+}
+
 type Edition = 'digital' | 'print'
 type Paper = 'A4' | 'Letter' | '8x10' | '6x9'
 const PAPERS: Record<Edition, { value: Paper; label: string }[]> = {
@@ -516,6 +520,7 @@ const PAPERS: Record<Edition, { value: Paper; label: string }[]> = {
 const RATING: Record<Preflight['rating'], string> = { lista: 'Lista para imprenta', aceptable: 'Aceptable', baja: 'Baja resolución' }
 
 function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: Progress['latest_export']; images: Progress['images'] }) {
+  const plan = useMe().data?.plan
   const [format, setFormat] = useState<'pdf' | 'docx'>('pdf')
   const [edition, setEdition] = useState<Edition>('digital')
   const [paper, setPaper] = useState<Paper>('A4')
@@ -561,7 +566,7 @@ function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: P
           {(['pdf', 'docx'] as const).map((f) => (
             <button key={f} role="radio" aria-checked={format === f} className={format === f ? 'on' : ''}
               onClick={change(() => { setFormat(f); if (f === 'docx') { setEdition('digital'); setPaper(PAPERS.digital[0].value) } })}>
-              {f === 'pdf' ? 'PDF' : 'Word'}
+              {f === 'pdf' ? 'PDF' : <>Word{plan && !plan.word && <Lock />}</>}
             </button>
           ))}
         </div>
@@ -569,7 +574,7 @@ function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: P
           {(['digital', 'print'] as const).map((e) => (
             <button key={e} role="radio" aria-checked={edition === e} className={edition === e ? 'on' : ''}
               onClick={change(() => { setEdition(e); setPaper(PAPERS[e][0].value) })}>
-              {e === 'digital' ? 'Digital' : 'Imprenta'}
+              {e === 'digital' ? 'Digital' : <>Imprenta{plan && !plan.print_edition && <Lock />}</>}
             </button>
           ))}
         </div>}

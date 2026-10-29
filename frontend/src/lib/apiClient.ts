@@ -14,4 +14,18 @@ export type Me = {
   display_name: string | null
   avatar_url: string | null
   quota: { daily_lessons: number; used_today: number; remaining_today: number }
+  platform_role: 'user' | 'staff' | 'admin'
+  plan: {
+    key: 'prueba' | 'docente' | 'creador' | 'editorial'
+    label: string
+    status: string | null
+    word: boolean
+    print_edition: boolean
+    styles: number
+    identities: number
+    max_pages: number
+    watermark: boolean
+    commercial: boolean
+  }
+  credits: number
 }

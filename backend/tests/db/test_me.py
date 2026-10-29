@@ -17,7 +17,8 @@ async def test_me_returns_profile_with_full_quota_for_a_new_teacher(google_user,
     assert body["id"] == str(user)
     assert body["display_name"] == "Marta Pérez"
     assert body["avatar_url"] == "https://lh3.googleusercontent.com/a/x"
-    assert body["quota"] == {"daily_lessons": 60, "used_today": 0, "remaining_today": 60}
+    assert body["quota"] == {"daily_lessons": 300, "used_today": 0, "remaining_today": 300}
+    assert body["plan"]["key"] == "editorial" and body["credits"] == 10040  # plus the sign-up trial
 
 
 async def test_me_counts_only_lesson_jobs_created_today(raw_db, google_user, client, key):
@@ -44,7 +45,7 @@ async def test_me_counts_only_lesson_jobs_created_today(raw_db, google_user, cli
 
     response = await client.get("/api/me", headers=bearer(key, user))
 
-    assert response.json()["quota"] == {"daily_lessons": 60, "used_today": 2, "remaining_today": 58}
+    assert response.json()["quota"] == {"daily_lessons": 300, "used_today": 2, "remaining_today": 298}
 
 
 async def test_me_without_token_is_401(client):

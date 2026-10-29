@@ -16,10 +16,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link to="/app/identidades" className="ghost small">Identidades</Link>
           <Link to="/app/estilos" className="ghost small">Estilos</Link>
           {me && (
-            <span className="quota" title="Secciones que puedes generar hoy">
+            <Link to="/app/plan" className="quota" title={`Plan ${me.plan.label} · créditos disponibles`}>
               <span className="quota-dot" />
-              {me.quota.remaining_today} / {me.quota.daily_lessons} hoy
-            </span>
+              {me.credits} créditos · {me.plan.label}
+            </Link>
           )}
           {me?.avatar_url && <img className="avatar" src={me.avatar_url} alt="" width={28} height={28} referrerPolicy="no-referrer" />}
           <button className="ghost small" onClick={() => void supabase.auth.signOut()}>

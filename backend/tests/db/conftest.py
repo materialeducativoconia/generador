@@ -112,7 +112,10 @@ async def google_user(raw_db):
     """Creates committed users like a first Google login does, and deletes them (cascading) afterwards."""
     created: list[uuid.UUID] = []
 
-    async def create(email: str | None = None, full_name: str = "Marta Pérez") -> uuid.UUID:
+    async def create(email: str | None = None, full_name: str = "Marta Pérez",
+                     plan: str | None = "editorial", credits: int = 10000) -> uuid.UUID:
+        """Most tests are about features, not billing: users get the top plan and plenty of credits.
+        plan=None leaves the free trial the sign-up trigger grants."""
         user_id = await raw_db.fetchval(
             """
             insert into auth.users (id, instance_id, aud, role, email, raw_user_meta_data, raw_app_meta_data, created_at, updated_at)
@@ -124,10 +127,26 @@ async def google_user(raw_db):
             json.dumps({"full_name": full_name, "avatar_url": "https://lh3.googleusercontent.com/a/x"}),
         )
         created.append(user_id)
+        if plan:
+            await subscribe(raw_db, user_id, plan, credits)
         return user_id
 
     yield create
+    await raw_db.execute("""delete from public.organizations where id in
+                              (select org_id from public.memberships where user_id = any($1::uuid[]))""", created)
     await raw_db.execute("delete from auth.users where id = any($1::uuid[])", created)
+
+
+async def subscribe(raw_db, user_id, plan: str, credits: int = 0) -> uuid.UUID:
+    org = await raw_db.fetchval("select org_id from public.memberships where user_id = $1", user_id)
+    await raw_db.execute(
+        """insert into public.subscriptions (org_id, plan, status, current_period_end)
+           values ($1, $2, 'active', now() + interval '30 days')
+           on conflict (org_id, app) do update set plan = $2, status = 'active'""", org, plan)
+    if credits:
+        await raw_db.execute("insert into public.credit_buckets (org_id, source, granted, remaining) "
+                             "values ($1, 'adjust', $2, $2)", org, credits)
+    return org
 
 
 @pytest.fixture

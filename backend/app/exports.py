@@ -80,6 +80,7 @@ async def run_export(deps, job: dict) -> None:
         images=images, credits=credits,
         sources=(_json(series["research"]) or {}).get("sources") or [],
         collection=shelf.name if shelf else None, level=shelf.level if shelf else None,
+        watermark=job["payload"].get("watermark", False),
     )
     paper, print_edition = options.get("paper", "A4"), options.get("edition") == "print"
     if options.get("format") == "docx":

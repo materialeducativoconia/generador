@@ -1,15 +1,15 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { AppShell } from '../components/AppShell'
-import { ApiError } from '../lib/api'
+import { Link } from 'react-router'
+import { errorText } from '../components/ErrorNote'
 import { api } from '../lib/apiClient'
 import { ART_LABEL, COVER_LABEL } from '../lib/labels'
-import { useCollections, useIdentities, useStyles } from '../lib/queries'
+import { useCollections, useIdentities, useMe, useStyles } from '../lib/queries'
 import { themeVars, useThemeFonts } from '../lib/themes'
 import type { Design, Identity } from '../lib/types'
 
 const AUDIENCES = ['Preescolar y primaria baja', 'Primaria', 'Secundaria', 'Adultos', 'Variado']
-const errorText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback)
 
 /** Mis identidades: the user as a publisher with their own line. Agents propose three, the user keeps one and
  * gives it to a collection, so every level of the collection looks, sounds and signs the same. */
@@ -31,6 +31,7 @@ export function Identities() {
     if (about.trim().length >= 3 && !create.isPending) create.mutate()
   }
   const identities = data?.identities ?? []
+  const allowed = useMe().data?.plan.identities ?? 0
   return (
     <AppShell>
       <section className="styles-head">
@@ -43,6 +44,7 @@ export function Identities() {
           </p>
         </div>
       </section>
+      {allowed === 0 ? <Upsell what="Generar tu identidad de marca" /> : (
       <form className="panel identity-form" onSubmit={submit}>
         <label className="field">
           <span>¿Qué publicas?</span>
@@ -72,11 +74,20 @@ export function Identities() {
           {create.isPending ? 'Enviando…' : 'Proponer 3 identidades'}
         </button>
         {create.error && <p className="error small" role="alert">{errorText(create.error, 'No se pudo crear.')}</p>}
-      </form>
+      </form>)}
       {isLoading ? <p className="muted">Cargando…</p> : identities.length === 0 ? (
         <p className="muted">Aún no tienes identidades. Describe lo que publicas y te proponemos tres líneas distintas.</p>
       ) : identities.map((i) => <IdentityRow key={i.id} identity={i} />)}
     </AppShell>
+  )
+}
+
+function Upsell({ what }: { what: string }) {
+  return (
+    <div className="panel upsell">
+      <p><strong>{what}</strong> está disponible desde el plan <strong>Creador</strong>.</p>
+      <Link to="/app/plan" className="primary">Ver planes</Link>
+    </div>
   )
 }
 

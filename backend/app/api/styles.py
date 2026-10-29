@@ -10,8 +10,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from uuid6 import uuid7
 
+from app import credits
 from app.api.deps import current_user_id
 from app.errors import ApiError
+from app.plans import STYLE
 
 router = APIRouter()
 log = logging.getLogger("api")
@@ -32,14 +34,16 @@ async def create_style(body: NewStyle, request: Request, user_id: UserId):
     """Step 1 of an upload: a style row and a one-off URL the browser PUTs the file to."""
     if body.size > MAX_BYTES:
         raise ApiError(422, "too_large", "El archivo pesa más de 50 MB.")
-    storage = _storage(request)
     style_id = uuid7()
     key = f"{user_id}/{style_id}/source.{EXTENSION[body.content_type]}"
     async with request.app.state.engine.begin() as conn:
+        acc = await credits.require(conn, user_id, "styles", "La biblioteca de estilos")
+        limit = min(acc.plan.styles, MAX_STYLES)
         count = (await conn.execute(text("select count(*) from public.styles where user_id = :u"),
                                     {"u": user_id})).scalar_one()
-        if count >= MAX_STYLES:
-            raise ApiError(409, "too_many", f"Tu biblioteca admite {MAX_STYLES} estilos; borra alguno.")
+        if count >= limit:
+            raise ApiError(409, "too_many", f"Tu plan admite {limit} estilos; borra alguno o sube de plan.")
+        storage = _storage(request)
         await conn.execute(text(
             """insert into public.styles (id, user_id, name, source_key, source_type)
                values (:id, :u, :n, :k, :t)"""), {"id": style_id, "u": user_id, "n": body.name.strip(), "k": key,
@@ -57,10 +61,12 @@ async def analyze_style(style_id: uuid.UUID, request: Request, user_id: UserId):
             raise ApiError(409, "invalid_state", "Este estilo ya se está analizando.")
         await conn.execute(text("update public.styles set status = 'analyzing', error = null where id = :id"),
                            {"id": style_id})
+        job_id = uuid7()
         await conn.execute(text(
-            """insert into public.generation_jobs (user_id, kind, status, payload, max_attempts)
-               values (:u, 'style', 'queued', cast(:p as jsonb), 3)"""),
-            {"u": user_id, "p": json.dumps({"style_id": str(style_id)})})
+            """insert into public.generation_jobs (id, user_id, kind, status, payload, max_attempts)
+               values (:j, :u, 'style', 'queued', cast(:p as jsonb), 3)"""),
+            {"j": job_id, "u": user_id, "p": json.dumps({"style_id": str(style_id)})})
+        await credits.charge(conn, user_id, STYLE, "Analizar estilo", job_id)
     return {"style": {"id": str(style_id), "status": "analyzing"}}
 
 

@@ -21,6 +21,7 @@ from app.agents import (PROMPT_VERSION, AgentFailed, Attempt, Brief, apply_fixes
                         program_review, program_sheet, research_planner, writer)
 from app.content import ArtPlan, Brand, Design, Outline, OutlineSection
 from app.identity import describe, guard, initials, look_key
+from app import credits
 from app.llm import LLM, UpstreamAuthError, UpstreamError
 from app.artwork import ImageRequest, plan_sheets, sheet_prompt, slice_sheet
 from app.illustrator import (cover_jpeg, line_art_coverage, normalize_subject, prepare_image, reference_image,
@@ -165,7 +166,8 @@ async def _outline(deps: Deps, job: dict) -> None:
         ), {"s": job["series_id"], "t": outline.title, "g": outline.genre, "n": len(outline.sections),
             "plan": json.dumps({"genre": outline.genre, "style_notes": outline.style_notes,
                                 "known_letters": outline.known_letters})})
-        await enqueue_cover(conn, job["user_id"], job["series_id"])
+        cover_job = await enqueue_cover(conn, job["user_id"], job["series_id"])
+        await credits.move_charge(conn, job["id"], cover_job, "Portada")  # paid when the tome was created
         await _succeed(conn, job)
 
 
@@ -747,6 +749,7 @@ async def _requeue(engine: AsyncEngine, job: dict, delay: float, count_attempt: 
 async def _fail(engine: AsyncEngine, job: dict, code: str, message: str) -> None:
     error = json.dumps({"code": code, "message": message})
     async with engine.begin() as conn:
+        await credits.refund_job(conn, job["id"])  # the user pays for results, not for our failures
         await conn.execute(text(
             """update public.generation_jobs set status = 'failed', finished_at = now(), error = cast(:e as jsonb),
                       locked_at = null, locked_by = null where id = :j"""), {"j": job["id"], "e": error})

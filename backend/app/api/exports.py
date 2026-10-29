@@ -13,6 +13,7 @@ from pydantic import BaseModel, model_validator
 from sqlalchemy import text
 from uuid6 import uuid7
 
+from app import credits
 from app.api.deps import current_user_id
 from app.api.series import _jsonable, _own_series
 from app.errors import ApiError
@@ -38,6 +39,11 @@ class ExportOptions(BaseModel):
 async def create_export(series_id: uuid.UUID, body: ExportOptions, request: Request, user_id: UserId):
     async with request.app.state.engine.begin() as conn:
         series = await _own_series(conn, series_id, user_id, lock=True)
+        if body.format == "docx":
+            await credits.require(conn, user_id, "word", "Descargar en Word")
+        if body.edition == "print":
+            await credits.require(conn, user_id, "print_edition", "La edición para imprenta")
+        watermark = (await credits.account(conn, user_id)).plan.watermark
         if series["status"] != "ready":
             raise ApiError(409, "invalid_state", "Todas las secciones deben estar generadas para exportar.")
         versions = (await conn.execute(text(
@@ -45,7 +51,7 @@ async def create_export(series_id: uuid.UUID, body: ExportOptions, request: Requ
         ), {"s": series_id})).all()
         content_hash = hashlib.sha256(json.dumps({
             "title": series["title"], "lessons": [[str(i), v] for i, v in versions], "options": body.model_dump(),
-            "cover": series["cover_key"], "design": _jsonable_design(series["design"]),
+            "cover": series["cover_key"], "design": _jsonable_design(series["design"]), "watermark": watermark,
         }, sort_keys=True).encode()).hexdigest()
         existing = (await conn.execute(text(
             """select * from public.exports where series_id = :s and content_hash = :h and status <> 'failed'
@@ -57,7 +63,8 @@ async def create_export(series_id: uuid.UUID, body: ExportOptions, request: Requ
         await conn.execute(text(
             """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload)
                values (:j, :u, :s, 'pdf_export', 'queued', cast(:p as jsonb))"""
-        ), {"j": job_id, "u": user_id, "s": series_id, "p": json.dumps({"export_id": str(export_id)})})
+        ), {"j": job_id, "u": user_id, "s": series_id,
+            "p": json.dumps({"export_id": str(export_id), "watermark": watermark})})
         row = (await conn.execute(text(
             """insert into public.exports (id, series_id, user_id, job_id, status, options, content_hash)
                values (:e, :s, :u, :j, 'queued', cast(:o as jsonb), :h) returning *"""

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
-import { ApiError } from '../lib/api'
+import { errorText } from '../components/ErrorNote'
 import { api } from '../lib/apiClient'
 import { useCollections, useEstimate, useIdentities, useMe, useSeriesList, useStyles } from '../lib/queries'
 import type { Collection, Identity, SeriesSummary } from '../lib/types'
@@ -60,6 +60,8 @@ export function Studio() {
       idempotencyKey.current = crypto.randomUUID()
       void qc.invalidateQueries({ queryKey: ['series'] })
       void qc.invalidateQueries({ queryKey: ['collections'] })
+      void qc.invalidateQueries({ queryKey: ['me'] })
+      void qc.invalidateQueries({ queryKey: ['billing'] })
       navigate(`/app/tomos/${data.series.id}`)
     },
   })
@@ -111,7 +113,8 @@ export function Studio() {
               <span className="sr-only">Páginas</span>
               <select value={pages ?? ''} onChange={(e) => setPages(e.target.value ? Number(e.target.value) : null)}>
                 <option value="">Páginas: auto</option>
-                {PAGES.map((n) => <option key={n} value={n}>{n} páginas</option>)}
+                {PAGES.map((n) => <option key={n} value={n} disabled={!!me && n > me.plan.max_pages}>
+                  {n} páginas{me && n > me.plan.max_pages ? ' · plan superior' : ''}</option>)}
               </select>
             </label>
             {identities.length > 0 && !lineOf && (
@@ -141,7 +144,7 @@ export function Studio() {
           <CostDialog sections={sections} pages={pages} pending={create.isPending}
                       onConfirm={() => create.mutate()} onCancel={() => setQuoting(false)} />
         )}
-        {create.error && <p className="error" role="alert">{create.error instanceof ApiError ? create.error.message : 'No pudimos crear el tomo.'}</p>}
+        {create.error && <p className="error" role="alert">{errorText(create.error, 'No pudimos crear el tomo.')}</p>}
 
         <div className="examples">
           {EXAMPLES.map((ex) => (
@@ -211,6 +214,7 @@ function Shelf({ collection: c, tomes, collections }: { collection: Collection; 
   const rename = useMutation({ mutationFn: (name: string) => api.patch(`/api/collections/${c.id}`, { name }), onSettled: refresh })
   const remove = useMutation({ mutationFn: () => api.delete(`/api/collections/${c.id}`), onSettled: refresh })
   const identities = usableIdentities(useIdentities().data?.identities)
+  const canBrand = (useMe().data?.plan.identities ?? 0) > 0 || identities.length > 0
   const navigate = useNavigate()
   const line = useMutation({
     mutationFn: (identity_id: string | null) => api.put(`/api/collections/${c.id}/identity`, { identity_id }),
@@ -220,7 +224,7 @@ function Shelf({ collection: c, tomes, collections }: { collection: Collection; 
     <div className="shelf">
       <div className="shelf-head">
         <h3 className="shelf-title">{c.name} <span className="muted small">· {tomes.length} {tomes.length === 1 ? 'nivel' : 'niveles'}</span></h3>
-        <label className="select-pill small" title="Todos los niveles de la colección usan esta identidad">
+        {canBrand && <label className="select-pill small" title="Todos los niveles de la colección usan esta identidad">
           <span className="sr-only">Identidad de la colección</span>
           <select value={c.identity_id ?? ''} disabled={line.isPending}
             onChange={(e) => e.target.value === 'new' ? navigate('/app/identidades') : line.mutate(e.target.value || null)}>
@@ -228,7 +232,7 @@ function Shelf({ collection: c, tomes, collections }: { collection: Collection; 
             {identities.map((i) => <option key={i.id} value={i.id}>{i.design!.brand!.name}</option>)}
             <option value="new">+ Crear identidad…</option>
           </select>
-        </label>
+        </label>}
         <button className="ghost small" onClick={() => { const n = window.prompt('Nuevo nombre', c.name); if (n?.trim()) rename.mutate(n.trim()) }}>Renombrar</button>
         <button className="ghost small" onClick={() => { if (window.confirm(`¿Eliminar la colección «${c.name}»? Sus tomos no se borran: quedan sueltos en tu biblioteca.`)) remove.mutate() }}>Eliminar colección</button>
       </div>
@@ -308,6 +312,7 @@ function CostDialog({ sections, pages, pending, onConfirm, onCancel }: {
   sections: number | null; pages: number | null; pending: boolean; onConfirm: () => void; onCancel: () => void
 }) {
   const q = useEstimate(sections, pages).data
+  const me = useMe().data
   const confirm = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     confirm.current?.focus()
@@ -318,28 +323,29 @@ function CostDialog({ sections, pages, pending, onConfirm, onCancel }: {
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="cost-title" onClick={(e) => e.stopPropagation()}>
-        <h2 id="cost-title">Costo estimado</h2>
+        <h2 id="cost-title">Créditos de este tomo</h2>
         {!q ? <div className="skeleton" /> : (
           <>
             <p className="muted small">
               {q.sections} {q.sections === 1 ? 'sección' : 'secciones'}{q.assumed.sections ? ' (estimadas)' : ''} · {q.pages} páginas{q.assumed.pages ? ' (estimadas)' : ''}
             </p>
-            <dl className="cost-rows">
-              <div><dt>Texto (redacción y revisión)</dt><dd>{usd(q.text_usd)}</dd></div>
-              <div><dt>Búsqueda de programas oficiales</dt><dd>{usd(q.search_usd)}</dd></div>
-              <div><dt>Portada</dt><dd>{usd(q.cover_usd)}</dd></div>
-              <div><dt>Ilustraciones</dt><dd>{usd(q.art_usd[0])} – {usd(q.art_usd[1])}</dd></div>
-              <div className="total"><dt>Total</dt><dd>{usd(q.total_usd[0])} – {usd(q.total_usd[1])} {q.currency}</dd></div>
-            </dl>
-            <p className="small muted">
-              Las ilustraciones dependen de lo que planifique el arquitecto; los dibujos que ya están en tu biblioteca no se vuelven a pagar.
-              {q.history_usd != null && ` Con lo que costaron tus tomos anteriores, este saldría por unos ${usd(q.history_usd)}.`}
-            </p>
+            <p className="credits-big"><strong>~{q.credits}</strong> créditos <span className="muted small">· tienes {q.balance}</span></p>
+            <p className="small muted">Ahora se usan 5 (esquema y portada); las páginas se descuentan al aprobar el esquema. Si algo falla, te los devolvemos.</p>
+            {q.balance < q.credits && <p className="error small">No te alcanzan para el tomo completo. <Link to="/app/plan">Comprar créditos o subir de plan</Link></p>}
+            {me?.platform_role === 'admin' && (
+              <dl className="cost-rows">
+                <div><dt>Texto (redacción y revisión)</dt><dd>{usd(q.text_usd)}</dd></div>
+                <div><dt>Búsqueda de programas oficiales</dt><dd>{usd(q.search_usd)}</dd></div>
+                <div><dt>Portada</dt><dd>{usd(q.cover_usd)}</dd></div>
+                <div><dt>Ilustraciones</dt><dd>{usd(q.art_usd[0])} – {usd(q.art_usd[1])}</dd></div>
+                <div className="total"><dt>Costo de IA (solo admin)</dt><dd>{usd(q.total_usd[0])} – {usd(q.total_usd[1])} {q.currency}</dd></div>
+              </dl>
+            )}
           </>
         )}
         <div className="modal-actions">
           <button className="ghost" onClick={onCancel} disabled={pending}>Cancelar</button>
-          <button ref={confirm} className="primary" onClick={onConfirm} disabled={!q || pending}>{pending ? 'Creando…' : 'Crear el esquema'}</button>
+          <button ref={confirm} className="primary" onClick={onConfirm} disabled={!q || pending || q.balance < 5}>{pending ? 'Creando…' : 'Crear el esquema'}</button>
         </div>
       </div>
     </div>

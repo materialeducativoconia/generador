@@ -25,6 +25,10 @@ export type Estimate = {
   total_usd: [number, number]
   currency: 'USD'
   history_usd?: number
+  credits: number  // what this tome takes: outline, cover and one per page
+  balance: number
+  plan: string
+  max_pages: number
 }
 
 /** The AI cost of what the user picked, before the tome is created. */
@@ -33,6 +37,23 @@ export const useEstimate = (sections: number | null, pages: number | null) =>
     queryKey: ['estimate', sections, pages],
     queryFn: () => api.get<Estimate>(`/api/estimate?${new URLSearchParams({ ...(sections ? { sections: String(sections) } : {}), ...(pages ? { pages: String(pages) } : {}) })}`),
   })
+
+export type Billing = {
+  plan: 'prueba' | 'docente' | 'creador' | 'editorial'
+  status: string | null
+  period_end: string | null
+  credits: { total: number; by_source: Record<string, number>; plan_expires_at: string | null }
+  can_manage: boolean
+  enabled: boolean
+  trial_credits: number
+  plans: { key: string; label: string; price_usd: number; credits: number; watermark: boolean; commercial: boolean; word: boolean;
+           print_edition: boolean; styles: number; identities: number; logo: boolean; premium: boolean; max_pages: number;
+           concurrent: number; seats: number }[]
+  packs: { key: string; credits: number; price_usd: number }[]
+  history: { delta: number; kind: string; reason: string; created_at: string }[]
+}
+
+export const useBilling = () => useQuery({ queryKey: ['billing'], queryFn: () => api.get<Billing>('/api/billing') })
 
 type Styles = { styles: Style[]; poll_after_ms: number | null }
 

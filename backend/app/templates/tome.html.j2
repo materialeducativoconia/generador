@@ -21,13 +21,14 @@
     @top-left { content: string(tome-title); font: 600 8pt {{ head|safe }}; color: #8a8580; }
     @top-right { content: string(section-title); font: 600 8pt {{ head|safe }}; color: #8a8580; }
     @bottom-center { content: counter(page); font: 700 9pt {{ head|safe }}; color: #57534e; }
+    {% if tome.watermark %}@bottom-left { content: "Hecho con Material Educativo IA · uso en el aula"; font: 600 6.5pt {{ head|safe }}; color: #a8a29e; }{% endif %}
     {% if imprint %}@bottom-right { content: "{{ imprint|safe }}"; font: 700 7.5pt {{ head|safe }}; color: {{ c.accent }}; letter-spacing: .06em; }{% endif %}
   }
   {% if print_edition %}
   @page :left { margin-left: {{ geo.outer - pad }}mm; margin-right: {{ geo.inner - pad }}mm; }
   @page :right { margin-left: {{ geo.inner - pad }}mm; margin-right: {{ geo.outer - pad }}mm; }
   {% endif %}
-  @page cover { margin: 0; padding: 0; border: none; @top-left { content: none } @top-right { content: none } @bottom-center { content: none } @bottom-right { content: none } }
+  @page cover { margin: 0; padding: 0; border: none; @top-left { content: none } @top-right { content: none } @bottom-center { content: none } @bottom-right { content: none } @bottom-left { content: none } }
 
   :root { --ink: {{ c.ink }}; --muted: {{ c.muted }}; --line: {{ c.line }}; --soft: {{ c.soft }}; --accent: {{ c.accent }}; --tint: {{ c.tint }}; }
   * { box-sizing: border-box; }

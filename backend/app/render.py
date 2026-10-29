@@ -55,6 +55,7 @@ class Tome:
     sources: list[dict] = field(default_factory=list)  # the Researcher's documents: {title, url}
     collection: str | None = None  # the collection's name and the tome's level in it, printed on the cover
     level: int | None = None
+    watermark: bool = False  # Prueba and Docente plans: classroom use only
 
     @property
     def kicker(self) -> str:

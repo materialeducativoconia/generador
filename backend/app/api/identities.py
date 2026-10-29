@@ -10,12 +10,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from uuid6 import uuid7
 
+from app import credits
 from app.api.collections import own_collection
 from app.api.deps import current_user_id
 from app.api.series import _parse, apply_design
 from app.content import Design
 from app.errors import ApiError
 from app.identity import mark_svg
+from app.plans import IDENTITY
 from app.themes import theme_for
 
 router = APIRouter()
@@ -48,10 +50,13 @@ class IdentityPick(BaseModel):
 @router.post("/api/identities", status_code=202)
 async def create_identity(body: NewIdentity, request: Request, user_id: UserId):
     async with request.app.state.engine.begin() as conn:
+        limit = min((await credits.require(conn, user_id, "identities", "Generar tu identidad")).plan.identities,
+                    MAX_IDENTITIES)
         count = (await conn.execute(text("select count(*) from public.identities where user_id = :u"),
                                     {"u": user_id})).scalar_one()
-        if count >= MAX_IDENTITIES:
-            raise ApiError(409, "too_many", f"Admites {MAX_IDENTITIES} identidades; borra alguna.")
+        if count >= limit:
+            raise ApiError(409, "too_many", f"Tu plan admite {limit} "
+                           f"{'identidad' if limit == 1 else 'identidades'}; borra alguna o sube de plan.")
         identity_id = uuid7()
         brief = body.model_dump(mode="json")
         await conn.execute(text(
@@ -170,10 +175,12 @@ def _show(design: dict | None) -> dict | None:
 
 
 async def _enqueue(conn, user_id, identity_id) -> None:
+    job_id = uuid7()
     await conn.execute(text(
-        """insert into public.generation_jobs (user_id, kind, status, payload, max_attempts)
-           values (:u, 'identity', 'queued', cast(:p as jsonb), 3)"""),
-        {"u": user_id, "p": json.dumps({"identity_id": str(identity_id)})})
+        """insert into public.generation_jobs (id, user_id, kind, status, payload, max_attempts)
+           values (:j, :u, 'identity', 'queued', cast(:p as jsonb), 3)"""),
+        {"j": job_id, "u": user_id, "p": json.dumps({"identity_id": str(identity_id)})})
+    await credits.charge(conn, user_id, IDENTITY, "Proponer identidades", job_id)
 
 
 async def _own(conn, identity_id, user_id, lock=False):

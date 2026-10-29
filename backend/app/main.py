@@ -4,12 +4,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.api import collections, exports, health, identities, me, series, styles
+from app.api import billing, collections, exports, health, identities, me, series, styles
 from app.auth import TokenVerifier
 from app.config import Settings
 from app.db import make_engine
 from app.errors import install_error_handlers
 from app.storage import Storage
+from app.stripe_gateway import StripeGateway
 
 
 @asynccontextmanager
@@ -24,13 +25,16 @@ async def _embedded_worker(app: FastAPI):
 
 
 def create_app(engine: AsyncEngine | None = None, verifier: TokenVerifier | None = None,
-               storage: Storage | None = None) -> FastAPI:
+               storage: Storage | None = None, stripe=None) -> FastAPI:
     settings = Settings() if engine is None or verifier is None else None
     app = FastAPI(title="Generador API", lifespan=_embedded_worker if settings and settings.run_worker else None)
     app.state.engine = engine or make_engine(settings.database_url)
     app.state.verifier = verifier or TokenVerifier(jwks_url=settings.jwks_url, issuer=settings.auth_issuer)
     app.state.storage = storage or (Storage(settings.supabase_url, settings.supabase_service_role_key)
                                     if settings and settings.supabase_service_role_key else None)
+    app.state.stripe = stripe or (StripeGateway(settings.stripe_secret_key, settings.stripe_webhook_secret,
+                                                settings.app_url)
+                                  if settings and settings.stripe_secret_key else None)
     install_error_handlers(app)
     app.include_router(health.router)
     app.include_router(me.router)
@@ -39,4 +43,5 @@ def create_app(engine: AsyncEngine | None = None, verifier: TokenVerifier | None
     app.include_router(styles.router)
     app.include_router(collections.router)
     app.include_router(identities.router)
+    app.include_router(billing.router)
     return app
