@@ -13,6 +13,8 @@
 
 > **Revisión 7 (2026-10-29): onboarding.** En la primera visita, `/app` lleva a `/app/bienvenida`: uso (aula, venta, escuela, casa), niveles y materias, firma, y un primer material sugerido que abre el estudio prellenado (`?pedido=&publico=`). Las respuestas se guardan en `profiles.onboarding` (`POST /api/me/onboarding`, también al omitir) y `profiles.onboarded_at`; quien ya tenía tomos no lo ve.
 
+> **Revisión 8 (2026-10-29): analítica de plataforma.** `/admin/analytics` (solo `profiles.platform_role` staff/admin; `GET /api/admin/analytics?days=`, `app/api/admin.py`): usuarios, activación (bienvenida → primer tomo), suscriptores y MRR por plan, paquetes, créditos gastados contra costo de IA (LLM + imágenes + portadas), fallas de jobs, uso declarado y materias del onboarding, tipos de material y quién más consume. Todo se calcula al vuelo desde las tablas existentes.
+
 ## 0. Resumen en una página
 
 Un docente describe una serie (tema, nivel, nº de lecciones). La app genera primero un **esquema** (títulos + objetivos por lección), el docente lo corrige y aprueba, y entonces se genera **cada lección como un bloque independiente** en paralelo, respetando el rate limit de DeepSeek. El docente revisa, edita o regenera lecciones sueltas, y exporta un **PDF maquetado** con portada, índice, lecciones y solucionario.

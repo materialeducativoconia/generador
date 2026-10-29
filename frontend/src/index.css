@@ -699,3 +699,28 @@ a.quota { text-decoration: none; }
 .choice:disabled { opacity: .5; cursor: progress; }
 @media (hover: hover) and (pointer: fine) { .choice:hover:not(:disabled) { border-color: var(--border-strong); } }
 @media (max-width: 560px) { .onb-top { margin-bottom: 4vh; } }
+
+/* ---------- Admin analytics ---------- */
+.analytics { display: grid; gap: 16px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.tile { display: grid; gap: 4px; margin: 0; }
+.tile-v { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.chart-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.chart-row > .panel { margin: 0; }
+.analytics .h3 { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
+.chart-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+.chart svg { display: block; width: 100%; height: auto; }
+.chart .axis { stroke: var(--border); stroke-width: 1; }
+.chart .tick { fill: var(--muted); font-size: 11px; }
+.chart .bar { fill: var(--accent); opacity: .85; }
+.chart .bar.on { opacity: 1; }
+.hbars { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.hbars li { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; font-size: 13px; }
+.hb-v { font-variant-numeric: tabular-nums; color: var(--muted); }
+.hb-track { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.hb-track span { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.table-wrap { overflow-x: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.data th { text-align: left; font-weight: 500; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+table.data td { padding: 8px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
