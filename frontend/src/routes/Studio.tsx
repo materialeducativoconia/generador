@@ -5,7 +5,8 @@ import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
 import { ApiError } from '../lib/api'
 import { api } from '../lib/apiClient'
-import { useEstimate, useMe, useSeriesList, useStyles } from '../lib/queries'
+import { useCollections, useEstimate, useMe, useSeriesList, useStyles } from '../lib/queries'
+import type { Collection, SeriesSummary } from '../lib/types'
 
 const AUDIENCES = ['Preescolar (3–5 años)', 'Primaria baja (6–8)', 'Primaria alta (9–12)', 'Secundaria', 'Adultos principiantes']
 
@@ -28,6 +29,8 @@ export function Studio() {
   const [request, setRequest] = useState(params.get('pedido') ?? '')
   const [audience, setAudience] = useState(params.get('publico') ?? AUDIENCES[0])
   const audiences = AUDIENCES.includes(audience) ? AUDIENCES : [audience, ...AUDIENCES]
+  const collectionId = params.get('coleccion')
+  const collection = useCollections().data?.find((c) => c.id === collectionId)
   const [sections, setSections] = useState<number | null>(null)  // null: the Architect decides
   const [pages, setPages] = useState<number | null>(null)
   const [quoting, setQuoting] = useState(false)  // the cost window, shown before anything is created
@@ -43,13 +46,16 @@ export function Studio() {
         { request: request.trim(), audience, language: 'es',
           section_count: sections,
           page_count: pages,
-          style_id: style === 'auto' ? null : style },
+          style_id: style === 'auto' ? null : style,
+          collection_id: collection?.id ?? null,
+          place: params.get('lugar') === 'start' ? 'start' : 'end' },
         { 'Idempotency-Key': idempotencyKey.current },
       ),
     onSuccess: (data) => {
       setQuoting(false)
       idempotencyKey.current = crypto.randomUUID()
       void qc.invalidateQueries({ queryKey: ['series'] })
+      void qc.invalidateQueries({ queryKey: ['collections'] })
       navigate(`/app/tomos/${data.series.id}`)
     },
   })
@@ -69,6 +75,7 @@ export function Studio() {
         <h1 className="display">{firstName ? `¿Qué creamos hoy, ${firstName}?` : '¿Qué material creamos hoy?'}</h1>
         <p className="lede">Describe el tomo que necesitas. Un arquitecto lo planifica, tú apruebas el esquema y lo escribimos y maquetamos listo para imprimir.</p>
 
+        {collection && <p className="collection-chip">Nuevo nivel de la colección <strong>{collection.name}</strong></p>}
         <form className="composer" onSubmit={submit}>
           <textarea
             ref={textarea}
@@ -148,27 +155,109 @@ export function Studio() {
 
 function Library() {
   const { data, isPending } = useSeriesList()
+  const collections = useCollections().data ?? []
+  const qc = useQueryClient()
+  const createCollection = useMutation({
+    mutationFn: (name: string) => api.post('/api/collections', { name }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['collections'] }),
+  })
   if (isPending) return <div className="library"><div className="skeleton" /><div className="skeleton" /></div>
-  if (!data?.length) return null
+  if (!data?.length && !collections.length) return null
+  const byId = new Map((data ?? []).map((s) => [s.id, s]))
+  const loose = (data ?? []).filter((s) => !s.collection_id)
+  const newCollection = () => {
+    const name = window.prompt('Nombre de la colección (por ejemplo: «Multiplicación» o «Lectoescritura»)')
+    if (name?.trim()) createCollection.mutate(name.trim())
+  }
   return (
     <section className="library">
-      <h2 className="section-h">Tus tomos</h2>
-      <ul className="cards books">
-        {data.map((s, i) => (
-          <li key={s.id} style={{ '--i': i } as React.CSSProperties}>
-            <Link to={`/app/tomos/${s.id}`} className="book-card" aria-label={`Abrir ${s.title ?? s.topic}`}>
-              <BookCover title={s.title ?? s.topic} genre={s.genre} cover_url={s.cover_url} cover_status={s.cover_status} cover_palette={s.cover_palette ?? s.design?.palette ?? null} />
-              <span className="card-f">
-                <StatusPill status={s.status} />
-                {s.lesson_count > 0 && ['generating', 'ready', 'needs_attention'].includes(s.status) && (
-                  <span className="muted small">{s.done}/{s.lesson_count}</span>
-                )}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <div className="library-head">
+        <h2 className="section-h">Tu biblioteca</h2>
+        <button className="ghost small" onClick={newCollection}>Nueva colección</button>
+      </div>
+      {collections.map((c) => (
+        <Shelf key={c.id} collection={c} collections={collections}
+          tomes={c.series_ids.map((id) => byId.get(id)).filter((s): s is SeriesSummary => !!s)} />
+      ))}
+      {loose.length > 0 && (
+        <>
+          {collections.length > 0 && <h3 className="shelf-title">Tomos sueltos</h3>}
+          <ul className="cards books">
+            {loose.map((s, i) => <BookItem key={s.id} tome={s} index={i} collections={collections} />)}
+          </ul>
+        </>
+      )}
     </section>
+  )
+}
+
+/** A collection: its tomes side by side in level order, like a series on a bookshop shelf. */
+function Shelf({ collection: c, tomes, collections }: { collection: Collection; tomes: SeriesSummary[]; collections: Collection[] }) {
+  const qc = useQueryClient()
+  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['collections'] }), qc.invalidateQueries({ queryKey: ['series'] })])
+  const rename = useMutation({ mutationFn: (name: string) => api.patch(`/api/collections/${c.id}`, { name }), onSettled: refresh })
+  const remove = useMutation({ mutationFn: () => api.delete(`/api/collections/${c.id}`), onSettled: refresh })
+  return (
+    <div className="shelf">
+      <div className="shelf-head">
+        <h3 className="shelf-title">{c.name} <span className="muted small">· {tomes.length} {tomes.length === 1 ? 'nivel' : 'niveles'}</span></h3>
+        <button className="ghost small" onClick={() => { const n = window.prompt('Nuevo nombre', c.name); if (n?.trim()) rename.mutate(n.trim()) }}>Renombrar</button>
+        <button className="ghost small" onClick={() => { if (window.confirm(`¿Eliminar la colección «${c.name}»? Sus tomos no se borran: quedan sueltos en tu biblioteca.`)) remove.mutate() }}>Eliminar colección</button>
+      </div>
+      {tomes.length ? (
+        <ul className="cards books">
+          {tomes.map((s, i) => <BookItem key={s.id} tome={s} index={i} level={i + 1} collections={collections} />)}
+        </ul>
+      ) : <p className="muted small">Vacía. Mueve aquí un tomo desde su menú ⋯ o crea un nivel desde «Niveles sugeridos».</p>}
+    </div>
+  )
+}
+
+function BookItem({ tome: s, index, level, collections }: { tome: SeriesSummary; index: number; level?: number; collections: Collection[] }) {
+  const qc = useQueryClient()
+  const [menu, setMenu] = useState(false)
+  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['collections'] }), qc.invalidateQueries({ queryKey: ['series'] })])
+  const move = useMutation({
+    mutationFn: async (target: string) => {
+      const id = target === 'new'
+        ? (await api.post<{ collection: Collection }>('/api/collections', { name: window.prompt('Nombre de la colección', s.title ?? s.topic) || (s.title ?? s.topic) })).collection.id
+        : target || null
+      return api.put(`/api/series/${s.id}/collection`, { collection_id: id })
+    },
+    onSettled: () => { setMenu(false); return refresh() },
+  })
+  const remove = useMutation({ mutationFn: () => api.delete(`/api/series/${s.id}`), onSettled: refresh })
+  const title = s.title ?? s.topic
+  return (
+    <li style={{ '--i': index } as React.CSSProperties} className="book-item">
+      <Link to={`/app/tomos/${s.id}`} className="book-card" aria-label={`Abrir ${title}`}>
+        <BookCover title={title} genre={s.genre} cover_url={s.cover_url} cover_status={s.cover_status} cover_palette={s.cover_palette ?? s.design?.palette ?? null} />
+        <span className="card-f">
+          {level && <span className="level-tag">Nivel {level}</span>}
+          <StatusPill status={s.status} />
+          {s.lesson_count > 0 && ['generating', 'ready', 'needs_attention'].includes(s.status) && (
+            <span className="muted small">{s.done}/{s.lesson_count}</span>
+          )}
+        </span>
+      </Link>
+      <button className="book-menu-btn" aria-label={`Opciones de ${title}`} aria-expanded={menu} onClick={() => setMenu(!menu)}>⋯</button>
+      {menu && (
+        <div className="book-menu" role="menu">
+          <label className="small">
+            Colección
+            <select value={s.collection_id ?? ''} onChange={(e) => move.mutate(e.target.value)} disabled={move.isPending}>
+              <option value="">Sin colección</option>
+              {collections.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <option value="new">+ Nueva colección…</option>
+            </select>
+          </label>
+          <button className="danger small" disabled={remove.isPending}
+            onClick={() => { if (window.confirm(`¿Eliminar «${title}»? Se borran sus secciones y sus PDF. No se puede deshacer.`)) remove.mutate() }}>
+            Eliminar tomo
+          </button>
+        </div>
+      )}
+    </li>
   )
 }
 

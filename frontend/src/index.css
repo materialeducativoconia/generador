@@ -535,3 +535,25 @@ a.sec-row { transition: background-color 160ms ease; }
 .level button { align-self: flex-start; margin-top: auto; }
 .level.current { background: var(--accent-soft); border-color: transparent; }
 .program ol, .program ul { padding-left: 20px; }
+
+/* Library: collections as shelves, loose tomes below. */
+.library-head, .shelf-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.library-head .section-h { margin-right: auto; }
+.shelf { margin: 20px 0 36px; padding: 16px 16px 20px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+.shelf-head { margin-bottom: 16px; }
+.shelf-title { margin: 0 auto 0 0; font-size: 16px; }
+.library > .shelf-title { margin: 28px 0 14px; }
+.book-item { position: relative; }
+.book-menu-btn { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; border-radius: 8px; border: 0;
+  background: rgba(255, 255, 255, .92); color: #0c0a09; font-size: 18px; line-height: 1; cursor: pointer; opacity: 0;
+  transition: opacity 150ms var(--ease-out); }
+.book-item:hover .book-menu-btn, .book-menu-btn:focus-visible, .book-menu-btn[aria-expanded="true"] { opacity: 1; }
+@media (hover: none) { .book-menu-btn { opacity: 1; } }
+.book-menu { position: absolute; top: 40px; right: 6px; z-index: 5; display: grid; gap: 10px; padding: 12px; min-width: 190px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--card); box-shadow: 0 8px 24px rgba(0, 0, 0, .12); }
+.book-menu label { display: grid; gap: 4px; }
+.book-menu .danger, .delete-tome { color: #c2410c; }
+.book-menu .danger { border: 0; background: none; text-align: left; padding: 0; cursor: pointer; font: inherit; }
+.level-tag { font-size: 12px; font-weight: 600; color: var(--accent); margin-right: 6px; }
+.collection-chip { margin: 0 auto 10px; max-width: 40rem; font-size: 14px; color: var(--muted); }
+.delete-tome { margin-left: 8px; }

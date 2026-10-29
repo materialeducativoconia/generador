@@ -24,12 +24,13 @@ export function TomePage() {
   const status = progress.data?.status ?? s.status
   return (
     <AppShell>
-      <Link to="/app" className="back">← Tus tomos</Link>
+      <Link to="/app" className="back">← Tu biblioteca</Link>
       <header className="tome-h with-cover">
         <div className="tome-h-text">
           <p className="eyebrow">{s.genre ? GENRE_LABEL[s.genre] : 'Nuevo tomo'} · {s.audience.label}</p>
           <h1 className="display sm">{s.title ?? s.topic}</h1>
           <StatusPill status={status} />
+          <DeleteTome id={s.id} title={s.title ?? s.topic} />
         </div>
         {s.title && <CoverPanel series={s} />}
       </header>
@@ -153,11 +154,39 @@ function QualityCard({ seriesId, progress }: { seriesId: string; progress: Progr
   )
 }
 
+function DeleteTome({ id, title }: { id: string; title: string }) {
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const remove = useMutation({
+    mutationFn: () => api.delete(`/api/series/${id}`),
+    onSuccess: async () => {
+      await Promise.all([qc.invalidateQueries({ queryKey: ['series'] }), qc.invalidateQueries({ queryKey: ['collections'] })])
+      navigate('/app')
+    },
+  })
+  return (
+    <button className="ghost small delete-tome" disabled={remove.isPending}
+      onClick={() => { if (window.confirm(`¿Eliminar «${title}»? Se borran sus secciones y sus PDF. No se puede deshacer.`)) remove.mutate() }}>
+      Eliminar tomo
+    </button>
+  )
+}
+
 /** A series by levels: the tomes before and after this one on the same topic, as the programs found by the
  * Researcher lay it out by grade. Each one opens the studio with its request ready to send. */
 function LevelsPanel({ series: s, levels }: { series: Series; levels: Level[] }) {
   const navigate = useNavigate()
   const sources = s.research?.program?.sources ?? []
+  // A level joins this tome's collection; a tome without one starts it, named after itself.
+  const open = useMutation({
+    mutationFn: async (lv: Level) => {
+      const collection = s.collection_id ?? (await api.post<{ collection: { id: string } }>(
+        '/api/collections', { name: s.title ?? s.topic, series_ids: [s.id] })).collection.id
+      return { lv, collection }
+    },
+    onSuccess: ({ lv, collection }) => navigate(`/app?${new URLSearchParams({
+      pedido: lv.request, publico: lv.audience, coleccion: collection, lugar: lv.relation === 'anterior' ? 'start' : 'end' })}`),
+  })
   const card = (lv: Level) => (
     <li key={lv.request} className={`level ${lv.relation}`}>
       <span className="eyebrow">{lv.relation === 'anterior' ? 'Nivel anterior' : 'Nivel siguiente'} · {lv.audience}</span>
@@ -169,8 +198,7 @@ function LevelsPanel({ series: s, levels }: { series: Series; levels: Level[] })
             : lv.grade}
         </p>
       )}
-      <button className="ghost small"
-        onClick={() => navigate(`/app?${new URLSearchParams({ pedido: lv.request, publico: lv.audience })}`)}>
+      <button className="ghost small" onClick={() => open.mutate(lv)} disabled={open.isPending}>
         Crear este nivel
       </button>
     </li>

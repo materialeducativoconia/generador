@@ -2,7 +2,7 @@ import { QueryClient, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { api, type Me } from './apiClient'
 import { supabase } from './supabase'
-import type { CoverFields, Export, Lesson, Preview, Progress, Quality, Series, SeriesSummary, Style } from './types'
+import type { Collection, CoverFields, Export, Lesson, Preview, Progress, Quality, Series, SeriesSummary, Style } from './types'
 
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, retry: 1, refetchOnWindowFocus: false } },
@@ -47,6 +47,12 @@ export const useStyles = () =>
 /** A cover takes ~20–60 s to paint; poll only while one is on its way. */
 export const coverPending = (s: CoverFields & { status: string }) =>
   s.status === 'outlining' || s.cover_status === 'queued' || s.cover_status === 'running'
+
+export const useCollections = () =>
+  useQuery({
+    queryKey: ['collections'],
+    queryFn: async () => (await api.get<{ collections: Collection[] }>('/api/collections')).collections,
+  })
 
 export const useSeriesList = () =>
   useQuery({

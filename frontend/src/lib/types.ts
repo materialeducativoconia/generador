@@ -49,6 +49,16 @@ export type SeriesSummary = CoverFields & {
   lesson_count: number
   done: number
   created_at: string
+  collection_id: string | null
+  collection_position: number | null
+}
+
+/** Tomes on one topic, grouped by level: the series a teacher or a publisher builds. */
+export type Collection = {
+  id: string
+  name: string
+  description: string | null
+  series_ids: string[]  // in level order
 }
 
 export type LessonSummary = {
@@ -87,6 +97,7 @@ export type Level = {
 }
 
 export type Series = CoverFields & {
+  collection_id: string | null
   design: Design | null
   assets: Record<string, string>
   credits: Record<string, string>

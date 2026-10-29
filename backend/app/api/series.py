@@ -37,6 +37,8 @@ class NewTome(BaseModel):
     page_count: int | None = Field(default=None, ge=3, le=200)  # by length: the Architect splits the pages
     extra_instructions: str | None = Field(default=None, max_length=2000)
     style_id: uuid.UUID | None = None  # a ready style from the user's library; None lets the Designer choose
+    collection_id: uuid.UUID | None = None  # the collection the new tome joins, e.g. from a suggested level
+    place: Literal["start", "end"] = "end"  # a lower level goes first in its collection, a higher one last
 
 
 class OutlineLesson(OutlineSection):
@@ -81,7 +83,12 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
             """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, idempotency_key)
                values (:id, :u, :s, 'outline', 'queued', cast(:payload as jsonb), :k)"""
         ), {"id": job_id, "u": user_id, "s": series_id, "k": idempotency_key,
-            "payload": json.dumps({"brief": body.model_dump(exclude={"style_id"})})})
+            "payload": json.dumps({"brief": body.model_dump(exclude={"style_id", "collection_id", "place"})})})
+        if body.collection_id:
+            from app.api.collections import own_collection, place_in  # collections imports this module
+
+            await own_collection(conn, body.collection_id, user_id)
+            await place_in(conn, series_id, body.collection_id, body.place)
         return await _created(conn, series_id, job_id)
 
 
@@ -90,6 +97,7 @@ async def list_series(request: Request, user_id: UserId):
     async with request.app.state.engine.connect() as conn:
         rows = (await conn.execute(text(
             f"""select s.id, s.title, s.topic, s.genre, s.status, s.lesson_count, s.created_at, s.updated_at,
+                       s.collection_id, s.collection_position,
                        s.cover_key, s.cover, s.design, {COVER_STATUS_SQL},
                        count(l.id) filter (where l.status in ('generated','edited','approved')) as done
                   from public.series s left join public.lessons l on l.series_id = s.id
