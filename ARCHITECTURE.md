@@ -11,6 +11,8 @@
 
 > **Revisión 6 (2026-10-29): panel lateral y perfil.** La app navega con un panel lateral (cajón en móvil) con saldo y plan. `/app/perfil` guarda la firma del material: `profiles.author_name` (si está vacía, el nombre de Google) y `profiles.school` se imprimen como «Elaborado por …»; el logo es de la organización (`organizations.logo_key`, bucket público `covers`, desde Creador) y va junto a la firma en el PDF, la portada de imprenta y el Word. La firma entra en el hash de la exportación.
 
+> **Revisión 7 (2026-10-29): onboarding.** En la primera visita, `/app` lleva a `/app/bienvenida`: uso (aula, venta, escuela, casa), niveles y materias, firma, y un primer material sugerido que abre el estudio prellenado (`?pedido=&publico=`). Las respuestas se guardan en `profiles.onboarding` (`POST /api/me/onboarding`, también al omitir) y `profiles.onboarded_at`; quien ya tenía tomos no lo ve.
+
 ## 0. Resumen en una página
 
 Un docente describe una serie (tema, nivel, nº de lecciones). La app genera primero un **esquema** (títulos + objetivos por lección), el docente lo corrige y aprueba, y entonces se genera **cada lección como un bloque independiente** en paralelo, respetando el rate limit de DeepSeek. El docente revisa, edita o regenera lecciones sueltas, y exporta un **PDF maquetado** con portada, índice, lecciones y solucionario.

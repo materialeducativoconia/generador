@@ -11,6 +11,7 @@ import { Styles } from './routes/Styles'
 import { Identities } from './routes/Identities'
 import { Plan } from './routes/Plan'
 import { Profile } from './routes/Profile'
+import { FirstVisit, Onboarding } from './routes/Onboarding'
 import { TomePage } from './routes/TomePage'
 import { Welcome } from './routes/Welcome'
 
@@ -24,7 +25,8 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Welcome />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
-            <Route path="/app" element={authed(<Studio />)} />
+            <Route path="/app" element={authed(<FirstVisit><Studio /></FirstVisit>)} />
+            <Route path="/app/bienvenida" element={authed(<Onboarding />)} />
             <Route path="/app/tomos/:id" element={authed(<TomePage />)} />
             <Route path="/app/secciones/:id" element={authed(<SectionPage />)} />
             <Route path="/app/estilos" element={authed(<Styles />)} />

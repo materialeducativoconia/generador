@@ -1,5 +1,7 @@
 import type { Design } from './types'
 
+export const AUDIENCES = ['Preescolar (3–5 años)', 'Primaria baja (6–8)', 'Primaria alta (9–12)', 'Secundaria', 'Adultos principiantes']
+
 export const GENRE_LABEL: Record<string, string> = {
   coloring_book: 'Libro para colorear',
   worksheets: 'Cuadernillo de fichas',

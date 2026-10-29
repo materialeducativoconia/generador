@@ -94,3 +94,17 @@ async def test_logo_needs_creador_and_a_key_of_the_own_organization(google_user,
     user = await google_user()
     response = await client.put("/api/me/logo", headers=bearer(key, user), json={"key": "logos/otra/y.png"})
     assert response.status_code == 422
+
+
+async def test_onboarding_saves_answers_and_signature_once(google_user, client, key):
+    user = await google_user()
+    assert (await client.get("/api/me", headers=bearer(key, user))).json()["onboarded"] is False
+
+    body = (await client.post("/api/me/onboarding", headers=bearer(key, user), json={
+        "use": "aula", "levels": ["Primaria baja (6–8)"], "subjects": ["Matemáticas", " "], "school": "Colegio Sol",
+    })).json()
+
+    assert body["onboarded"] is True and body["school"] == "Colegio Sol" and body["author_name"] is None
+    assert body["onboarding"] == {"use": "aula", "levels": ["Primaria baja (6–8)"], "subjects": ["Matemáticas"]}
+    skipped = (await client.post("/api/me/onboarding", headers=bearer(key, user), json={})).json()
+    assert skipped["onboarded"] is True and skipped["school"] == "Colegio Sol"

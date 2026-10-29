@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
+import { AUDIENCES } from '../lib/labels'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
 import { errorText } from '../components/ErrorNote'
@@ -8,7 +9,6 @@ import { api } from '../lib/apiClient'
 import { useCollections, useEstimate, useIdentities, useMe, useSeriesList, useStyles } from '../lib/queries'
 import type { Collection, Identity, SeriesSummary } from '../lib/types'
 
-const AUDIENCES = ['Preescolar (3–5 años)', 'Primaria baja (6–8)', 'Primaria alta (9–12)', 'Secundaria', 'Adultos principiantes']
 
 const EXAMPLES = [
   { label: 'Libro de colorear', request: 'Libro para colorear de animales de la granja, con el nombre de cada animal', audience: AUDIENCES[0] },

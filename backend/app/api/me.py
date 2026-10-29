@@ -1,3 +1,4 @@
+import json
 import logging
 import uuid
 from typing import Annotated, Literal
@@ -20,7 +21,7 @@ LOGO_MAX_BYTES = 2 * 1024 * 1024
 PROFILE_WITH_USAGE = text(
     """
     select p.id, p.email, p.display_name, p.avatar_url, p.daily_lesson_quota, p.is_active, p.platform_role,
-           p.author_name, p.school,
+           p.author_name, p.school, p.onboarding, p.onboarded_at,
            (select count(*) from public.generation_jobs j
              where j.user_id = p.id
                and j.kind in ('lesson', 'lesson_block')
@@ -55,6 +56,8 @@ async def get_me(request: Request, user_id: UserId) -> dict:
         "platform_role": row["platform_role"],
         "author_name": row["author_name"],
         "school": row["school"],
+        "onboarded": row["onboarded_at"] is not None,
+        "onboarding": json.loads(row["onboarding"]) if isinstance(row["onboarding"], str) else row["onboarding"],
         "organization": {"name": org["name"], "role": org["role"],
                          "logo_url": storage.public_url(org["logo_key"]) if org["logo_key"] and storage else None},
         "plan": {"key": acc.plan_key, "label": plan.label, "status": acc.status, "word": plan.word, "logo": plan.logo,
@@ -72,6 +75,14 @@ async def get_me(request: Request, user_id: UserId) -> dict:
 class ProfileEdit(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=80)
     author_name: str | None = Field(default=None, max_length=80)  # "" goes back to the Google name
+    school: str | None = Field(default=None, max_length=120)
+
+
+class Onboarding(BaseModel):
+    use: Literal["aula", "venta", "escuela", "casa"] | None = None  # classroom, selling, school/publisher, home
+    levels: list[str] = Field(default=[], max_length=6)
+    subjects: list[str] = Field(default=[], max_length=10)
+    author_name: str | None = Field(default=None, max_length=80)
     school: str | None = Field(default=None, max_length=120)
 
 
@@ -93,6 +104,20 @@ async def edit_profile(body: ProfileEdit, request: Request, user_id: UserId):
         sets = ", ".join(f"{k} = :{k}" for k in changes)  # keys come from the model, never from the request
         async with request.app.state.engine.begin() as conn:
             await conn.execute(text(f"update public.profiles set {sets} where id = :u"), {**changes, "u": user_id})
+    return await get_me(request, user_id)
+
+
+@router.post("/api/me/onboarding")
+async def finish_onboarding(body: Onboarding, request: Request, user_id: UserId):
+    """The welcome flow ends (answered or skipped): keep the answers, and the signature if given."""
+    answers = {"use": body.use, "levels": [v.strip()[:60] for v in body.levels if v.strip()],
+               "subjects": [v.strip()[:60] for v in body.subjects if v.strip()]}
+    async with request.app.state.engine.begin() as conn:
+        await conn.execute(text(
+            """update public.profiles set onboarding = cast(:a as jsonb), onboarded_at = coalesce(onboarded_at, now()),
+                      author_name = coalesce(:n, author_name), school = coalesce(:s, school) where id = :u"""),
+            {"a": json.dumps(answers), "n": (body.author_name or "").strip() or None,
+             "s": (body.school or "").strip() or None, "u": user_id})
     return await get_me(request, user_id)
 
 

@@ -17,6 +17,8 @@ export type Me = {
   platform_role: 'user' | 'staff' | 'admin'
   author_name: string | null
   school: string | null
+  onboarded: boolean
+  onboarding: { use: 'aula' | 'venta' | 'escuela' | 'casa' | null; levels: string[]; subjects: string[] } | null
   organization: { name: string; role: 'owner' | 'editor' | 'viewer'; logo_url: string | null }
   plan: {
     key: 'prueba' | 'docente' | 'creador' | 'editorial'
