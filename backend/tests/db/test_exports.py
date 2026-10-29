@@ -65,6 +65,30 @@ async def test_export_renders_uploads_and_serves_a_signed_pdf(raw_db, google_use
     await storage.delete(status["storage_key"])
 
 
+async def test_word_export_uploads_an_editable_docx(raw_db, google_user, client_with_storage, key, engine,
+                                                    storage):
+    client = client_with_storage
+    user = await google_user()
+    sid = await ready_tome(client, key, user, engine)
+
+    created = await client.post(f"/api/series/{sid}/exports", json={"format": "docx", "edition": "print"},
+                                headers=bearer(key, user))
+    export_id = created.json()["export"]["id"]
+    await run_next_with_storage(engine, storage)
+
+    status = (await client.get(f"/api/exports/{export_id}", headers=bearer(key, user))).json()
+    assert status["status"] == "succeeded" and status["storage_key"].endswith(".docx")
+    assert status["options"]["edition"] == "digital"  # Word has no print edition
+    link = (await client.get(f"/api/exports/{export_id}/file", headers=bearer(key, user))).json()["url"]
+    assert "download=" in link and ".docx" in link
+    async with httpx.AsyncClient() as http:
+        docx = await http.get(link)
+    assert docx.status_code == 200 and docx.content.startswith(b"PK")  # a zip, as every .docx is
+    progress = (await client.get(f"/api/series/{sid}/progress", headers=bearer(key, user))).json()
+    assert progress["latest_export"] is None  # the PDF panel reopens on PDFs only
+    await storage.delete(status["storage_key"])
+
+
 async def test_export_requires_a_finished_tome(google_user, client_with_storage, key):
     user = await google_user()
     sid = await new_tome(client_with_storage, key, user)

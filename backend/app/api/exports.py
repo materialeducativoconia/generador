@@ -1,4 +1,4 @@
-"""PDF exports: queue one, poll it, download through a short-lived signed URL (ARCHITECTURE.md §3.8–3.9)."""
+"""PDF and Word exports: queue one, poll it, download through a short-lived signed URL (ARCHITECTURE.md §3.8–3.9)."""
 
 import hashlib
 import json
@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sqlalchemy import text
 from uuid6 import uuid7
 
@@ -25,6 +25,13 @@ class ExportOptions(BaseModel):
     paper: Literal["A4", "Letter", "8x10", "6x9"] = "A4"
     include_answer_key: bool = True
     edition: Literal["digital", "print"] = "digital"  # print: KDP-ready interior plus a separate cover wrap
+    format: Literal["pdf", "docx"] = "pdf"  # docx: editable Word file, digital edition only
+
+    @model_validator(mode="after")
+    def _word_is_digital(self):
+        if self.format == "docx":
+            self.edition = "digital"
+        return self
 
 
 @router.post("/api/series/{series_id}/exports", status_code=202)
@@ -74,10 +81,11 @@ async def download_export(export_id: uuid.UUID, request: Request, user_id: UserI
                                     {"s": export["series_id"]})).scalar_one()
     storage_key = export["cover_storage_key"] if part == "cover" else export["storage_key"]
     if export["status"] != "succeeded" or not storage_key:
-        raise ApiError(404, "not_found", "Este PDF no está disponible.")
+        raise ApiError(404, "not_found", "Este archivo no está disponible.")
     # Signed at click time, so a link in the UI never expires. JSON rather than a 302: the browser
     # fetches this with a Bearer token, which a plain <a href> navigation could not send.
-    name = f"{_slug(title)}-portada.pdf" if part == "cover" else f"{_slug(title)}.pdf"
+    ext = "docx" if storage_key.endswith(".docx") else "pdf"
+    name = f"{_slug(title)}-portada.pdf" if part == "cover" else f"{_slug(title)}.{ext}"
     url = await request.app.state.storage.signed_url(storage_key, 60, name)
     return {"url": url}
 

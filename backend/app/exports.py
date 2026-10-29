@@ -1,4 +1,4 @@
-"""The pdf_export job: load the finished tome, lay it out, upload it to Storage."""
+"""The pdf_export job: load the finished tome, lay it out (PDF or Word), upload it to Storage."""
 
 import asyncio
 import json
@@ -10,6 +10,9 @@ from app.content import Design, SectionContent, block_assets
 from app.illustrator import vectorize
 from app.printing import preflight
 from app.render import Tome, TomeSection, render_checked, render_cover_wrap
+from app.word import render_docx
+
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 log = logging.getLogger("worker")
 
@@ -73,6 +76,9 @@ async def run_export(deps, job: dict) -> None:
         sources=(_json(series["research"]) or {}).get("sources") or [],
     )
     paper, print_edition = options.get("paper", "A4"), options.get("edition") == "print"
+    if options.get("format") == "docx":
+        await _finish_docx(deps, job, export_id, tome, paper, options.get("include_answer_key", True))
+        return
     # WeasyPrint is CPU-bound; keep the event loop free for the other jobs in flight.
     pdf, pages, layout = await asyncio.wait_for(
         asyncio.to_thread(render_checked, tome, paper=paper, include_answer_key=options.get("include_answer_key", True),
@@ -94,6 +100,21 @@ async def run_export(deps, job: dict) -> None:
             """update public.exports set status = 'succeeded', storage_key = :k, page_count = :p, size_bytes = :b,
                       cover_storage_key = :ck, preflight = cast(:pf as jsonb), finished_at = now() where id = :e"""
         ), {"e": export_id, "k": storage_key, "p": pages, "b": len(pdf), "ck": cover_key, "pf": json.dumps(report)})
+        await conn.execute(text(
+            "update public.generation_jobs set status = 'succeeded', finished_at = now(), locked_at = null,"
+            " locked_by = null where id = :j"), {"j": job["id"]})
+
+
+async def _finish_docx(deps, job, export_id, tome, paper, include_answer_key) -> None:
+    """An editable Word file: no page count or print preflight, Word lays the pages out itself."""
+    data = await asyncio.wait_for(asyncio.to_thread(render_docx, tome, paper=paper,
+                                                    include_answer_key=include_answer_key), timeout=240)
+    storage_key = f"{job['user_id']}/{job['series_id']}/{export_id}.docx"
+    await deps.storage.upload(storage_key, data, DOCX)
+    async with deps.engine.begin() as conn:
+        await conn.execute(text(
+            """update public.exports set status = 'succeeded', storage_key = :k, size_bytes = :b, finished_at = now()
+                where id = :e"""), {"e": export_id, "k": storage_key, "b": len(data)})
         await conn.execute(text(
             "update public.generation_jobs set status = 'succeeded', finished_at = now(), locked_at = null,"
             " locked_by = null where id = :j"), {"j": job["id"]})

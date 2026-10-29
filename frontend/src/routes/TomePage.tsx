@@ -456,6 +456,7 @@ const PAPERS: Record<Edition, { value: Paper; label: string }[]> = {
 const RATING: Record<Preflight['rating'], string> = { lista: 'Lista para imprenta', aceptable: 'Aceptable', baja: 'Baja resolución' }
 
 function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: Progress['latest_export']; images: Progress['images'] }) {
+  const [format, setFormat] = useState<'pdf' | 'docx'>('pdf')
   const [edition, setEdition] = useState<Edition>('digital')
   const [paper, setPaper] = useState<Paper>('A4')
   const [answers, setAnswers] = useState(true)
@@ -464,7 +465,7 @@ function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: P
   const illustrating = images.active > 0
   const current = useExport(exportId)
   const create = useMutation({
-    mutationFn: () => api.post<{ export: Export }>(`/api/series/${seriesId}/exports`, { paper, include_answer_key: answers, edition }),
+    mutationFn: () => api.post<{ export: Export }>(`/api/series/${seriesId}/exports`, { paper, include_answer_key: answers, edition, format }),
     onSuccess: (data) => setExportId(data.export.id),
   })
   const download = useMutation({
@@ -484,24 +485,34 @@ function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: P
   return (
     <section className="panel export">
       <div>
-        <h2 className="section-h">Exportar PDF</h2>
+        <h2 className="section-h">Exportar</h2>
         <p className="muted small">
           {illustrating
-            ? `Ilustrando ${images.done} de ${images.total} imágenes… el PDF estará listo al terminar.`
-            : edition === 'print'
+            ? `Ilustrando ${images.done} de ${images.total} imágenes… el archivo estará listo al terminar.`
+            : format === 'docx'
+              ? 'Documento de Word editable: textos y ejercicios para cambiar a tu gusto; fichas y dibujos como imágenes.'
+              : edition === 'print'
               ? 'Interior y portada con lomo por separado, a medida de KDP y otras imprentas.'
               : `Portada, índice, secciones${images.total ? ', ilustraciones' : ''}${answers ? ' y solucionario' : ''}, listo para imprimir.`}
         </p>
       </div>
       <div className="export-opts">
-        <div className="segmented" role="radiogroup" aria-label="Edición">
+        <div className="segmented" role="radiogroup" aria-label="Formato">
+          {(['pdf', 'docx'] as const).map((f) => (
+            <button key={f} role="radio" aria-checked={format === f} className={format === f ? 'on' : ''}
+              onClick={change(() => { setFormat(f); if (f === 'docx') { setEdition('digital'); setPaper(PAPERS.digital[0].value) } })}>
+              {f === 'pdf' ? 'PDF' : 'Word'}
+            </button>
+          ))}
+        </div>
+        {format === 'pdf' && <div className="segmented" role="radiogroup" aria-label="Edición">
           {(['digital', 'print'] as const).map((e) => (
             <button key={e} role="radio" aria-checked={edition === e} className={edition === e ? 'on' : ''}
               onClick={change(() => { setEdition(e); setPaper(PAPERS[e][0].value) })}>
               {e === 'digital' ? 'Digital' : 'Imprenta'}
             </button>
           ))}
-        </div>
+        </div>}
         <div className="segmented" role="radiogroup" aria-label="Tamaño de papel">
           {PAPERS[edition].map((p) => (
             <button key={p.value} role="radio" aria-checked={paper === p.value} className={paper === p.value ? 'on' : ''}
@@ -521,12 +532,13 @@ function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: P
               </button>
             )}
             <button className="primary" onClick={() => download.mutate(current.data!.download_url!)} disabled={download.isPending}>
-              Descargar {current.data.cover_download_url ? 'interior' : 'PDF'} · {current.data.page_count} págs.
+              {format === 'docx' ? 'Descargar Word'
+                : `Descargar ${current.data.cover_download_url ? 'interior' : 'PDF'} · ${current.data.page_count} págs.`}
             </button>
           </>
         ) : (
           <button className="primary" onClick={() => create.mutate()} disabled={busy || illustrating}>
-            {busy ? <><span className="spinner" /> Maquetando…</> : illustrating ? <><span className="spinner" /> Ilustrando…</> : 'Generar PDF'}
+            {busy ? <><span className="spinner" /> Maquetando…</> : illustrating ? <><span className="spinner" /> Ilustrando…</> : format === 'docx' ? 'Generar Word' : 'Generar PDF'}
           </button>
         )}
       </div>
@@ -540,7 +552,7 @@ function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: P
           {preflight.issues.length > 0 && <ul>{preflight.issues.map((i) => <li key={i}>{i}</li>)}</ul>}
         </div>
       )}
-      {(status === 'failed' || create.error) && <p className="error">{errorText(create.error, 'No pudimos generar el PDF. Inténtalo de nuevo.')}</p>}
+      {(status === 'failed' || create.error) && <p className="error">{errorText(create.error, 'No pudimos generar el archivo. Inténtalo de nuevo.')}</p>}
     </section>
   )
 }

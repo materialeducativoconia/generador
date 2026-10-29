@@ -137,9 +137,10 @@ async def test_only_generation_jobs_are_published_to_realtime(db):
     assert [t["tablename"] for t in tables] == ["generation_jobs"]
 
 
-async def test_exports_bucket_is_private_and_pdf_only(db):
+async def test_exports_bucket_is_private_and_takes_pdf_and_word_only(db):
     bucket = await db.fetchrow("select public, allowed_mime_types from storage.buckets where id = 'exports'")
 
     assert bucket is not None
     assert bucket["public"] is False
-    assert bucket["allowed_mime_types"] == ["application/pdf"]
+    assert bucket["allowed_mime_types"] == [
+        "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]

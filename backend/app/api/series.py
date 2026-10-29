@@ -115,7 +115,8 @@ async def get_progress(series_id: uuid.UUID, request: Request, user_id: UserId):
         export = (await conn.execute(text(
             """select e.id, e.status, e.created_at < (select max(l.updated_at) from public.lessons l
                                                         where l.series_id = e.series_id) as stale
-                 from public.exports e where e.series_id = :s order by e.created_at desc limit 1"""
+                 from public.exports e where e.series_id = :s and coalesce(e.options->>'format', 'pdf') = 'pdf'
+                order by e.created_at desc limit 1"""
         ), {"s": series_id})).mappings().one_or_none()
         images = await _image_progress(conn, series_id)
     counts = {k: 0 for k in ("pending", "queued", "generating", "generated", "failed", "edited", "approved")}
