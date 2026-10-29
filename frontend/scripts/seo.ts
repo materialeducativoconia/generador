@@ -1,5 +1,5 @@
 // After `vite build`: static, crawlable pages for each landing topic, the topic hub, sitemap.xml and robots.txt,
-// plus the home page's meta tags. Vercel serves these files before the SPA fallback (cleanUrls in vercel.json).
+// plus the home page's meta tags. vercel.json rewrites /material-educativo/<slug> to these files before the SPA fallback.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { PUBLIC_PLANS, TRIAL_CREDITS } from '../src/lib/pricing.ts'
 import { TOPICS, topicHref, type Topic } from '../src/lib/topics.ts'

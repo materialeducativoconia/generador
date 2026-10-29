@@ -1,13 +1,8 @@
 {
-  "cleanUrls": true,
   "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "https://generador-oktm.onrender.com/api/:path*"
-    },
-    {
-      "source": "/((?!assets/).*)",
-      "destination": "/index.html"
-    }
+    { "source": "/api/:path*", "destination": "https://generador-oktm.onrender.com/api/:path*" },
+    { "source": "/material-educativo", "destination": "/material-educativo/index.html" },
+    { "source": "/material-educativo/:slug", "destination": "/material-educativo/:slug.html" },
+    { "source": "/((?!assets/).*)", "destination": "/index.html" }
   ]
 }
