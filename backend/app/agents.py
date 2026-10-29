@@ -12,13 +12,13 @@ from pydantic import BaseModel, ValidationError
 
 from app.content import (ArtPlan, CoverPlan, Design, EditReview, FactSheet, Fix, Outline, ProgramReview, ProgramSheet,
                          ResearchPlan, SectionContent)
-from app.literacy import allowed_letters, check_section
+from app.literacy import allowed_letters, check_blocks, check_section, tidy
 from app.themes import THEMES
 from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@4", "writer": "writer@5", "editor": "editor@1", "cover": "cover@3", "designer": "designer@2", "art": "art@3", "research": "research@2", "facts": "facts@1", "program": "program@1", "program_review": "program_review@1"}
+PROMPT_VERSION = {"architect": "architect@5", "writer": "writer@6", "editor": "editor@1", "cover": "cover@3", "designer": "designer@2", "art": "art@3", "research": "research@2", "facts": "facts@1", "program": "program@1", "program_review": "program_review@1"}
 
 
 @dataclass
@@ -35,7 +35,8 @@ class Brief:
     def describe(self) -> str:
         lines = [f"Pedido del usuario: {self.request}", f"Público: {self.audience}", f"Idioma: {self.language}"]
         lines.append(f"Número de secciones: {self.section_count}" if self.section_count
-                     else "Número de secciones: decide tú (entre 1 y 20) según el pedido")
+                     else "Número de secciones: decide tú (entre 1 y 20): un tema por cada 2 a 4 páginas"
+                     + (f", al menos {n}" if (n := min_sections(self.page_count)) > 1 else ""))
         if self.page_count:
             lines.append(f"Extensión: unas {self.page_count} páginas impresas en total; repártelas entre las "
                          "secciones en el campo pages de cada una")
@@ -87,6 +88,10 @@ diseñas el TOMO completo.
 3. Para cada sección da un título claro, de 1 a 4 objetivos, de 1 a 8 puntos clave (conceptos, palabras,
    dibujos o ejercicios que la sección debe incluir) y "pages": cuántas páginas impresas ocupará (en un libro
    de colorear o de fichas, una página por dibujo o por ficha; en texto, unas 300 palabras por página).
+El usuario suele escribir un pedido corto y no sabe qué más pedir: decide tú como lo haría un autor experto
+de material para ese público (temas concretos de su programa, progresión, variedad de actividades), sin esperar
+a que lo pida. Un tomo de varias páginas se organiza en varios temas, uno por sección; el título de cada sección
+nombra su tema concreto y nunca repite el título del tomo.
 Si recibes un programa educativo de referencia, eres también el generador de temarios: el esquema sigue sus
 contenidos y su orden (adaptados a la extensión pedida) y no añade temas ajenos a él.
 4. Si es un método de lectoescritura (aprender a leer y escribir por letras y sílabas, como el método de los
@@ -144,7 +149,8 @@ personas):
 - picture_words {mode: write|complete|circle|match, items: [{word, syllable?}] (4 a 8), instruction?}
   ← write: escribe el nombre del dibujo; complete: completa la sílaba que falta; circle: encierra la sílaba
   con que empieza; match: une dibujo y sílaba (syllable obligatoria salvo en write)
-- syllable_cards {syllables: [..] (8 a 40), cut: true, instruction?}  ← sílabas para recortar y formar palabras
+- syllable_cards {syllables: [..] (8 a 40), cut: true, instruction?}  ← sílabas o palabras enteras (nunca partas
+  una palabra que no sea de sílabas) para recortar y formar palabras o frases
 - reading {title?, sentences: [{text, picture?: "palabra"}] (3 a 6), rubric: true}  ← frases para leer en voz
   alta con casilla de evaluación (Logrado / Con ayuda / No logrado)
 - dictation {words: [..] (5 a 10), lines: 10, show_words: true}  ← dictado; las palabras son para el adulto
@@ -189,11 +195,42 @@ async def architect(llm: LLM, brief: Brief) -> AgentResult[Outline]:
         {"role": "user", "content": brief.describe()},
     ]
     result = await _json_call(llm, messages, Outline, temperature=0.7, max_tokens=4000)
+    problems = outline_problems(result.value, brief)
+    if problems:  # one chance to split a too-thin outline into themes
+        last = result.attempts[-1]
+        retry_messages = [*last.messages, {"role": "assistant", "content": last.completion.text},
+                          {"role": "user", "content": "\n".join(f"- {p}" for p in problems)
+                                                      + "\nCorrígelo y responde solo con el json completo."}]
+        try:
+            retry = await _json_call(llm, retry_messages, Outline, temperature=0.7, max_tokens=4000)
+        except AgentFailed as exc:
+            result.attempts += exc.attempts
+        else:
+            retry.attempts = result.attempts + retry.attempts
+            result = retry if len(outline_problems(retry.value, brief)) < len(problems) else result
+            result.attempts = retry.attempts
     if brief.section_count and len(result.value.sections) != brief.section_count:
         result.value.sections = result.value.sections[: brief.section_count]
     if brief.page_count:
         spread_pages(result.value.sections, brief.page_count)
     return result
+
+
+def min_sections(pages: int | None) -> int:
+    """Themes a tome of this length should have when the user leaves the count to the Architect."""
+    return max(2, pages // 4) if pages and pages >= 6 else 1
+
+
+def outline_problems(outline: Outline, brief: Brief) -> list[str]:
+    problems = []
+    want = min_sections(brief.page_count)
+    if not brief.section_count and len(outline.sections) < want:
+        problems.append(f"El tomo tiene {brief.page_count} páginas y solo {len(outline.sections)} sección: "
+                        f"divídelo en al menos {want} temas, uno por sección.")
+    same = [s.title for s in outline.sections if s.title.strip().lower() == outline.title.lower()]
+    if same:
+        problems.append(f"La sección «{same[0]}» repite el título del tomo: ponle el nombre de su tema concreto.")
+    return problems
 
 
 def spread_pages(sections: list, total: int) -> None:
@@ -231,24 +268,24 @@ async def writer(llm: LLM, brief: Brief, outline: Outline, position: int) -> Age
                                     f"Puntos clave: {'; '.join(section.key_points)}{letters}"},
     ]
     result = await _json_call(llm, messages, SectionContent, temperature=1.0, max_tokens=8000)
-    problems = check_section(result.value, allowed)
-    if problems:  # decodable text is checked by code: one chance to swap the words that break it
+    problems = check_section(result.value, allowed) + check_blocks(result.value)
+    if problems:  # decodable text and block misuse are checked by code: one chance to fix them
         last = result.attempts[-1]
         retry_messages = [*last.messages, {"role": "assistant", "content": last.completion.text},
-                          {"role": "user", "content": "Estas palabras no cumplen las reglas de la sección:\n"
+                          {"role": "user", "content": "Esto no cumple las reglas de la sección:\n"
                                                       + "\n".join(f"- {p}" for p in problems[:15])
-                                                      + "\nCámbialas por otras que sí las cumplan y responde solo "
-                                                        "con el json completo."}]
+                                                      + "\nCorrígelo y responde solo con el json completo."}]
         try:
             retry = await _json_call(llm, retry_messages, SectionContent, temperature=0.7, max_tokens=8000)
         except AgentFailed as exc:
             result.attempts += exc.attempts
         else:
-            left = check_section(retry.value, allowed)
+            left = check_section(retry.value, allowed) + check_blocks(retry.value)
             attempts = result.attempts + retry.attempts
             result = retry if len(left) < len(problems) else result
             result.attempts, problems = attempts, min(left, problems, key=len)
         result.notes = problems
+    tidy(result.value, section.title)
     return result
 
 

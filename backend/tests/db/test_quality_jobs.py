@@ -27,7 +27,7 @@ async def test_the_editor_corrects_the_section_before_it_is_saved(raw_db, google
     assert json.loads(row["content_json"])["blocks"][0]["text"] == "El Do central, la nota de partida"
     assert json.loads(row["review"]) == {"score": 4, "issues": FIX["issues"], "fixed": 1}
     versions = await raw_db.fetch("select prompt_version from public.generation_logs where job_id = $1", job["id"])
-    assert {"writer@5", "editor@1"} <= {v["prompt_version"] for v in versions}
+    assert {"writer@6", "editor@1"} <= {v["prompt_version"] for v in versions}
 
 
 async def test_a_failing_editor_keeps_the_writers_text(raw_db, google_user, client, key, engine):

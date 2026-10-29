@@ -538,7 +538,7 @@ async def _review_sheet(deps: Deps, sheet_image: bytes, panels: list[tuple[bytes
         coverage = line_art_coverage(data) if sheet.family in ("line", "icon") else None
         if coverage is not None and coverage < 0.005:
             checks.append(Review(ok=False, issues="the panel came out blank"))
-        elif coverage is not None and coverage > 0.5:
+        elif coverage is not None and coverage > (0.3 if sheet.family == "line" else 0.5):  # silhouettes
             checks.append(Review(ok=False, issues="too much solid black, use outlines only"))
         else:
             checks.append(None)

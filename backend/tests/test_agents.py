@@ -29,6 +29,18 @@ async def test_architect_returns_a_validated_outline():
     assert "Método de piano" in llm.calls[0][-1]["content"]
 
 
+async def test_architect_splits_a_one_section_tome_into_themes():
+    thin = {"title": "Sumas", "genre": "worksheets", "sections": [{"title": "Sumas", "pages": 8}]}
+    llm = ScriptedLLM(json.dumps(thin), json.dumps(OUTLINE))
+
+    result = await architect(llm, Brief(request="sumas para preescolar", audience="Preescolar", page_count=9))
+
+    assert "al menos 2" in llm.calls[0][-1]["content"]
+    assert "al menos 2 temas" in llm.calls[1][-1]["content"] and "repite el título" in llm.calls[1][-1]["content"]
+    assert len(result.value.sections) == 3
+    assert len(result.attempts) == 2
+
+
 async def test_architect_repairs_invalid_json_once():
     llm = ScriptedLLM('{"title": "Piano", "genre": "novela", "sections": []}', json.dumps(OUTLINE))
 

@@ -214,7 +214,7 @@ def syllable_cards(b, c, font, pic, top, room):
     for i, s in enumerate(b.syllables):
         x, y = (i % cols) * cw, top + (i // cols) * ch
         body.append(_box(x + 3, y + 3, cw - 6, ch - 6, c, dashed=b.cut, rx=6))
-        body.append(_text(x + cw / 2, y + ch / 2 + 15, s, KID, size=min(44, ch * 0.45), fill=c["ink"], weight=700))
+        body.append(_text(x + cw / 2, y + ch / 2 + 15, s, KID, size=min(44, ch * 0.45, (cw - 18) / (0.58 * len(s))), fill=c["ink"], weight=700))
     return W, top + rows * ch, body
 
 

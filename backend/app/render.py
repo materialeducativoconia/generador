@@ -8,6 +8,7 @@ import base64
 import html
 import random
 import re
+import textwrap
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from pathlib import Path
@@ -103,18 +104,27 @@ def keyboard_svg(block: Keyboard, lit_white: str = "#c7d2fe", lit_black: str = "
 
 
 def tracing_svg(block: Tracing) -> Markup:
-    text = html.escape(block.text)
+    """Guide lines scale with the text so a whole sentence fits the width; long ones wrap onto more lines."""
+    size = min(58, 600 / (0.86 * len(block.text)))  # Andika advance ~0.55 em plus 0.31 em of letter spacing
+    lines = [block.text]
+    if size < 36:
+        lines = textwrap.wrap(block.text, 20)
+        size = min(58, 600 / (0.86 * max(len(t) for t in lines)))
+    k = size / 58
     rows = []
     for r in range(block.repeat):
-        y = r * 70
         paint = 'fill="#1c1917"' if r == 0 else 'fill="none" stroke="#8a8580" stroke-width="1.3" stroke-dasharray="3 3.5"'
-        rows.append(
-            f'<line x1="0" x2="600" y1="{y + 10}" y2="{y + 10}" stroke="#a8a29e" stroke-width="1"/>'
-            f'<line x1="0" x2="600" y1="{y + 32}" y2="{y + 32}" stroke="#a8a29e" stroke-width="1" stroke-dasharray="4 4"/>'
-            f'<line x1="0" x2="600" y1="{y + 54}" y2="{y + 54}" stroke="#57534e" stroke-width="1.4"/>'
-            f'<text x="6" y="{y + 54}" font-family="Andika" font-size="58" letter-spacing="18" {paint}>{text}</text>'
-        )
-    height = block.repeat * 70
+        for n, line in enumerate(lines):
+            y = (r * len(lines) + n) * 70 * k
+            rows.append(
+                f'<line x1="0" x2="600" y1="{y + 10 * k:.1f}" y2="{y + 10 * k:.1f}" stroke="#a8a29e" stroke-width="1"/>'
+                f'<line x1="0" x2="600" y1="{y + 32 * k:.1f}" y2="{y + 32 * k:.1f}" stroke="#a8a29e" stroke-width="1" '
+                f'stroke-dasharray="4 4"/>'
+                f'<line x1="0" x2="600" y1="{y + 54 * k:.1f}" y2="{y + 54 * k:.1f}" stroke="#57534e" stroke-width="1.4"/>'
+                f'<text x="6" y="{y + 54 * k:.1f}" font-family="Andika" font-size="{size:.1f}" '
+                f'letter-spacing="{18 * k:.1f}" {paint}>{html.escape(line)}</text>'
+            )
+    height = round(block.repeat * len(lines) * 70 * k)
     return Markup(f'<svg class="tracing" viewBox="0 0 600 {height}" width="600" height="{height}" '
                   f'xmlns="http://www.w3.org/2000/svg">{"".join(rows)}</svg>')
 

@@ -1,7 +1,7 @@
 """Phase 8: literacy worksheets only use letters the child already knows (checked by code, not by the model)."""
 
 from app.content import Outline, SectionContent
-from app.literacy import allowed_letters, check_section, graphemes
+from app.literacy import allowed_letters, check_blocks, check_section, graphemes, tidy
 
 OUTLINE = Outline(title="Método", genre="worksheets", known_letters=["a", "e", "i", "o", "u"], sections=[
     {"title": "La m", "letters": ["m"]}, {"title": "La p", "letters": ["p"]}, {"title": "La ch", "letters": ["ch"]}])
@@ -61,3 +61,27 @@ def test_a_tome_without_letters_is_not_checked():
     content = section({"id": "r", "type": "reading", "sentences": [{"text": "Cualquier cosa vale."}]})
 
     assert check_section(content, None) == []
+
+
+def test_counting_with_syllable_or_picture_blocks_is_sent_back():
+    content = section(
+        {"id": "b1", "type": "picture_words", "mode": "circle", "items": [{"word": "sol", "syllable": "3"},
+                                                                          {"word": "luna", "syllable": "1"}]},
+        {"id": "b2", "type": "image", "kind": "line_art", "subject": "2 manzanas + 1 manzana", "size": "half"},
+        {"id": "b3", "type": "image", "kind": "photo", "subject": "Apolo 11 en la Luna", "size": "half"},
+        {"id": "b4", "type": "image", "kind": "line_art", "subject": "una ardilla feliz", "size": "half"})
+
+    problems = check_blocks(content)
+
+    assert [p.split(":")[0] for p in problems] == ["b1", "b2"]
+
+
+def test_tidy_drops_a_repeated_title_and_blank_pages():
+    content = section({"id": "b1", "type": "heading", "level": 2, "text": "Sumas hasta 5"},
+                      {"id": "b2", "type": "paragraph", "text": "Hola"}, {"id": "b3", "type": "page_break"},
+                      {"id": "b4", "type": "page_break"}, {"id": "b5", "type": "paragraph", "text": "Fin"},
+                      {"id": "b6", "type": "page_break"})
+
+    tidy(content, "Sumas hasta 5")
+
+    assert [b.id for b in content.blocks] == ["b2", "b4", "b5"]

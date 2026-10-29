@@ -3,6 +3,7 @@
 The Architect gives each section the letters it teaches (`OutlineSection.letters`) and the tome the letters
 known before it starts (`Outline.known_letters`); a section may use those plus everything taught before it.
 Pictured words are hints read by the teacher, so they only have to contain the syllable they illustrate.
+check_blocks and tidy catch block misuse in any tome (counting with syllable blocks, blank pages).
 """
 
 import re
@@ -98,3 +99,29 @@ def check_section(content: SectionContent, allowed: set[str] | None) -> list[str
                     where = "ninguna columna" if not fits else f"varias columnas ({', '.join(fits)})"
                     problems.append(f"«{w}» ({b.id}) encaja en {where}")
     return problems
+
+
+QUANTITY = re.compile(r"[+−×÷=]|\b\d{1,2}\s+[a-záéíóúñ]", re.I)  # "2 manzanas", "3 + 1"
+
+
+def check_blocks(content: SectionContent) -> list[str]:
+    """Blocks used for what another block does exactly: counts and sums belong to code-drawn blocks."""
+    problems: list[str] = []
+    for b in content.blocks:
+        if b.type == "picture_words" and any(re.search(r"\d", i.syllable or "") for i in b.items):
+            problems.append(f"{b.id}: picture_words es para sílabas; para contar dibujos usa counting")
+        elif b.type == "image" and b.kind in ("line_art", "illustration") and QUANTITY.search(b.subject):
+            problems.append(f"{b.id}: una image no muestra cantidades ni operaciones («{b.subject}»); usa counting "
+                            "o picture_math")
+    return problems
+
+
+def tidy(content: SectionContent, section_title: str) -> None:
+    """Drop what prints badly: a first heading that repeats the section opener, and page breaks that would
+    leave a blank page (doubled or at the end)."""
+    blocks = content.blocks
+    if blocks and blocks[0].type == "heading" and blocks[0].text.strip().lower() == section_title.strip().lower():
+        blocks = blocks[1:]
+    blocks = [b for i, b in enumerate(blocks) if b.type != "page_break" or (i + 1 < len(blocks)
+              and blocks[i + 1].type != "page_break")]
+    content.blocks = blocks or content.blocks

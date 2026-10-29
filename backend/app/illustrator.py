@@ -40,7 +40,8 @@ def prepare_image(data: bytes, kind: str) -> tuple[bytes, str]:
     if kind in ("line_art", "icon"):
         grey = im.convert("L")
         grey.thumbnail((2000, 2000))
-        grey.point(lambda v: 255 if v > 170 else 0).convert("1").save(out, "PNG", optimize=True)
+        # A low threshold keeps light greys and shading white: they are not lines to colour inside.
+        grey.point(lambda v: 255 if v > 110 else 0).convert("1").save(out, "PNG", optimize=True)
         return out.getvalue(), "image/png"
     rgb = im.convert("RGB")
     rgb.thumbnail((3200, 3200))  # 4K sheets give ~1500x2000 panels: 300 dpi at half a page

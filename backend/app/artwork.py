@@ -114,7 +114,8 @@ def sheet_prompt(sheet: Sheet, plan: ArtPlan, design: Design | None, feedback: s
     cast = "; ".join(f"{c.name} is {c.look}" for c in plan.characters)
     if sheet.family == "line":
         medium = ("Black and white coloring book line art: thick, clean, continuous black outlines, closed shapes, "
-                  "large areas to color, no shading, no gray, no color, pure white background.")
+                  "large areas to color, no shading, no gray, no color, no filled black areas or silhouettes, "
+                  "pure white background.")
     else:
         palette = ", ".join(design.palette) if design else "soft, friendly colors"
         medium = f"Full color illustration, {THEME_STYLE[design.theme if design else 'clasico']}, palette {palette}, white background."

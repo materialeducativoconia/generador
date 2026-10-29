@@ -87,7 +87,7 @@ class Tracing(_Block):
     """Dotted text to trace over, on handwriting guide lines."""
 
     type: Literal["tracing"]
-    text: Annotated[str, Field(min_length=1, max_length=40)]
+    text: Annotated[str, Field(min_length=1, max_length=80)]
     repeat: int = Field(default=3, ge=1, le=12)
     instruction: Short | None = None
 
@@ -221,6 +221,7 @@ DIAGRAM_TYPES = ("staff", "timeline", "cycle", "bar_chart", "number_line", "frac
 # lays out the page. `pictures` maps a word to its drawing in the shared icon library, filled by the Illustrator.
 Word = Annotated[str, Field(min_length=1, max_length=24, pattern=r"^[^\s<>]+$")]
 Syllable = Annotated[str, Field(min_length=1, max_length=5, pattern=r"^[^\s<>]+$")]
+CardText = Annotated[str, Field(min_length=1, max_length=12, pattern=r"^[^\s<>]+$")]  # a syllable or a whole word
 
 
 class _Pictured(_Block):
@@ -265,7 +266,7 @@ class SyllableCards(_Block):
     """Syllables in cells, dashed to cut out (or to colour) and build words with."""
 
     type: Literal["syllable_cards"]
-    syllables: list[Syllable] = Field(min_length=4, max_length=40)
+    syllables: list[CardText] = Field(min_length=4, max_length=40)
     cut: bool = True
     instruction: Short | None = None
 
