@@ -19,13 +19,13 @@ def test_pages_are_spread_to_the_target_keeping_the_architects_proportions():
 
     spread_pages(sections, 25)
 
-    assert sum(s.pages for s in sections) == 24 and sections[1].pages > sections[0].pages >= sections[2].pages
+    assert sum(s.pages for s in sections) == 25 and sections[1].pages > sections[0].pages >= sections[2].pages
 
 
 async def test_a_tome_ordered_by_pages_plans_its_sections_and_design_together(raw_db, google_user, client, key,
                                                                                engine):
     user = await google_user()
-    created = (await client.post("/api/series", json={**NEW_TOME, "page_count": 20},
+    created = (await client.post("/api/series", json={**NEW_TOME, "section_count": 3, "page_count": 20},
                                  headers=bearer(key, user))).json()
     sid = created["series"]["id"]
     outline = {**OUTLINE, "sections": [{**s, "pages": p} for s, p in zip(OUTLINE["sections"], (2, 4, 4))]}
@@ -33,10 +33,10 @@ async def test_a_tome_ordered_by_pages_plans_its_sections_and_design_together(ra
 
     await run_next(engine, llm)
 
-    assert "unas 20 páginas" in llm.calls[0][-1]["content"]
+    assert "exactamente 20 páginas de contenido" in llm.calls[0][-1]["content"]
     pages = [r["pages"] for r in await raw_db.fetch(
         "select pages from public.lessons where series_id = $1 order by position", sid)]
-    assert sum(pages) == 19 and pages[0] < pages[1]
+    assert sum(pages) == 20 and pages[0] < pages[1]
     detail = (await client.get(f"/api/series/{sid}", headers=bearer(key, user))).json()
     assert detail["design"]["palette"] == DESIGN["palette"] and detail["lessons"][1]["pages"] == pages[1]
     preview = (await client.get(f"/api/series/{sid}/preview", headers=bearer(key, user))).json()

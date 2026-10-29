@@ -3,7 +3,8 @@ import uuid
 
 from tests.db.test_me import bearer
 
-NEW_TOME = {"request": "Método de piano para principiantes", "audience": "Adultos sin experiencia", "section_count": 3}
+NEW_TOME = {"request": "Método de piano para principiantes", "audience": "Adultos sin experiencia", "section_count": 3,
+            "page_count": 6}
 
 
 async def create_tome(client, key, user, **overrides):
@@ -139,3 +140,16 @@ async def test_approve_beyond_daily_quota_is_429(raw_db, google_user, client, ke
 
     assert response.status_code == 429
     assert response.json()["error"]["code"] == "quota_exceeded"
+
+
+async def test_sections_and_pages_are_always_chosen_and_sections_share_the_pages(google_user, client, key):
+    user = await google_user()
+
+    for body in ({"section_count": 3, "page_count": None}, {"section_count": None, "page_count": 6},
+                 {"section_count": 4, "page_count": 3}):
+        response = await client.post("/api/series", json={**NEW_TOME, **body}, headers=bearer(key, user))
+        assert response.status_code == 422, body
+
+    response = await client.post("/api/series", json={**NEW_TOME, "section_count": 3, "page_count": 3},
+                                 headers=bearer(key, user))
+    assert response.status_code == 202

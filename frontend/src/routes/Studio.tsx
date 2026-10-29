@@ -19,7 +19,7 @@ const EXAMPLES = [
 
 type Created = { series: { id: string } }
 
-const PAGES = [3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64, 80, 100]
+const PAGES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64, 80, 100, 150, 200]
 
 export function Studio() {
   const { data: me } = useMe()
@@ -31,8 +31,12 @@ export function Studio() {
   const audiences = AUDIENCES.includes(audience) ? AUDIENCES : [audience, ...AUDIENCES]
   const collectionId = params.get('coleccion')
   const collection = useCollections().data?.find((c) => c.id === collectionId)
-  const [sections, setSections] = useState<number | null>(null)  // null: the Architect decides
+  // Both chosen by the user, never automatic: pages are content pages (cover, index and answer key come free) and
+  // the sections share them, so a section never brings pages of its own.
+  const [sections, setSections] = useState<number | null>(null)
   const [pages, setPages] = useState<number | null>(null)
+  const affordable = me ? Math.min(me.plan.max_pages, Math.max(0, me.credits - 5)) : Infinity
+  const sized = sections !== null && pages !== null
   const [quoting, setQuoting] = useState(false)  // the cost window, shown before anything is created
   const [style, setStyle] = useState('auto')
   const ready = (useStyles().data?.styles ?? []).filter((s) => s.status === 'ready')
@@ -68,7 +72,7 @@ export function Studio() {
 
   function submit(e?: FormEvent) {
     e?.preventDefault()
-    if (request.trim().length >= 3 && !create.isPending) setQuoting(true)
+    if (request.trim().length >= 3 && sized && !create.isPending) setQuoting(true)
   }
 
   const firstName = me?.display_name?.split(' ')[0]
@@ -102,19 +106,25 @@ export function Studio() {
                 {audiences.map((a) => <option key={a}>{a}</option>)}
               </select>
             </label>
-            <label className="select-pill">
-              <span className="sr-only">Secciones</span>
-              <select value={sections ?? ''} onChange={(e) => setSections(e.target.value ? Number(e.target.value) : null)}>
-                <option value="">Secciones: auto</option>
-                {Array.from({ length: 20 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1} {i ? 'secciones' : 'sección'}</option>)}
+            <label className={`select-pill${pages === null ? ' needed' : ''}`}>
+              <span className="sr-only">Páginas de contenido</span>
+              <select value={pages ?? ''} required onChange={(e) => {
+                const n = Number(e.target.value)
+                setPages(n)
+                if (sections !== null && sections > n) setSections(n)
+              }}>
+                <option value="" disabled>Páginas…</option>
+                {PAGES.map((n) => <option key={n} value={n} disabled={n > affordable}>
+                  {n} {n === 1 ? 'página' : 'páginas'}{me && n > me.plan.max_pages ? ' · plan superior' : n > affordable ? ' · sin créditos' : ''}</option>)}
               </select>
             </label>
-            <label className="select-pill">
-              <span className="sr-only">Páginas</span>
-              <select value={pages ?? ''} onChange={(e) => setPages(e.target.value ? Number(e.target.value) : null)}>
-                <option value="">Páginas: auto</option>
-                {PAGES.map((n) => <option key={n} value={n} disabled={!!me && n > me.plan.max_pages}>
-                  {n} páginas{me && n > me.plan.max_pages ? ' · plan superior' : ''}</option>)}
+            <label className={`select-pill${sections === null ? ' needed' : ''}`}>
+              <span className="sr-only">Secciones</span>
+              <select value={sections ?? ''} required onChange={(e) => setSections(Number(e.target.value))}>
+                <option value="" disabled>Secciones…</option>
+                {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
+                  <option key={n} value={n} disabled={pages !== null && n > pages}>{n} {n === 1 ? 'sección' : 'secciones'}</option>
+                ))}
               </select>
             </label>
             {identities.length > 0 && !lineOf && (
@@ -135,7 +145,8 @@ export function Studio() {
                 </select>
               </label>
             )}
-            <button className="send" type="submit" disabled={request.trim().length < 3 || create.isPending} aria-label="Crear tomo">
+            <button className="send" type="submit" disabled={request.trim().length < 3 || !sized || create.isPending} aria-label="Crear tomo"
+                    title={sized ? undefined : 'Elige las páginas y las secciones'}>
               {create.isPending ? <span className="spinner" /> : <ArrowUp />}
             </button>
           </div>
@@ -144,6 +155,7 @@ export function Studio() {
           <CostDialog sections={sections} pages={pages} pending={create.isPending}
                       onConfirm={() => create.mutate()} onCancel={() => setQuoting(false)} />
         )}
+        {request.trim().length >= 3 && !sized && <p className="muted small composer-hint">Elige cuántas páginas de contenido y en cuántas secciones repartirlas. La portada, el índice y el solucionario no cuentan.</p>}
         {create.error && <p className="error" role="alert">{errorText(create.error, 'No pudimos crear el tomo.')}</p>}
 
         <div className="examples">
@@ -327,9 +339,9 @@ function CostDialog({ sections, pages, pending, onConfirm, onCancel }: {
         {!q ? <div className="skeleton" /> : (
           <>
             <p className="muted small">
-              {q.sections} {q.sections === 1 ? 'sección' : 'secciones'}{q.assumed.sections ? ' (estimadas)' : ''} · {q.pages} páginas{q.assumed.pages ? ' (estimadas)' : ''}
+              {q.pages} {q.pages === 1 ? 'página' : 'páginas'} de contenido en {q.sections} {q.sections === 1 ? 'sección' : 'secciones'} · más portada{q.sections > 1 ? ', índice' : ''} y solucionario sin costo
             </p>
-            <p className="credits-big"><strong>~{q.credits}</strong> créditos <span className="muted small">· tienes {q.balance}</span></p>
+            <p className="credits-big"><strong>{q.credits}</strong> créditos <span className="muted small">· tienes {q.balance}</span></p>
             <p className="small muted">Ahora se usan 5 (esquema y portada); las páginas se descuentan al aprobar el esquema. Si algo falla, te los devolvemos.</p>
             {q.balance < q.credits && <p className="error small">No te alcanzan para el tomo completo. <Link to="/app/plan">Comprar créditos o subir de plan</Link></p>}
             {me?.platform_role === 'admin' && (

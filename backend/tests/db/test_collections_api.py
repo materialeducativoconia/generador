@@ -56,6 +56,7 @@ async def test_nobody_touches_another_users_tomes_or_collections(raw_db, google_
 
 
 async def create_tome_status(client, key, user, cid):
-    response = await client.post("/api/series", json={"request": "Piano", "audience": "Adultos", "collection_id": cid},
+    response = await client.post("/api/series", json={"request": "Piano", "audience": "Adultos", "collection_id": cid,
+                                                        "section_count": 1, "page_count": 3},
                                  headers=bearer(key, user))
     return response.status_code

@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError, model_validator
 from sqlalchemy import text
 from uuid6 import uuid7
 
@@ -35,13 +35,22 @@ class NewTome(BaseModel):
     request: str = Field(min_length=3, max_length=2000)
     audience: str = Field(min_length=1, max_length=200)
     language: str = Field(default="es", pattern=r"^[a-z]{2}(-[A-Z]{2})?$")
-    section_count: int | None = Field(default=None, ge=1, le=20)
-    page_count: int | None = Field(default=None, ge=3, le=200)  # by length: the Architect splits the pages
+    # Both chosen by the user: pages are content pages (cover, index and answer key come free) and the sections
+    # share them, so there are never more sections than pages.
+    section_count: int = Field(ge=1, le=20)
+    page_count: int = Field(ge=1, le=200)
     extra_instructions: str | None = Field(default=None, max_length=2000)
     style_id: uuid.UUID | None = None  # a ready style from the user's library; None lets the Designer choose
     identity_id: uuid.UUID | None = None  # one of the user's identities; a collection's identity wins
     collection_id: uuid.UUID | None = None  # the collection the new tome joins, e.g. from a suggested level
     place: Literal["start", "end"] = "end"  # a lower level goes first in its collection, a higher one last
+
+
+    @model_validator(mode="after")
+    def _sections_fit(self):
+        if self.section_count > self.page_count:
+            raise ValueError("Cada sección necesita al menos una página: elige menos secciones o más páginas.")
+        return self
 
 
 class OutlineLesson(OutlineSection):
@@ -74,7 +83,7 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
                 return await _created(conn, existing.series_id, existing.id)
         await _require_active(conn, user_id)
         acc = await credits.account(conn, user_id)
-        if body.page_count and body.page_count > acc.plan.max_pages:
+        if body.page_count > acc.plan.max_pages:
             raise ApiError(403, "plan_required", f"Tu plan {acc.plan.label} admite tomos de hasta "
                            f"{acc.plan.max_pages} páginas.", {"feature": "max_pages", "plan": acc.plan_key})
         busy = (await conn.execute(text(
@@ -91,7 +100,7 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
                values (:id, :u, :topic, cast(:audience as jsonb), :lang, :n, :extra, 'outlining', :pages,
                        (select id from public.styles where id = :st and user_id = :u and status = 'ready'))"""
         ), {"id": series_id, "u": user_id, "topic": body.request, "audience": json.dumps({"label": body.audience}),
-            "lang": body.language, "n": body.section_count or 10, "extra": body.extra_instructions,
+            "lang": body.language, "n": body.section_count, "extra": body.extra_instructions,
             "st": body.style_id, "pages": body.page_count})
         await conn.execute(text(
             """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, idempotency_key)

@@ -39,8 +39,8 @@ class Brief:
                      else "Número de secciones: decide tú (entre 1 y 20): un tema por cada 2 a 4 páginas"
                      + (f", al menos {n}" if (n := min_sections(self.page_count)) > 1 else ""))
         if self.page_count:
-            lines.append(f"Extensión: unas {self.page_count} páginas impresas en total; repártelas entre las "
-                         "secciones en el campo pages de cada una")
+            lines.append(f"Extensión: exactamente {self.page_count} páginas de contenido (sin contar portada, índice ni "
+                         "solucionario); repártelas entre las secciones en el campo pages de cada una")
         if self.extra_instructions:
             lines.append(f"Instrucciones extra: {self.extra_instructions}")
         if self.voice:
@@ -239,9 +239,10 @@ def outline_problems(outline: Outline, brief: Brief) -> list[str]:
 
 
 def spread_pages(sections: list, total: int) -> None:
-    """Make the sections' pages add up to the tome's target (minus the cover), keeping the Architect's
-    proportions; largest remainders get the leftover pages."""
-    interior = max(total - 1, len(sections))
+    """Make the sections' pages add up to the user's content pages (cover, index and answer key are extra),
+    keeping the Architect's proportions; largest remainders get the leftover pages. The user never picks more
+    sections than pages, so the total is never stretched to fit them."""
+    interior = max(total, len(sections))
     weights = [s.pages or 1 for s in sections]
     shares = [interior * w / sum(weights) for w in weights]
     pages = [max(1, int(x)) for x in shares]
