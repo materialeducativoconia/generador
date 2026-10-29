@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
-import { Link, NavLink } from 'react-router'
+import { Link, NavLink, useLocation } from 'react-router'
+import { saveWithGoogle } from '../auth/google'
 import { useMe } from '../lib/queries'
 import { supabase } from '../lib/supabase'
 
@@ -14,6 +15,8 @@ const NAV: [string, string, ReactNode][] = [
 export function AppShell({ children }: { children: ReactNode }) {
   const { data: me } = useMe()
   const [open, setOpen] = useState(false)
+  const { pathname } = useLocation()
+  const nav = me?.anonymous ? NAV.filter(([to]) => to === '/app' || to === '/app/plan') : NAV
   const name = me?.display_name || me?.email
   return (
     <div className={`shell${open ? ' nav-open' : ''}`}>
@@ -22,12 +25,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
         </button>
         <Link to="/app" className="brand"><Logo /><span>Material Educativo IA</span></Link>
-        {me && <Link to="/app/plan" className="quota"><span className="quota-dot" />{me.credits}</Link>}
+        {me && !me.anonymous && <Link to="/app/plan" className="quota"><span className="quota-dot" />{me.credits}</Link>}
       </header>
       <aside className="sidenav" aria-label="Navegación" onClick={(e) => { if ((e.target as HTMLElement).closest('a')) setOpen(false) }}>
         <Link to="/app" className="brand"><Logo /><span>Material Educativo IA</span></Link>
         <nav>
-          {NAV.map(([to, label, icon]) => (
+          {nav.map(([to, label, icon]) => (
             <NavLink key={to} to={to} end={to === '/app'} className="nav-item">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
                    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon}</svg>
@@ -42,7 +45,16 @@ export function AppShell({ children }: { children: ReactNode }) {
             </NavLink>
           )}
         </nav>
-        {me && (
+        {me?.anonymous && (
+          <div className="sidenav-foot">
+            <div className="wallet-mini">
+              <strong className="small">Vista previa gratis</strong>
+              <span className="muted">Entra con Google para guardarla, generar el tomo completo y descargarlo.</span>
+              <button className="primary small-cta" onClick={() => void saveWithGoogle(pathname)}>Continuar con Google</button>
+            </div>
+          </div>
+        )}
+        {me && !me.anonymous && (
           <div className="sidenav-foot">
             <Link to="/app/plan" className="wallet-mini">
               <span><strong>{me.credits}</strong> créditos</span>

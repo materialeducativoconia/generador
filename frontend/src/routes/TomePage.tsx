@@ -1,10 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
+import { saveWithGoogle } from '../auth/google'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
 import { errorText } from '../components/ErrorNote'
-import { PageThumb } from '../components/Sheet'
+import { PageThumb, Sheet } from '../components/Sheet'
 import { ART_LABEL, COVER_LABEL, FRAME_LABEL, GENRE_LABEL, THEME_LABEL } from '../lib/labels'
 import { api } from '../lib/apiClient'
 import { useExport, useIdentities, useMe, usePreview, useProgress, useQuality, useSeries, useStyles } from '../lib/queries'
@@ -35,6 +36,7 @@ export function TomePage() {
       </header>
 
       <Pipeline status={status} progress={progress.data} />
+      {s.preview && <PreviewBanner series={s} />}
 
       {status === 'outlining' && <Planning />}
       {status === 'outline_failed' && <OutlineFailed series={s} />}
@@ -50,6 +52,37 @@ export function TomePage() {
         </>
       )}
     </AppShell>
+  )
+}
+
+/** The free preview: what it includes, the sample of section 1 as it will print, and the way to the full tome. */
+function PreviewBanner({ series: s }: { series: Series }) {
+  const { data: me } = useMe()
+  const { pathname } = useLocation()
+  const first = s.lessons.find((l) => l.position === 1)
+  if (!me || (me.plan.key !== 'prueba' && !first?.sample)) return null
+  const writing = first && ['queued', 'generating'].includes(first.status)
+  return (
+    <>
+      {me.plan.key === 'prueba' && (
+        <section className="panel preview-banner">
+          <p><strong>Tu vista previa gratis:</strong> portada ilustrada, índice y una muestra de la primera sección.
+            Para generar el tomo completo y descargarlo en PDF, elige un plan.</p>
+          {me.anonymous
+            ? <button className="primary" onClick={() => void saveWithGoogle(pathname)}>Continuar con Google</button>
+            : <Link to="/app/plan" className="primary">Ver planes</Link>}
+        </section>
+      )}
+      {(writing || (first?.sample && first.content_json)) && (
+        <section className="sample">
+          <div className="sample-h"><h2 className="h3">Muestra: {first!.title}</h2><span className="muted small">Así se imprime</span></div>
+          {writing ? <div className="skeleton tall" aria-label="Escribiendo la muestra…" /> : (
+            <Sheet design={s.design} position={first!.position} title={first!.title} blocks={first!.content_json!.blocks}
+                   assets={s.assets} credits={s.credits} diagrams={first!.diagrams} />
+          )}
+        </section>
+      )}
+    </>
   )
 }
 

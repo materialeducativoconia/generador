@@ -15,7 +15,7 @@ from app.api.deps import current_user_id
 from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Block, Design, OutlineSection, block_assets
 from app.diagrams import render_diagram
 from app.errors import ApiError
-from app.plans import COVER, OUTLINE, tome_credits
+from app.plans import COVER, FREE_PREVIEWS_PER_DAY, FREE_PREVIEWS_PER_IP, OUTLINE, PAID, tome_credits
 from app.jobs import enqueue_cover
 from app.llm import USD_PER_M
 from app.pricing import estimate
@@ -93,23 +93,27 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
             raise ApiError(429, "too_many_running", f"Tu plan {acc.plan.label} genera {acc.plan.concurrent} "
                            f"{'tomo' if acc.plan.concurrent == 1 else 'tomos'} a la vez; espera a que termine.",
                            {"plan": acc.plan_key})
+        ip = _client_ip(request)
+        free = acc.plan_key not in PAID and await _free_preview(conn, acc.org_id, ip)
         series_id, job_id = uuid7(), uuid7()
         await conn.execute(text(
             """insert into public.series (id, user_id, topic, audience, language, lesson_count,
-                                          extra_instructions, status, page_target, style_id)
+                                          extra_instructions, status, page_target, style_id, preview, preview_ip)
                values (:id, :u, :topic, cast(:audience as jsonb), :lang, :n, :extra, 'outlining', :pages,
-                       (select id from public.styles where id = :st and user_id = :u and status = 'ready'))"""
+                       (select id from public.styles where id = :st and user_id = :u and status = 'ready'),
+                       :free, :ip)"""
         ), {"id": series_id, "u": user_id, "topic": body.request, "audience": json.dumps({"label": body.audience}),
             "lang": body.language, "n": body.section_count, "extra": body.extra_instructions,
-            "st": body.style_id, "pages": body.page_count})
+            "st": body.style_id, "pages": body.page_count, "free": free, "ip": ip if free else None})
         await conn.execute(text(
             """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, idempotency_key)
                values (:id, :u, :s, 'outline', 'queued', cast(:payload as jsonb), :k)"""
         ), {"id": job_id, "u": user_id, "s": series_id, "k": idempotency_key,
             "payload": json.dumps({"brief": body.model_dump(exclude={"style_id", "identity_id", "collection_id",
                                                                     "place"})})})
-        await credits.charge(conn, user_id, OUTLINE, "Esquema", job_id)
-        await credits.charge(conn, user_id, COVER, "Portada", job_id)  # moves to the cover job when it is queued
+        if not free:  # the free preview is on us
+            await credits.charge(conn, user_id, OUTLINE, "Esquema", job_id)
+            await credits.charge(conn, user_id, COVER, "Portada", job_id)  # moves to the cover job when queued
         identity_id = body.identity_id
         if body.collection_id:
             from app.api.collections import own_collection, place_in  # collections imports this module
@@ -433,7 +437,7 @@ async def generate_lessons(series_id: uuid.UUID, body: Generate, request: Reques
                 " ('queued','generating')"), {"s": series_id, "ids": body.lesson_ids})).all()
         else:
             rows = (await conn.execute(text(
-                "select id, pages from public.lessons where series_id = :s and status in ('pending','failed')"
+                "select id, pages from public.lessons where series_id = :s and (status in ('pending','failed') or sample)"
                 " order by position"), {"s": series_id})).all()
         targets = [r.id for r in rows]
         if not targets:
@@ -459,6 +463,29 @@ async def generate_lessons(series_id: uuid.UUID, body: Generate, request: Reques
 
 
 # ---------------------------------------------------------------------------
+
+
+async def _free_preview(conn, org_id, ip: str | None) -> bool:
+    """The organization's one free preview, if it has not had it; capped per visitor and per day so a script
+    cannot turn our marketing budget into its own."""
+    used = (await conn.execute(text("select free_preview_at from public.organizations where id = :o for update"),
+                               {"o": org_id})).scalar_one()
+    if used is not None:
+        return False
+    today = (await conn.execute(text(
+        """select count(*) as total, count(*) filter (where preview_ip = :ip) as mine from public.series
+            where preview and created_at > now() - interval '1 day'"""), {"ip": ip})).mappings().one()
+    if today["mine"] >= FREE_PREVIEWS_PER_IP or today["total"] >= FREE_PREVIEWS_PER_DAY:
+        raise ApiError(429, "preview_limit", "Por hoy ya no hay vistas previas gratis. Suscríbete para crear tu "
+                       "material ahora, o vuelve mañana.", {"plan": "prueba"})
+    await conn.execute(text("update public.organizations set free_preview_at = now() where id = :o"), {"o": org_id})
+    return True
+
+
+def _client_ip(request: Request) -> str | None:
+    """Vercel puts the visitor first in X-Forwarded-For; Render appends the hops after it."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    return forwarded.split(",")[0].strip() or (request.client.host if request.client else None)
 
 
 async def _require_active(conn, user_id):
@@ -525,7 +552,7 @@ async def _series_detail(conn, series_id, user_id, request: Request):
     series = await _own_series(conn, series_id, user_id)
     lessons = (await conn.execute(text(
         """select id, position, title, objectives, key_points, pages, status, last_error, content_version, content_json,
-                  updated_at
+                  updated_at, sample
              from public.lessons where series_id = :s order by position"""), {"s": series_id})).mappings().all()
     outline_error = None
     if series["status"] == "outline_failed":
@@ -534,6 +561,7 @@ async def _series_detail(conn, series_id, user_id, request: Request):
             " order by created_at desc limit 1"), {"s": series_id})).scalar_one_or_none()
     out = _jsonable(series)
     out.pop("user_id", None)
+    out.pop("preview_ip", None)
     out["cover_status"] = (await conn.execute(text(
         "select status::text from public.generation_jobs where series_id = :s and kind = 'cover'"
         " order by created_at desc limit 1"), {"s": series_id})).scalar_one_or_none()

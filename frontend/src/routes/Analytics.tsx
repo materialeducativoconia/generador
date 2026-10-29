@@ -10,6 +10,7 @@ import { useMe } from '../lib/queries'
 type Count = { key: string; count: number }
 type Analytics = {
   days: number
+  previews: { total: number; saved: number; paid: number }
   users: { total: number; new: number; onboarded: number; activated: number; creators: number; paying: number; churned: number; conversion: number }
   revenue: { mrr_usd: number; packs_usd: number; packs_sold: number; by_plan: { plan: string; label: string; count: number; mrr_usd: number }[] }
   usage: { tomes: number; exports: number; jobs: number; failed_jobs: number; credits_spent: number }
@@ -73,6 +74,14 @@ export function Analytics() {
                 { key: 'Se registraron', count: a.users.new },
                 { key: 'Completaron la bienvenida', count: a.users.onboarded },
                 { key: 'Crearon un tomo', count: a.users.activated },
+              ]} />
+            </section>
+            <section className="panel">
+              <h2 className="h3">Vistas previas gratis ({a.days} días)</h2>
+              <HBars total={a.previews.total} rows={[
+                { key: 'Vistas previas', count: a.previews.total },
+                { key: 'Guardadas con Google', count: a.previews.saved },
+                { key: 'Se suscribieron', count: a.previews.paid },
               ]} />
             </section>
             <section className="panel">

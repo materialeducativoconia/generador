@@ -22,6 +22,7 @@ from app.agents import (PROMPT_VERSION, AgentFailed, Attempt, Brief, apply_fixes
 from app.content import ArtPlan, Brand, Design, Outline, OutlineSection
 from app.identity import describe, guard, initials, look_key
 from app import credits
+from app.plans import SAMPLE_PAGES
 from app.llm import LLM, UpstreamAuthError, UpstreamError
 from app.artwork import ImageRequest, plan_sheets, sheet_prompt, slice_sheet
 from app.illustrator import (cover_jpeg, line_art_coverage, normalize_subject, prepare_image, reference_image,
@@ -168,7 +169,23 @@ async def _outline(deps: Deps, job: dict) -> None:
                                 "known_letters": outline.known_letters})})
         cover_job = await enqueue_cover(conn, job["user_id"], job["series_id"])
         await credits.move_charge(conn, job["id"], cover_job, "Portada")  # paid when the tome was created
+        if series["preview"]:  # the free preview shows the first pages written, at our cost
+            await _queue_sample(conn, job)
         await _succeed(conn, job)
+
+
+async def _queue_sample(conn, job: dict) -> None:
+    lesson_id = (await conn.execute(text(
+        "select id from public.lessons where series_id = :s order by position limit 1"), {"s": job["series_id"]})
+    ).scalar_one_or_none()
+    if lesson_id is None:
+        return
+    await conn.execute(text(
+        """insert into public.generation_jobs (user_id, series_id, lesson_id, kind, status, payload)
+           values (:u, :s, :l, 'lesson', 'queued', cast(:p as jsonb))"""),
+        {"u": job["user_id"], "s": job["series_id"], "l": lesson_id,
+         "p": json.dumps({"sample_pages": SAMPLE_PAGES})})
+    await conn.execute(text("update public.lessons set status = 'queued' where id = :l"), {"l": lesson_id})
 
 
 async def _research(deps: Deps, job: dict, brief: Brief) -> dict:
@@ -260,6 +277,13 @@ async def _lesson(deps: Deps, job: dict) -> None:
                   for lesson in lessons],
     )
     brief = _brief(series, None)
+    sample = job["payload"].get("sample_pages")
+    if sample:  # the free preview: only the section's first pages, to show what the tome will look like
+        section = outline.sections[position - 1]
+        section.pages = min(section.pages or sample, sample)
+        brief.extra_instructions = "\n".join(filter(None, [brief.extra_instructions,
+                                                           f"Esta sección es una muestra: escribe solo sus primeras "
+                                                           f"{section.pages} páginas, con su mejor contenido."]))
     if job["payload"].get("instructions"):
         brief.extra_instructions = "\n".join(filter(None, [brief.extra_instructions,
                                                            f"Para esta sección: {job['payload']['instructions']}"]))
@@ -287,8 +311,9 @@ async def _lesson(deps: Deps, job: dict) -> None:
         await _insert_logs(conn, job, "editor", edit_attempts)
         await conn.execute(text(
             """update public.lessons set content_json = cast(:c as jsonb), status = 'generated', review = cast(:r as jsonb),
-                      content_version = content_version + 1, last_error = null where id = :l"""
-        ), {"l": job["lesson_id"], "c": content.model_dump_json(), "r": json.dumps(review) if review else None})
+                      content_version = content_version + 1, last_error = null, sample = :sample where id = :l"""
+        ), {"l": job["lesson_id"], "c": content.model_dump_json(), "r": json.dumps(review) if review else None,
+            "sample": bool(sample)})
         await conn.execute(text("select public.refresh_series_status(:s)"), {"s": job["series_id"]})
         await _queue_artwork(conn, job)
         await _succeed(conn, job)

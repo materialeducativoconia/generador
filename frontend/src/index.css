@@ -742,3 +742,13 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .landing-foot { text-align: center; border-top: 1px solid var(--border); padding-top: 20px; }
 .select-pill.needed select { border-color: var(--accent); color: var(--accent); }
 .composer-hint { margin: 10px 0 0; }
+.link-button { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.small-cta { margin-top: 8px; padding: 7px 12px; font-size: 13px; }
+.landing-composer { margin-top: 24px; text-align: left; }
+.landing-composer .error { padding: 0 14px 12px; margin: 0; }
+.landing-go { margin-left: auto; padding: 8px 16px; font-size: 14px; }
+.turnstile { padding: 0 14px 12px; }
+.preview-banner { display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; border-color: var(--accent); background: var(--accent-soft); }
+.preview-banner p { margin: 0; max-width: 46rem; }
+.sample { margin-bottom: 16px; }
+.sample-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 10px; }

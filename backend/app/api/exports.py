@@ -39,6 +39,7 @@ class ExportOptions(BaseModel):
 async def create_export(series_id: uuid.UUID, body: ExportOptions, request: Request, user_id: UserId):
     async with request.app.state.engine.begin() as conn:
         series = await _own_series(conn, series_id, user_id, lock=True)
+        await credits.require_download(conn, user_id)
         if body.format == "docx":
             await credits.require(conn, user_id, "word", "Descargar en Word")
         if body.edition == "print":

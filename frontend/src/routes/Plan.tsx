@@ -4,7 +4,8 @@ import { useSearchParams } from 'react-router'
 import { AppShell } from '../components/AppShell'
 import { errorText } from '../components/ErrorNote'
 import { api } from '../lib/apiClient'
-import { useBilling, type Billing } from '../lib/queries'
+import { useBilling, useMe, type Billing } from '../lib/queries'
+import { saveWithGoogle } from '../auth/google'
 
 const PITCH: Record<string, string> = {
   docente: 'Para tu grupo: material listo para imprimir y usar en clase.',
@@ -16,6 +17,7 @@ const date = (iso: string) => new Date(iso).toLocaleDateString('es-MX', { day: '
 /** Plan and credits: one credit is about one generated page; the plan refills them every month. */
 export function Plan() {
   const { data: b, isLoading } = useBilling()
+  const { data: me } = useMe()
   const qc = useQueryClient()
   const [params, setParams] = useSearchParams()
   const paid = params.get('pago') === 'ok'
@@ -36,7 +38,7 @@ export function Plan() {
       <section className="styles-head">
         <div>
           <p className="eyebrow">Plan y créditos</p>
-          <h1 className="display">{current ? `Plan ${current.label}` : 'Prueba gratis'}</h1>
+          <h1 className="display">{current ? `Plan ${current.label}` : 'Elige tu plan'}</h1>
           <p className="muted">
             1 crédito ≈ 1 página generada. Un tomo usa 1 crédito por el esquema, 4 por la portada y 1 por página.
             Editar texto es gratis; si algo falla, te devolvemos los créditos.
@@ -51,6 +53,10 @@ export function Plan() {
           {b.can_manage && <button className="ghost small" onClick={() => go.mutate({ path: '/api/billing/portal' })} disabled={go.isPending}>Facturas y método de pago</button>}
         </div>
       </section>
+      {me?.anonymous && (
+        <p className="notice">Para suscribirte, entra con Google; tu vista previa se guarda en tu cuenta.{' '}
+          <button className="link-button" onClick={() => void saveWithGoogle('/app/plan')}>Continuar con Google</button></p>
+      )}
       {paid && <p className="notice" role="status">¡Gracias! Estamos acreditando tu pago…</p>}
       {!b.enabled && <p className="notice">Los pagos se activan muy pronto.</p>}
       {go.error && <p className="error" role="alert">{errorText(go.error, 'No pudimos abrir el pago.')}</p>}

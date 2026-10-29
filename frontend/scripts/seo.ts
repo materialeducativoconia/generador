@@ -1,7 +1,7 @@
 // After `vite build`: static, crawlable pages for each landing topic, the topic hub, sitemap.xml and robots.txt,
 // plus the home page's meta tags. vercel.json rewrites /material-educativo/<slug> to these files before the SPA fallback.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { PUBLIC_PLANS, TRIAL_CREDITS } from '../src/lib/pricing.ts'
+import { PUBLIC_PLANS } from '../src/lib/pricing.ts'
 import { TOPICS, topicHref, type Topic } from '../src/lib/topics.ts'
 
 const SITE = (process.env.SITE_URL
@@ -11,7 +11,7 @@ const NAME = 'Material Educativo IA'
 const DIST = new URL('../dist/', import.meta.url)
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
-const studio = (t: Topic) => `/app?${new URLSearchParams({ pedido: t.request, publico: t.audience })}`
+const studio = (t: Topic) => `/?${new URLSearchParams({ pedido: t.request, publico: t.audience })}#crear`
 const json = (data: object) => `<script type="application/ld+json">${JSON.stringify(data).replace(/</g, '\\u003c')}</script>`
 
 function head(title: string, description: string, path: string, extra = '') {
@@ -40,7 +40,7 @@ const LOGO = `<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"
 const HEADER = `<header class="top"><a class="brand" href="/">${LOGO}<span>${NAME}</span></a>
 <nav><a href="/material-educativo">Temas</a><a href="/#planes">Planes</a><a class="btn small" href="/app">Entrar</a></nav></header>`
 const FOOTER = `<footer><p><a href="/">${NAME}</a> · <a href="/material-educativo">Material educativo por tema</a> · <a href="/#planes">Planes</a></p>
-<p class="muted">Empieza gratis con ${TRIAL_CREDITS} créditos. Sin tarjeta.</p></footer>`
+<p class="muted">Vista previa gratis, sin registro ni tarjeta.</p></footer>`
 
 const plans = () => `<section id="planes"><h2>Planes</h2><div class="grid3">${PUBLIC_PLANS.map((p) => `
 <article class="card"><h3>${p.label}</h3><p class="muted">${p.for}</p><p class="price">$${p.price} <span class="muted">USD/mes</span></p>
@@ -60,7 +60,7 @@ function topicPage(t: Topic) {
 ${HEADER}<main>
 <nav class="crumbs" aria-label="Ruta"><a href="/material-educativo">Material educativo</a> › ${esc(t.name)}</nav>
 <section class="hero"><p class="eyebrow">${esc(t.name)} · ${esc(t.audience)}</p><h1>${esc(t.title)}</h1><p class="lede">${esc(t.intro)}</p>
-<a class="btn" href="${esc(studio(t))}">Crear este material gratis</a><p class="muted small">${TRIAL_CREDITS} créditos de prueba: alcanzan para un cuadernillo completo.</p></section>
+<a class="btn" href="${esc(studio(t))}">Ver mi vista previa gratis</a><p class="muted small">Portada ilustrada, índice y una muestra, sin registrarte.</p></section>
 <section class="two"><div class="card"><h2>Ejemplo de índice</h2><p class="muted small">«${esc(t.request)}»</p><ol>${t.outline.map((o) => `<li>${esc(o)}</li>`).join('')}</ol></div>
 <div class="card"><h2>Qué incluye</h2><ul>${t.includes.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
 <p class="muted small">Tú describes el tema y el nivel; un equipo de agentes planifica, investiga, escribe, ilustra y maqueta. Revisas y editas el texto gratis antes de descargar en PDF${' '}o Word.</p></div></section>

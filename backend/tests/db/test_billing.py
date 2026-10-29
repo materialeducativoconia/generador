@@ -15,8 +15,8 @@ async def credits_of(client, key, user):
     return (await client.get("/api/billing", headers=bearer(key, user))).json()["credits"]["total"]
 
 
-async def test_the_trial_pays_a_tome_and_gets_it_back_when_it_fails(raw_db, google_user, client, key, engine):
-    user = await google_user(plan=None)
+async def test_credits_pay_a_tome_and_come_back_when_it_fails(raw_db, google_user, client, key, engine):
+    user = await google_user(plan="docente", credits=40)
     assert await credits_of(client, key, user) == 40
 
     sid = (await create_tome(client, key, user))["series"]["id"]
@@ -28,11 +28,11 @@ async def test_the_trial_pays_a_tome_and_gets_it_back_when_it_fails(raw_db, goog
     assert await credits_of(client, key, user) == 40
     kinds = await raw_db.fetch("select kind from public.credit_ledger l join public.memberships m using (org_id)"
                                " where m.user_id = $1 order by l.created_at", user)
-    assert [k["kind"] for k in kinds] == ["grant", "spend", "spend", "refund", "refund"]
+    assert [k["kind"] for k in kinds] == ["spend", "spend", "refund", "refund"]
 
 
 async def test_sections_cost_their_pages_and_the_cover_follows_its_job(raw_db, google_user, client, key, engine):
-    user = await google_user(plan=None)
+    user = await google_user(plan="docente", credits=40)
     h = bearer(key, user)
     sid = (await create_tome(client, key, user))["series"]["id"]
     await run_next(engine, ScriptedLLM(json.dumps(OUTLINE)))
@@ -47,9 +47,7 @@ async def test_sections_cost_their_pages_and_the_cover_follows_its_job(raw_db, g
 
 
 async def test_without_credits_nothing_is_queued(raw_db, google_user, client, key):
-    user = await google_user(plan=None)
-    await raw_db.execute("update public.credit_buckets set remaining = 2 from public.memberships m "
-                         "where m.org_id = credit_buckets.org_id and m.user_id = $1", user)
+    user = await google_user(plan="docente", credits=2)
 
     response = await client.post("/api/series", json=NEW_TOME, headers=bearer(key, user))
 
@@ -66,11 +64,13 @@ async def test_each_plan_unlocks_its_features(raw_db, google_user, client, key):
     style = await client.post("/api/styles", json={"name": "x", "content_type": "image/png", "size": 10}, headers=h)
     assert style.status_code == 403 and "Creador" in style.json()["error"]["message"]
     assert (await client.post("/api/identities", json={"about": "Fichas"}, headers=h)).status_code == 403
-    sid = (await create_tome(client, key, user))["series"]["id"]
-    second = await client.post("/api/series", json=NEW_TOME, headers=h)
-    assert second.status_code == 429  # the trial generates one tome at a time
+    sid = (await create_tome(client, key, user))["series"]["id"]  # the free preview
     await outline_ready(raw_db, sid)
     await raw_db.execute("update public.series set status = 'ready' where id = $1", sid)
+    pdf = await client.post(f"/api/series/{sid}/exports", json={}, headers=h)
+    assert pdf.status_code == 403 and pdf.json()["error"]["details"]["feature"] == "download"
+
+    await subscribe(raw_db, user, "docente")
     word = await client.post(f"/api/series/{sid}/exports", json={"format": "docx"}, headers=h)
     assert word.status_code == 403
     pdf = await client.post(f"/api/series/{sid}/exports", json={}, headers=h)
@@ -139,10 +139,10 @@ async def test_stripe_grants_packs_and_monthly_credits_once(raw_db, google_user,
             "customer": "cus_1", "metadata": {"pack": "pack_100"}}
     await send(client, "evt_1", "checkout.session.completed", pack)
     await send(client, "evt_1", "checkout.session.completed", pack)  # Stripe retries: granted once
-    assert await credits_of(client, key, user) == 140
+    assert await credits_of(client, key, user) == 100
 
     await send(client, "evt_2", "invoice.paid", {"id": f"in_1_{RUN}", "subscription": "sub_1"})
-    assert await credits_of(client, key, user) == 290
+    assert await credits_of(client, key, user) == 250
     billing = (await client.get("/api/billing", headers=h)).json()
     assert billing["plan"] == "docente" and billing["can_manage"]
 
@@ -150,11 +150,11 @@ async def test_stripe_grants_packs_and_monthly_credits_once(raw_db, google_user,
     await raw_db.execute("update public.credit_buckets set remaining = 100 where source = 'plan' and org_id = $1", org)
     await send(client, "evt_3", "invoice.paid", {"id": f"in_2_{RUN}", "parent": {"subscription_details":
                                                                          {"subscription": "sub_1"}}})
-    assert await credits_of(client, key, user) == 290
+    assert await credits_of(client, key, user) == 250
 
     stripe.subscriptions["sub_1"] = sub("sub_1", org, "creador")  # upgrade in the portal: the difference now
     await send(client, "evt_4", "customer.subscription.updated", stripe.subscriptions["sub_1"])
-    assert await credits_of(client, key, user) == 290 + 350
+    assert await credits_of(client, key, user) == 250 + 350
     assert (await client.post("/api/billing/checkout", json={"plan": "editorial"}, headers=h)).json()["url"] \
         == "https://billing.stripe.test/cus_1"
 

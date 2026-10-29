@@ -10,7 +10,8 @@ export const api = createApiClient({
 
 export type Me = {
   id: string
-  email: string
+  email: string | null
+  anonymous: boolean
   display_name: string | null
   avatar_url: string | null
   quota: { daily_lessons: number; used_today: number; remaining_today: number }

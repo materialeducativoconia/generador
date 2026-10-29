@@ -7,4 +7,4 @@ export const PUBLIC_PLANS = [
   { key: 'editorial', label: 'Editorial', price: 69, credits: 1500, for: 'Para escuelas y editoriales',
     features: ['1,500 créditos al mes', 'Hasta 20 identidades y 30 estilos', 'Tomos de hasta 200 páginas', '10 tomos generándose a la vez'] },
 ] as const
-export const TRIAL_CREDITS = 40
+export const TRIAL_CREDITS = 0  // no free credits: the free preview (cover, index and sample) is the trial

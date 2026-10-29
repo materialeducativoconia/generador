@@ -98,6 +98,7 @@ export type LessonSummary = {
   last_error: ApiErrorBody | null
   content_json: { blocks: Block[] } | null
   diagrams?: Record<string, string>  // block id -> SVG drawn by the backend, same as the PDF
+  sample?: boolean  // the free preview's first pages of section 1
 }
 
 export type Source = { title: string; url: string }
@@ -123,6 +124,7 @@ export type Level = {
 }
 
 export type Series = CoverFields & {
+  preview: boolean  // the free preview, made at our cost before any plan
   collection_id: string | null
   design: Design | null
   assets: Record<string, string>

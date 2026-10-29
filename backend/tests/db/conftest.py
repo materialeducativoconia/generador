@@ -113,21 +113,24 @@ async def google_user(raw_db):
     created: list[uuid.UUID] = []
 
     async def create(email: str | None = None, full_name: str = "Marta Pérez",
-                     plan: str | None = "editorial", credits: int = 10000) -> uuid.UUID:
+                     plan: str | None = "editorial", credits: int = 10000, anonymous: bool = False) -> uuid.UUID:
         """Most tests are about features, not billing: users get the top plan and plenty of credits.
-        plan=None leaves the free trial the sign-up trigger grants."""
+        plan=None leaves a new account without a plan (one free preview); anonymous=True is a landing visitor."""
         user_id = await raw_db.fetchval(
             """
-            insert into auth.users (id, instance_id, aud, role, email, raw_user_meta_data, raw_app_meta_data, created_at, updated_at)
+            insert into auth.users (id, instance_id, aud, role, email, raw_user_meta_data, raw_app_meta_data,
+                                    is_anonymous, created_at, updated_at)
             values (gen_random_uuid(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-                    $1, $2::jsonb, '{"provider": "google"}'::jsonb, now(), now())
+                    $1, $2::jsonb, $3::jsonb, $4, now(), now())
             returning id
             """,
-            email or f"docente-{uuid.uuid4().hex[:8]}@gmail.com",
-            json.dumps({"full_name": full_name, "avatar_url": "https://lh3.googleusercontent.com/a/x"}),
+            None if anonymous else email or f"docente-{uuid.uuid4().hex[:8]}@gmail.com",
+            "{}" if anonymous else json.dumps({"full_name": full_name,
+                                               "avatar_url": "https://lh3.googleusercontent.com/a/x"}),
+            '{"provider": "anonymous"}' if anonymous else '{"provider": "google"}', anonymous,
         )
         created.append(user_id)
-        if plan:
+        if plan and not anonymous:
             await subscribe(raw_db, user_id, plan, credits)
         return user_id
 

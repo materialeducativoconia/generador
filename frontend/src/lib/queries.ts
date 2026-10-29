@@ -97,8 +97,11 @@ export const useSeries = (id: string) =>
     queryKey: ['series', id],
     queryFn: () => api.get<Series>(`/api/series/${id}`),
     enabled: !!id,
-    refetchInterval: (q) => (q.state.data && coverPending(q.state.data) ? 5000 : false),
+    refetchInterval: (q) => (q.state.data && (coverPending(q.state.data) || samplePending(q.state.data)) ? 5000 : false),
   })
+
+const samplePending = (s: Series) => s.preview && s.status === 'outline_ready' &&
+  s.lessons.some((l) => l.position === 1 && ['queued', 'generating'].includes(l.status))
 
 export const useLesson = (id: string) => useQuery({ queryKey: ['lesson', id], queryFn: () => api.get<Lesson>(`/api/lessons/${id}`) })
 

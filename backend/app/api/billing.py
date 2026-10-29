@@ -54,6 +54,8 @@ async def checkout_plan(body: PlanCheckout, request: Request, user_id: UserId):
     gateway = _gateway(request)
     async with request.app.state.engine.connect() as conn:
         acc, email, customer = await _payer(conn, user_id)
+    if email is None:
+        raise ApiError(409, "account_required", "Entra con Google para suscribirte; tu vista previa se guarda.")
     if acc.plan_key in PAID:  # changing plans (with proration) happens in Stripe's portal
         if not customer:
             raise ApiError(409, "invalid_state", "Tu suscripción no tiene cliente en Stripe.")
@@ -67,6 +69,8 @@ async def checkout_pack(body: PackCheckout, request: Request, user_id: UserId):
     gateway = _gateway(request)
     async with request.app.state.engine.connect() as conn:
         acc, email, customer = await _payer(conn, user_id)
+    if email is None:
+        raise ApiError(409, "account_required", "Entra con Google para comprar créditos; tu vista previa se guarda.")
     return {"url": await gateway.checkout_pack(org_id=str(acc.org_id), pack=body.pack, email=email,
                                                customer=customer)}
 

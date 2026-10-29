@@ -18,7 +18,7 @@ async def test_me_returns_profile_with_full_quota_for_a_new_teacher(google_user,
     assert body["display_name"] == "Marta Pérez"
     assert body["avatar_url"] == "https://lh3.googleusercontent.com/a/x"
     assert body["quota"] == {"daily_lessons": 300, "used_today": 0, "remaining_today": 300}
-    assert body["plan"]["key"] == "editorial" and body["credits"] == 10040  # plus the sign-up trial
+    assert body["plan"]["key"] == "editorial" and body["credits"] == 10000
 
 
 async def test_me_counts_only_lesson_jobs_created_today(raw_db, google_user, client, key):

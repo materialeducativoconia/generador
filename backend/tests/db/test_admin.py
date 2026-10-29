@@ -26,7 +26,7 @@ async def test_analytics_counts_users_revenue_and_onboarding(raw_db, google_user
 
     assert response.status_code == 200
     body = response.json()
-    assert body["users"]["new"] >= 2 and body["users"]["paying"] >= 2
+    assert body["previews"]["total"] >= 0 and body["users"]["new"] >= 2 and body["users"]["paying"] >= 2
     docente = next(p for p in body["revenue"]["by_plan"] if p["plan"] == "docente")
     assert docente["count"] >= 1 and docente["mrr_usd"] == 9 * docente["count"]
     assert len(body["daily"]) == 7

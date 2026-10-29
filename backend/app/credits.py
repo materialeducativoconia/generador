@@ -9,7 +9,7 @@ from datetime import datetime
 from sqlalchemy import text
 
 from app.errors import ApiError
-from app.plans import APP, PLANS, Plan
+from app.plans import APP, PAID, PLANS, Plan
 
 
 @dataclass
@@ -45,6 +45,17 @@ async def require(conn, user_id, feature: str, label: str) -> Account:
         need = next(p.label for p in PLANS.values() if getattr(p, feature))
         raise ApiError(403, "plan_required", f"{label} está disponible desde el plan {need}.",
                        {"feature": feature, "plan": acc.plan_key})
+    return acc
+
+
+async def require_download(conn, user_id) -> Account:
+    """Downloads need a plan. Organizations from the 40-credit trial days keep downloading what they made."""
+    acc = await account(conn, user_id)
+    if acc.plan_key not in PAID and not (await conn.execute(text(
+            "select 1 from public.credit_buckets where org_id = :o and source = 'trial' and granted > 0"),
+            {"o": acc.org_id})).first():
+        raise ApiError(403, "plan_required", "Descargar tu material está disponible desde el plan Docente.",
+                       {"feature": "download", "plan": acc.plan_key})
     return acc
 
 

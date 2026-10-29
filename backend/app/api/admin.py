@@ -16,8 +16,14 @@ UserId = Annotated[uuid.UUID, Depends(current_user_id)]
 
 SUMMARY = text("""
 select
-  (select count(*) from public.profiles) as users,
-  (select count(*) from public.profiles where created_at >= :since) as new_users,
+  (select count(*) from public.profiles where email is not null) as users,
+  (select count(*) from public.profiles where email is not null and created_at >= :since) as new_users,
+  (select count(*) from public.series where preview and created_at >= :since) as previews,
+  (select count(*) from public.series s join public.profiles p on p.id = s.user_id
+    where s.preview and s.created_at >= :since and p.email is not null) as previews_saved,
+  (select count(*) from public.series s join public.memberships m on m.user_id = s.user_id
+     join public.subscriptions sub on sub.org_id = m.org_id and sub.status in ('active', 'trialing', 'past_due')
+    where s.preview and s.created_at >= :since) as previews_paid,
   (select count(*) from public.profiles where created_at >= :since and onboarded_at is not null) as onboarded,
   (select count(distinct user_id) from public.series where created_at >= :since) as creators,
   (select count(distinct s.user_id) from public.series s join public.profiles p on p.id = s.user_id
@@ -91,6 +97,7 @@ async def analytics(request: Request, user_id: UserId, days: int = Query(30, ge=
         "users": {"total": s["users"], "new": s["new_users"], "onboarded": s["onboarded"], "activated": s["activated"],
                   "creators": s["creators"], "paying": paying, "churned": churned,
                   "conversion": round(paying / s["users"], 4) if s["users"] else 0},
+        "previews": {"total": s["previews"], "saved": s["previews_saved"], "paid": s["previews_paid"]},
         "revenue": {"mrr_usd": mrr, "packs_usd": packs_usd, "packs_sold": sum(n for _, n in packs),
                     "by_plan": [{"plan": p, "label": PLANS[p].label, "count": active.get(p, 0),
                                  "mrr_usd": PLANS[p].price_usd * active.get(p, 0)} for p in PAID]},

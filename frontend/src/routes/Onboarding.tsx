@@ -33,7 +33,7 @@ const SUBJECTS = Object.keys(FIRST)
 export function FirstVisit({ children }: { children: ReactNode }) {
   const { data: me } = useMe()
   const [params] = useSearchParams()
-  if (me && !me.onboarded && !params.get('pedido')) return <Navigate to="/app/bienvenida" replace />
+  if (me && !me.anonymous && !me.onboarded && !params.get('pedido')) return <Navigate to="/app/bienvenida" replace />
   return children
 }
 
@@ -118,7 +118,9 @@ function Steps({ me }: { me: Me }) {
       body: (
         <>
           <p className="muted">
-            Tienes <strong>{me.credits} créditos</strong> de prueba: alcanzan para un cuadernillo completo con portada.
+            {me.credits > 0
+              ? <>Tienes <strong>{me.credits} créditos</strong>. </>
+              : <>Tu primera vista previa es gratis: portada ilustrada, índice y una muestra de la primera sección. </>}
             Elige una idea; podrás ajustarla antes de generar.
           </p>
           <div className="choice-grid">

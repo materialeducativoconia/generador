@@ -34,7 +34,11 @@ PLANS: dict[str, Plan] = {
     "editorial": Plan("Editorial", 69, 1500, False, True, True, True, 30, 20, True, True, 200, 10, 3),
 }
 PAID = ("docente", "creador", "editorial")
-TRIAL_CREDITS = 40
+TRIAL_CREDITS = 0  # replaced by the free preview; organizations from before keep what they were given
+# The free preview, paid by us to convert: outline, design, illustrated cover and the first pages of section 1.
+SAMPLE_PAGES = 2
+FREE_PREVIEWS_PER_IP = 2  # a day
+FREE_PREVIEWS_PER_DAY = 300  # for everyone: about $30 of AI a day at most
 # Extra credits, one-off: pricier per credit than a plan, so moving up a plan is the better deal. Valid 12 months.
 PACKS: dict[str, tuple[int, int]] = {"pack_100": (100, 8), "pack_300": (300, 21), "pack_1000": (1000, 60)}
 PACK_MONTHS = 12

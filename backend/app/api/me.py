@@ -1,5 +1,6 @@
 import json
 import logging
+import secrets
 import uuid
 from typing import Annotated, Literal
 
@@ -15,6 +16,7 @@ from app.errors import ApiError
 router = APIRouter()
 log = logging.getLogger("api")
 UserId = Annotated[uuid.UUID, Depends(current_user_id)]
+CLAIMED_TABLES = ("series", "generation_jobs", "generation_logs", "exports", "collections", "styles", "identities")
 LOGO_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 LOGO_MAX_BYTES = 2 * 1024 * 1024
 
@@ -51,6 +53,7 @@ async def get_me(request: Request, user_id: UserId) -> dict:
     return {
         "id": str(row["id"]),
         "email": row["email"],
+        "anonymous": row["email"] is None,  # a landing-page visitor with a free preview, before Google
         "display_name": row["display_name"],
         "avatar_url": row["avatar_url"],
         "platform_role": row["platform_role"],
@@ -119,6 +122,43 @@ async def finish_onboarding(body: Onboarding, request: Request, user_id: UserId)
             {"a": json.dumps(answers), "n": (body.author_name or "").strip() or None,
              "s": (body.school or "").strip() or None, "u": user_id})
     return await get_me(request, user_id)
+
+
+@router.post("/api/claims", status_code=201)
+async def new_claim(request: Request, user_id: UserId):
+    """An anonymous visitor is about to sign in with Google: a code that will carry their preview over."""
+    async with request.app.state.engine.begin() as conn:
+        email = (await conn.execute(text("select email from public.profiles where id = :u"),
+                                    {"u": user_id})).scalar_one()
+        if email is not None:
+            raise ApiError(409, "invalid_state", "Tu cuenta ya está creada.")
+        code = secrets.token_urlsafe(24)
+        await conn.execute(text("insert into public.claims (code, user_id) values (:c, :u)"), {"c": code, "u": user_id})
+    return {"code": code}
+
+
+@router.post("/api/claims/{code}")
+async def redeem_claim(code: str, request: Request, user_id: UserId):
+    """Signed in with Google: the anonymous visitor's tomes become this account's (new or existing)."""
+    async with request.app.state.engine.begin() as conn:
+        anon = (await conn.execute(text(
+            """delete from public.claims where code = :c and created_at > now() - interval '2 days'
+               returning user_id"""), {"c": code})).scalar_one_or_none()
+        if anon is None or anon == user_id:
+            return {"moved": 0}
+        if (await conn.execute(text("select email from public.profiles where id = :u"),
+                               {"u": user_id})).scalar_one() is None:
+            raise ApiError(409, "invalid_state", "Entra con Google para guardar tu vista previa.")
+        moved = 0
+        for table in CLAIMED_TABLES:  # fixed names, never from the request
+            result = await conn.execute(text(f"update public.{table} set user_id = :to where user_id = :anon"),
+                                        {"to": user_id, "anon": anon})
+            moved += result.rowcount if table == "series" else 0
+        await conn.execute(text(  # the free preview counts for the real account too
+            """update public.organizations o set free_preview_at = coalesce(o.free_preview_at, now())
+                 from public.memberships m where m.org_id = o.id and m.user_id = :u"""), {"u": user_id})
+        await conn.execute(text("update public.profiles set is_active = false where id = :anon"), {"anon": anon})
+    return {"moved": moved}
 
 
 @router.post("/api/me/logo", status_code=201)
