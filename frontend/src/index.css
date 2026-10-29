@@ -724,3 +724,19 @@ table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
 table.data th { text-align: left; font-weight: 500; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); }
 table.data td { padding: 8px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- Landing (below the welcome hero) ---------- */
+.landing { max-width: 980px; margin: 0 auto; padding: 0 16px 64px; display: grid; gap: 48px; }
+.landing h2 { font-size: 22px; letter-spacing: -0.02em; margin: 0 0 14px; }
+.landing-steps { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.landing-steps li { display: grid; gap: 4px; padding: 16px; border-radius: var(--radius); background: var(--surface); }
+.landing-steps span { color: var(--muted); font-size: 14px; }
+.landing-topics { columns: 2 260px; padding-left: 20px; margin: 0; }
+.landing-topics li { margin: 6px 0; }
+.landing-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.landing-plans .panel { margin: 0; }
+.landing-plans .featured { border-color: var(--accent); }
+.landing-plans h3 { margin: 0; }
+.landing-plans ul { padding-left: 18px; margin: 8px 0 0; font-size: 14px; }
+.landing-price { font-size: 28px; font-weight: 600; margin: 8px 0; }
+.landing-foot { text-align: center; border-top: 1px solid var(--border); padding-top: 20px; }

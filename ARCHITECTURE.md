@@ -15,6 +15,8 @@
 
 > **Revisión 8 (2026-10-29): analítica de plataforma.** `/admin/analytics` (solo `profiles.platform_role` staff/admin; `GET /api/admin/analytics?days=`, `app/api/admin.py`): usuarios, activación (bienvenida → primer tomo), suscriptores y MRR por plan, paquetes, créditos gastados contra costo de IA (LLM + imágenes + portadas), fallas de jobs, uso declarado y materias del onboarding, tipos de material y quién más consume. Todo se calcula al vuelo desde las tablas existentes.
 
+> **Revisión 9 (2026-10-29): landing y SEO.** `/` suma cómo funciona, temas y planes debajo del acceso. `npm run build` termina con `scripts/seo.ts` (Node ejecuta TS directo), que escribe en `dist/` páginas estáticas por tema (`/material-educativo/<slug>`, datos en `src/lib/topics.ts`), el índice `/material-educativo`, `sitemap.xml`, `robots.txt` y las meta/JSON-LD de la portada. El dominio sale de `SITE_URL` o de `VERCEL_PROJECT_PRODUCTION_URL`. `vercel.json` usa `cleanUrls`; Vercel sirve esos archivos antes del fallback de la SPA. Los precios públicos (`src/lib/pricing.ts`) se comprueban contra `app/plans.py` en `tests/test_public_pricing.py`.
+
 ## 0. Resumen en una página
 
 Un docente describe una serie (tema, nivel, nº de lecciones). La app genera primero un **esquema** (títulos + objetivos por lección), el docente lo corrige y aprueba, y entonces se genera **cada lección como un bloque independiente** en paralelo, respetando el rate limit de DeepSeek. El docente revisa, edita o regenera lecciones sueltas, y exporta un **PDF maquetado** con portada, índice, lecciones y solucionario.

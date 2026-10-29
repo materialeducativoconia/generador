@@ -3,6 +3,8 @@ import { Navigate, useSearchParams } from 'react-router'
 import { useAuth } from '../auth/context'
 import { signInWithGoogle } from '../auth/google'
 import { Logo } from '../components/AppShell'
+import { PUBLIC_PLANS, TRIAL_CREDITS } from '../lib/pricing'
+import { TOPICS, topicHref } from '../lib/topics'
 
 const ERRORS: Record<string, string> = {
   cancelled: 'No se completó el inicio de sesión.',
@@ -29,6 +31,7 @@ export function Welcome() {
   }
 
   return (
+    <>
     <main className="welcome">
       <div className="orb" aria-hidden="true" />
       <span className="brand"><Logo /><span>Material Educativo IA</span></span>
@@ -51,6 +54,40 @@ export function Welcome() {
         <li>Secuencia didáctica</li>
       </ul>
     </main>
+    <div className="landing">
+      <section>
+        <h2>Cómo funciona</h2>
+        <ol className="landing-steps">
+          <li><strong>Describe</strong><span>El tema, el nivel y el formato: «cuadernillo de sumas para primero», «libro para colorear de dinosaurios».</span></li>
+          <li><strong>Revisa el esquema</strong><span>Un equipo de agentes propone las secciones; las ajustas antes de generar.</span></li>
+          <li><strong>Descarga</strong><span>PDF listo para imprimir o Word editable, con portada ilustrada, tu firma y tu identidad editorial.</span></li>
+        </ol>
+      </section>
+      <section>
+        <h2>Ideas para empezar</h2>
+        <ul className="landing-topics">
+          {TOPICS.map((t) => <li key={t.slug}><a href={topicHref(t)}>{t.title}</a></li>)}
+        </ul>
+      </section>
+      <section id="planes">
+        <h2>Planes</h2>
+        <p className="muted">Empieza gratis con {TRIAL_CREDITS} créditos, sin tarjeta. 1 crédito ≈ 1 página; si algo falla, te devolvemos los créditos.</p>
+        <div className="landing-plans">
+          {PUBLIC_PLANS.map((p) => (
+            <article key={p.key} className={`panel${p.key === 'creador' ? ' featured' : ''}`}>
+              <h3>{p.label}</h3>
+              <p className="muted small">{p.for}</p>
+              <p className="landing-price">${p.price} <span className="muted small">USD/mes</span></p>
+              <ul>{p.features.map((f) => <li key={f}>{f}</li>)}</ul>
+            </article>
+          ))}
+        </div>
+      </section>
+      <footer className="landing-foot muted small">
+        <a href="/material-educativo">Material educativo por tema</a> · <a href="#planes">Planes</a>
+      </footer>
+    </div>
+    </>
   )
 }
 
