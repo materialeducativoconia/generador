@@ -52,6 +52,21 @@
   .cover.art .name { bottom: 30mm; left: 16mm; }
   .cover.art .by { bottom: 18mm; left: 16mm; }
 
+  /* band: the art bleeds and the title sits on a solid accent band at the foot */
+  .cover.band .cover-plate { top: auto; bottom: 0; left: 0; right: 0; border-radius: 0; padding: 10mm 16mm 30mm;
+                             background: {{ c.accent }}; }
+  .cover.band .kicker, .cover.band h1, .cover.band .audience { color: #fff; }
+  .cover.band .name { bottom: 14mm; }
+  .cover.band .by { bottom: 6mm; background: none; color: #fff; padding: 0 4mm; }
+
+  /* framed: a plain tinted page, a big title and the art inside a rounded frame */
+  .cover.framed { background: {{ c.tint }}; }
+  .cover.framed .cover-plate { top: 16mm; background: none; padding: 0; text-align: center; }
+  .cover.framed h1 { font-size: 44pt; }
+  .cover.framed .cover-art { top: auto; bottom: 46mm; left: 16mm; width: calc(100% - 32mm); height: 58%;
+                             border-radius: 8mm; border: 2.4pt solid {{ c.accent }}; }
+  .cover.framed .name { bottom: 30mm; left: 16mm; border: 1.2pt solid {{ c.line }}; }
+
   .title-page { page: cover; height: {{ geo.h }}mm; position: relative; padding: {{ geo.h * 0.2 }}mm {{ geo.inner + 6 }}mm 0; text-align: center; }
   .title-page .kicker { font: 800 10pt {{ head|safe }}; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
   .title-page h1 { font: {{ th.head_weight }} 32pt/1.08 {{ head|safe }}; margin: 6mm 0 4mm; string-set: tome-title content(); }
@@ -173,7 +188,7 @@
 </div>
 {% else %}
 {% if tome.cover_data_uri %}
-<div class="cover art">
+<div class="cover art {{ tome.design.cover_layout if tome.design else 'plate' }}">
   <img class="cover-art" src="{{ tome.cover_data_uri }}" alt="">
   <div class="cover-plate">
     <div class="kicker">{{ GENRE_LABEL.get(tome.genre, "Material educativo") }}</div>

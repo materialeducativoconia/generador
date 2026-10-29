@@ -13,12 +13,12 @@ from pydantic import BaseModel, ValidationError
 from app.content import (ArtPlan, CoverPlan, Design, EditReview, FactSheet, Fix, Outline, ProgramReview, ProgramSheet,
                          ResearchPlan, SectionContent)
 from app.literacy import allowed_letters, check_blocks, check_section, tidy
-from app.themes import THEMES
+from app.themes import ART_STYLES, COVER_LAYOUTS, FONTS, FRAMES, THEMES
 from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@5", "writer": "writer@6", "editor": "editor@1", "cover": "cover@3", "designer": "designer@2", "art": "art@3", "research": "research@2", "facts": "facts@1", "program": "program@1", "program_review": "program_review@1"}
+PROMPT_VERSION = {"architect": "architect@5", "writer": "writer@6", "editor": "editor@1", "cover": "cover@3", "designer": "designer@3", "art": "art@3", "research": "research@2", "facts": "facts@1", "program": "program@1", "program_review": "program_review@1"}
 
 
 @dataclass
@@ -358,7 +358,7 @@ Responde solo con json:
 
 Reglas del illustration_prompt:
 - La ilustración NO lleva texto, letras, números ni logos: el título lo compone la maqueta.
-- Deja el tercio superior despejado y sencillo (cielo, fondo liso) para que el título se lea encima.
+- Deja despejada la zona que te indique la portada elegida (por defecto, el tercio superior) para el título.
 - Ajusta el estilo al público: preescolar = formas grandes, amables, colores alegres; adultos = más sobrio.
 - Para libros de colorear sugiere un estilo de línea limpia con algo de color, como su portada típica."""
 
@@ -368,7 +368,9 @@ async def cover_director(llm: LLM, brief: Brief, title: str, genre: str, section
     style = (f"\nMaqueta interior elegida: tema {design.theme}, adorno {design.ornament}. Usa exactamente esta "
              f"paleta: {', '.join(design.palette)}") if design else ""
     if design and design.art_style:
-        style += f"\nEstilo de ilustración de las referencias del usuario (respétalo): {design.art_style}"
+        style += f"\nEstilo de ilustración del tomo (respétalo en el illustration_prompt): {design.art_style}"
+    if design:
+        style += f"\nPortada elegida: {COVER_LAYOUTS[design.cover_layout][0]}. {COVER_LAYOUTS[design.cover_layout][1]}"
     messages = [
         {"role": "system", "content": COVER_SYSTEM},
         {"role": "user", "content": f"Título del tomo: {title}\nTipo: {genre}\n{brief.describe()}\n"
@@ -385,29 +387,53 @@ Temas disponibles (elige exactamente uno por su clave):
 
 Adornos: estrellas, notas (música), hojas (naturaleza), puntos, formas (geometría, preescolar), ninguno.
 
+Estilos de ilustración (para la portada y todos los dibujos en color del tomo):
+""" + "\n".join(f"- {key}: {label}" for key, (label, _) in ART_STYLES.items()) + """
+
+Portadas:
+""" + "\n".join(f"- {key}: {label}" for key, (label, _) in COVER_LAYOUTS.items()) + f"""
+
+Letras de títulos (opcional, si no, la del tema): {", ".join(FONTS)}. Marcos de página: {", ".join(FRAMES)}.
+
 Responde solo con json:
-{"theme": "clave", "palette": ["#fondo muy claro", "#tinta oscura legible", "#acento saturado"],
- "ornament": "uno de los adornos", "rationale": "por qué, en una frase",
- "style_id": "id de un estilo de la biblioteca del usuario que encaje con este tomo, o null"}
+{{"theme": "clave", "palette": ["#fondo muy claro", "#tinta oscura legible", "#acento saturado"],
+ "ornament": "uno de los adornos", "illustration": "clave del estilo de ilustración",
+ "cover_layout": "clave de la portada", "head_font": "letra o null", "frame": "marco",
+ "rationale": "por qué, en una frase",
+ "style_id": "id de un estilo de la biblioteca del usuario que encaje con este tomo, o null"}}
+
+El usuario no sabe pedir un diseño: decide tú lo que haría una editorial con oficio para este tema y este
+público, con una idea visual propia (el tema del tomo sugiere colores y estilo: el mar, la granja, el espacio,
+la música…). Combina tema, letra, ilustración, portada y paleta de forma coherente y distinta de sus últimos
+tomos.""" + """
 
 Si el usuario tiene estilos propios en su biblioteca (sacados de sus referencias), prefiere uno cuando encaje con
 el tipo de tomo y su público; si ninguno encaja, deja style_id en null y elige tema y paleta.
 
 La paleta se imprime: fondo casi blanco con un matiz, tinta con contraste alto sobre ese fondo, y un acento
-con carácter que combine con el tema (evita el violeta genérico salvo que el tema lo pida)."""
+con carácter sacado del tema del tomo (verde selva, azul océano, mostaza, coral, turquesa, ciruela, rojo
+tomate…). Evita el violeta y el naranja genéricos salvo que el tema los pida, y no repitas el acento de sus
+últimos tomos."""
 
 
 async def designer(llm: LLM, brief: Brief, title: str, genre: str, sections: list[str],
-                   library: list[dict] = ()) -> AgentResult[Design]:
+                   library: list[dict] = (), recent: list[Design] = ()) -> AgentResult[Design]:
     styles = "".join(f"\n- {s['id']} | {s['name']} | sirve para: {s.get('suits') or '—'} | "
                      f"{'; '.join(s.get('traits') or [])}" for s in library)
+    styles += "\nSus últimos tomos (no los repitas):" + "".join(
+        f"\n- tema {d.theme}, acento {d.palette[2]}, ilustración {d.illustration or '—'}, portada {d.cover_layout}, "
+        f"letra {d.head_font or 'del tema'}" for d in recent) if recent else ""
     messages = [
         {"role": "system", "content": DESIGNER_SYSTEM},
         {"role": "user", "content": f"Título del tomo: {title}\nTipo: {genre}\n{brief.describe()}\n"
                                     f"Secciones: {'; '.join(sections) or '(sin secciones aún)'}\n"
                                     f"Biblioteca de estilos del usuario:{styles or ' (vacía)'}"},
     ]
-    return await _json_call(llm, messages, Design, temperature=0.8, max_tokens=600)
+    result = await _json_call(llm, messages, Design, temperature=0.9, max_tokens=700)
+    design = result.value
+    if not design.style_id and design.illustration:  # the curated style's prompt travels with the tome
+        design.art_style = ART_STYLES[design.illustration][1]
+    return result
 
 
 ART_SYSTEM = """Eres directora de arte de un libro educativo ilustrado. Todas sus imágenes deben parecer del
@@ -432,7 +458,7 @@ async def art_director(llm: LLM, brief: Brief, title: str, design: Design | None
     lines = [f"- {r.ref} | {r.kind} | {r.size} | {r.subject}" for r in requests]
     look = f"Tema {design.theme}, paleta {', '.join(design.palette)}" if design else "Tema clásico"
     if design and design.art_style:
-        look += f"\nEstilo de ilustración de las referencias del usuario (basa tu style en él): {design.art_style}"
+        look += f"\nEstilo de ilustración del tomo (basa tu style en él): {design.art_style}"
     messages = [
         {"role": "system", "content": ART_SYSTEM},
         {"role": "user", "content": f"Título: {title}\n{brief.describe()}\n{look}\n"

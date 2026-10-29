@@ -22,6 +22,8 @@ export type Design = {
   frame?: 'none' | 'line' | 'rounded' | 'dashed' | 'double'
   art_style?: string | null
   style_id?: string | null
+  illustration?: 'acuarela' | 'crayon' | 'recorte' | 'gouache' | 'vector' | 'riso' | 'tinta' | 'plastilina' | 'grabado' | 'infografia' | null
+  cover_layout?: 'plate' | 'band' | 'framed'
 }
 
 export type Style = {

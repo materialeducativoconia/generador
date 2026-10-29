@@ -60,6 +60,30 @@ def theme_for(design) -> Theme:
     return th
 
 
+# Illustration styles the Designer may pick when no library style applies: label (Spanish, shown in the app)
+# and the English description the image model receives for every picture of the tome, cover included.
+ART_STYLES: dict[str, tuple[str, str]] = {
+    "acuarela": ("acuarela", "soft watercolor illustration, visible paper texture, gentle washes, delicate ink outlines"),
+    "crayon": ("crayón y lápiz de color", "hand-drawn crayon and colored pencil, waxy texture, playful wobbly lines"),
+    "recorte": ("papel recortado", "cut paper collage, layered textured paper shapes, soft drop shadows"),
+    "gouache": ("gouache", "gouache painting, matte opaque colors, brush texture, storybook feel"),
+    "vector": ("vectorial plano", "flat vector illustration, bold simple shapes, no outlines, subtle grain"),
+    "riso": ("impresión risográfica", "risograph print look, two or three spot colors, halftone grain, slight misregistration"),
+    "tinta": ("tinta y aguada", "ink line drawing with loose watercolor wash, lively sketchy lines"),
+    "plastilina": ("plastilina 3D", "clay 3D characters, soft rounded plasticine forms, studio lighting"),
+    "grabado": ("grabado clásico", "vintage engraving and woodcut style, fine hatching, muted inks"),
+    "infografia": ("infografía limpia", "clean modern infographic illustration, isometric hints, precise shapes"),
+}
+# Cover compositions in tome.html.j2: where the title sits decides which part of the art must stay simple.
+COVER_LAYOUTS: dict[str, tuple[str, str]] = {
+    "plate": ("título en una tarjeta arriba sobre la ilustración a sangre",
+              "Leave the top third simple and uncluttered (sky, plain background) for the title."),
+    "band": ("ilustración a sangre con el título en una franja de color abajo",
+             "Leave the bottom third simple (ground, plain area): a colored band with the title covers it."),
+    "framed": ("fondo de color liso, título grande arriba e ilustración dentro de un marco redondeado",
+               "A centered composition that reads well inside a rounded frame; no empty area needed."),
+}
+
 DEFAULT_PALETTE = ["#F5F3FF", "#1C1917", "#4F46E5"]  # background tint, ink, accent
 
 # Decorative marks for section openers, filled with the accent. WeasyPrint clips an <svg> that has an

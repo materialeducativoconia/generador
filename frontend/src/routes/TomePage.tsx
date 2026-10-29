@@ -228,6 +228,15 @@ const FRAME_LABEL: Record<NonNullable<Design['frame']>, string> = {
   none: 'sin marco', line: 'marco fino', rounded: 'marco redondeado', dashed: 'marco punteado', double: 'marco doble',
 }
 
+const ART_LABEL: Record<NonNullable<Design['illustration']>, string> = {
+  acuarela: 'acuarela', crayon: 'crayón y lápiz de color', recorte: 'papel recortado', gouache: 'gouache',
+  vector: 'vectorial plano', riso: 'impresión risográfica', tinta: 'tinta y aguada', plastilina: 'plastilina 3D',
+  grabado: 'grabado clásico', infografia: 'infografía limpia',
+}
+const COVER_LABEL: Record<NonNullable<Design['cover_layout']>, string> = {
+  plate: 'portada con tarjeta', band: 'portada con franja', framed: 'portada enmarcada',
+}
+
 /** The look the Designer chose with the outline, on a sample page; the user may swap it before writing. */
 function DesignPreview({ series }: { series: Series }) {
   const qc = useQueryClient()
@@ -256,7 +265,8 @@ function DesignPreview({ series }: { series: Series }) {
         </div>
         <p className="small">
           Títulos en {d.head_font ?? 'la letra del tema'} · {FRAME_LABEL[d.frame ?? 'none']}
-          {d.art_style ? ` · ilustración: ${d.art_style}` : ''}
+          {d.illustration ? ` · ilustración: ${ART_LABEL[d.illustration]}` : d.art_style ? ` · ilustración: ${d.art_style}` : ''}
+          {` · ${COVER_LABEL[d.cover_layout ?? 'plate']}`}
         </p>
         <label className="field">
           <span>Cambiar diseño</span>

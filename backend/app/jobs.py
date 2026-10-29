@@ -314,20 +314,22 @@ async def _design(deps: Deps, job: dict, series, brief: Brief, title: str, genre
         library = {str(r["id"]): r for r in (await conn.execute(text(
             """select id, name, spec, design from public.styles where user_id = :u and status = 'ready'
                 order by created_at desc limit 12"""), {"u": job["user_id"]})).mappings().all()}
+        recent = [Design.model_validate(_json(d)) for d in (await conn.execute(text(
+            """select design from public.series where user_id = :u and id <> :s and design is not null
+                order by created_at desc limit 5"""), {"u": job["user_id"], "s": job["series_id"]})).scalars()]
     pinned = library.get(str(series["style_id"])) if series["style_id"] else None
     if pinned:  # the user chose a style for this tome: no Designer call at all
         return Design.model_validate(_json(pinned["design"])), []
     try:
         designed = await designer(deps.llm, brief, title, genre, sections, [
             {"id": k, "name": r["name"], **{f: (_json(r["spec"]) or {}).get(f) for f in ("suits", "traits")}}
-            for k, r in library.items()])
+            for k, r in library.items()], recent)
     except AgentFailed as exc:
         await _log_attempts(deps.engine, job, "designer", exc.attempts)
         raise
     design = designed.value
     chosen = library.get(design.style_id or "")
-    design = Design.model_validate(_json(chosen["design"])) if chosen else Design(
-        theme=design.theme, palette=design.palette, ornament=design.ornament, rationale=design.rationale)
+    design = Design.model_validate(_json(chosen["design"])) if chosen else design.model_copy(update={"style_id": None})
     return design, designed.attempts
 
 

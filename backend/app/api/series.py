@@ -316,8 +316,8 @@ async def change_design(series_id: uuid.UUID, body: DesignChange, request: Reque
             design = Design.model_validate(_parse(raw))
         else:
             base = current or Design(theme=body.theme, palette=list(DEFAULT_PALETTE))
-            design = Design(theme=body.theme, palette=base.palette, ornament=base.ornament,
-                            rationale="Tema elegido por ti")
+            design = base.model_copy(update={"theme": body.theme, "rationale": "Tema elegido por ti",
+                                             "head_font": None, "style_id": None})
         await conn.execute(text(
             "update public.series set design = cast(:d as jsonb), style_id = :st where id = :s"),
             {"s": series_id, "d": design.model_dump_json(), "st": design.style_id})

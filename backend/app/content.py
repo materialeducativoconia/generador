@@ -455,6 +455,9 @@ Hex = Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")]
 
 Ornament = Literal["estrellas", "notas", "hojas", "puntos", "formas", "ninguno"]
 Frame = Literal["none", "line", "rounded", "dashed", "double"]
+ArtStyle = Literal["acuarela", "crayon", "recorte", "gouache", "vector", "riso", "tinta", "plastilina", "grabado",
+                   "infografia"]
+CoverLayout = Literal["plate", "band", "framed"]
 HeadFont = Literal["Fredoka", "Patrick Hand", "Fraunces", "Baloo 2", "Lexend", "Nunito", "Pacifico", "Sniglet"]
 
 
@@ -470,6 +473,8 @@ class Design(BaseModel):
     frame: Frame = "none"
     art_style: str | None = Field(default=None, max_length=500)  # English, for the image model
     style_id: str | None = None  # the library style it came from
+    illustration: ArtStyle | None = None  # the Designer's pick in app.themes.ART_STYLES
+    cover_layout: CoverLayout = "plate"
 
 
 class StyleSpec(BaseModel):

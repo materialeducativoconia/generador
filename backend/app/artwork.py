@@ -118,7 +118,8 @@ def sheet_prompt(sheet: Sheet, plan: ArtPlan, design: Design | None, feedback: s
                   "pure white background.")
     else:
         palette = ", ".join(design.palette) if design else "soft, friendly colors"
-        medium = f"Full color illustration, {THEME_STYLE[design.theme if design else 'clasico']}, palette {palette}, white background."
+        look = (design.art_style if design and design.art_style else THEME_STYLE[design.theme if design else "clasico"])
+        medium = f"Full color illustration, {look}, palette {palette}, white background."
     layout = ("A single illustration." if sheet.cols == 1 else
               "A 2x2 grid of four separate illustrations for the same children's book, separated by wide pure white "
               "gutters, no borders or frames around panels. Every panel uses exactly the same art style and the "
