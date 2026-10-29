@@ -5,8 +5,8 @@ import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
 import { ApiError } from '../lib/api'
 import { api } from '../lib/apiClient'
-import { useCollections, useEstimate, useMe, useSeriesList, useStyles } from '../lib/queries'
-import type { Collection, SeriesSummary } from '../lib/types'
+import { useCollections, useEstimate, useIdentities, useMe, useSeriesList, useStyles } from '../lib/queries'
+import type { Collection, Identity, SeriesSummary } from '../lib/types'
 
 const AUDIENCES = ['Preescolar (3–5 años)', 'Primaria baja (6–8)', 'Primaria alta (9–12)', 'Secundaria', 'Adultos principiantes']
 
@@ -36,6 +36,9 @@ export function Studio() {
   const [quoting, setQuoting] = useState(false)  // the cost window, shown before anything is created
   const [style, setStyle] = useState('auto')
   const ready = (useStyles().data?.styles ?? []).filter((s) => s.status === 'ready')
+  const identities = usableIdentities(useIdentities().data?.identities)
+  const [identity, setIdentity] = useState('')
+  const lineOf = identities.find((i) => i.id === collection?.identity_id)  // a collection's line wins
   const idempotencyKey = useRef(crypto.randomUUID())
   const textarea = useRef<HTMLTextAreaElement>(null)
 
@@ -47,6 +50,7 @@ export function Studio() {
           section_count: sections,
           page_count: pages,
           style_id: style === 'auto' ? null : style,
+          identity_id: identity || null,
           collection_id: collection?.id ?? null,
           place: params.get('lugar') === 'start' ? 'start' : 'end' },
         { 'Idempotency-Key': idempotencyKey.current },
@@ -75,7 +79,7 @@ export function Studio() {
         <h1 className="display">{firstName ? `¿Qué creamos hoy, ${firstName}?` : '¿Qué material creamos hoy?'}</h1>
         <p className="lede">Describe el tomo que necesitas. Un arquitecto lo planifica, tú apruebas el esquema y lo escribimos y maquetamos listo para imprimir.</p>
 
-        {collection && <p className="collection-chip">Nuevo nivel de la colección <strong>{collection.name}</strong></p>}
+        {collection && <p className="collection-chip">Nuevo nivel de la colección <strong>{collection.name}</strong>{lineOf && <> con la identidad <strong>{lineOf.design!.brand!.name}</strong></>}</p>}
         <form className="composer" onSubmit={submit}>
           <textarea
             ref={textarea}
@@ -110,7 +114,16 @@ export function Studio() {
                 {PAGES.map((n) => <option key={n} value={n}>{n} páginas</option>)}
               </select>
             </label>
-            {ready.length > 0 && (
+            {identities.length > 0 && !lineOf && (
+              <label className="select-pill">
+                <span className="sr-only">Identidad</span>
+                <select value={identity} onChange={(e) => setIdentity(e.target.value)}>
+                  <option value="">Identidad: ninguna</option>
+                  {identities.map((i) => <option key={i.id} value={i.id}>{i.design!.brand!.name}</option>)}
+                </select>
+              </label>
+            )}
+            {ready.length > 0 && !identity && !lineOf && (
               <label className="select-pill">
                 <span className="sr-only">Estilo</span>
                 <select value={style} onChange={(e) => setStyle(e.target.value)}>
@@ -197,10 +210,25 @@ function Shelf({ collection: c, tomes, collections }: { collection: Collection; 
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['collections'] }), qc.invalidateQueries({ queryKey: ['series'] })])
   const rename = useMutation({ mutationFn: (name: string) => api.patch(`/api/collections/${c.id}`, { name }), onSettled: refresh })
   const remove = useMutation({ mutationFn: () => api.delete(`/api/collections/${c.id}`), onSettled: refresh })
+  const identities = usableIdentities(useIdentities().data?.identities)
+  const navigate = useNavigate()
+  const line = useMutation({
+    mutationFn: (identity_id: string | null) => api.put(`/api/collections/${c.id}/identity`, { identity_id }),
+    onSettled: () => Promise.all([refresh(), qc.invalidateQueries({ queryKey: ['identities'] })]),
+  })
   return (
     <div className="shelf">
       <div className="shelf-head">
         <h3 className="shelf-title">{c.name} <span className="muted small">· {tomes.length} {tomes.length === 1 ? 'nivel' : 'niveles'}</span></h3>
+        <label className="select-pill small" title="Todos los niveles de la colección usan esta identidad">
+          <span className="sr-only">Identidad de la colección</span>
+          <select value={c.identity_id ?? ''} disabled={line.isPending}
+            onChange={(e) => e.target.value === 'new' ? navigate('/app/identidades') : line.mutate(e.target.value || null)}>
+            <option value="">Identidad: ninguna</option>
+            {identities.map((i) => <option key={i.id} value={i.id}>{i.design!.brand!.name}</option>)}
+            <option value="new">+ Crear identidad…</option>
+          </select>
+        </label>
         <button className="ghost small" onClick={() => { const n = window.prompt('Nuevo nombre', c.name); if (n?.trim()) rename.mutate(n.trim()) }}>Renombrar</button>
         <button className="ghost small" onClick={() => { if (window.confirm(`¿Eliminar la colección «${c.name}»? Sus tomos no se borran: quedan sueltos en tu biblioteca.`)) remove.mutate() }}>Eliminar colección</button>
       </div>
@@ -260,6 +288,9 @@ function BookItem({ tome: s, index, level, collections }: { tome: SeriesSummary;
     </li>
   )
 }
+
+/** Identities the user has picked a line for (proposals still waiting for a choice can't be applied). */
+const usableIdentities = (all: Identity[] | undefined) => (all ?? []).filter((i) => i.design?.brand)
 
 function ArrowUp() {
   return (

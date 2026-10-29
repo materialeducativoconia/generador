@@ -37,6 +37,7 @@ class NewTome(BaseModel):
     page_count: int | None = Field(default=None, ge=3, le=200)  # by length: the Architect splits the pages
     extra_instructions: str | None = Field(default=None, max_length=2000)
     style_id: uuid.UUID | None = None  # a ready style from the user's library; None lets the Designer choose
+    identity_id: uuid.UUID | None = None  # one of the user's identities; a collection's identity wins
     collection_id: uuid.UUID | None = None  # the collection the new tome joins, e.g. from a suggested level
     place: Literal["start", "end"] = "end"  # a lower level goes first in its collection, a higher one last
 
@@ -83,12 +84,21 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
             """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, idempotency_key)
                values (:id, :u, :s, 'outline', 'queued', cast(:payload as jsonb), :k)"""
         ), {"id": job_id, "u": user_id, "s": series_id, "k": idempotency_key,
-            "payload": json.dumps({"brief": body.model_dump(exclude={"style_id", "collection_id", "place"})})})
+            "payload": json.dumps({"brief": body.model_dump(exclude={"style_id", "identity_id", "collection_id",
+                                                                    "place"})})})
+        identity_id = body.identity_id
         if body.collection_id:
             from app.api.collections import own_collection, place_in  # collections imports this module
 
-            await own_collection(conn, body.collection_id, user_id)
+            collection = await own_collection(conn, body.collection_id, user_id)
             await place_in(conn, series_id, body.collection_id, body.place)
+            identity_id = collection["identity_id"] or identity_id
+        if identity_id:  # the line's look is set now, so the outline job skips the Designer
+            raw = (await conn.execute(text(
+                "select design from public.identities where id = :id and user_id = :u and status = 'ready'"),
+                {"id": identity_id, "u": user_id})).scalar_one_or_none()
+            if raw is not None:
+                await apply_design(conn, user_id, series_id, None, Design.model_validate(_parse(raw)))
         return await _created(conn, series_id, job_id)
 
 
@@ -302,8 +312,9 @@ async def request_cover(series_id: uuid.UUID, request: Request, user_id: UserId)
 
 
 class DesignChange(BaseModel):
-    """Pick one of the user's library styles, or one of the base themes (the Designer's palette stays)."""
+    """Pick one of the user's identities or library styles, or one of the base themes (the palette stays)."""
 
+    identity_id: uuid.UUID | None = None
     style_id: uuid.UUID | None = None
     theme: Literal["juego", "cuaderno", "editorial", "metodo", "ciencia", "clasico"] | None = None
 
@@ -311,33 +322,42 @@ class DesignChange(BaseModel):
 @router.patch("/api/series/{series_id}/design")
 async def change_design(series_id: uuid.UUID, body: DesignChange, request: Request, user_id: UserId):
     """The outline review shows the proposed look; the user may swap it before anything is written."""
-    if (body.style_id is None) == (body.theme is None):
-        raise ApiError(422, "validation_error", "Elige un estilo de tu biblioteca o un tema.")
+    if sum(v is not None for v in (body.identity_id, body.style_id, body.theme)) != 1:
+        raise ApiError(422, "validation_error", "Elige una identidad, un estilo de tu biblioteca o un tema.")
     async with request.app.state.engine.begin() as conn:
         series = await _own_series(conn, series_id, user_id, lock=True)
         current = Design.model_validate(_parse(series["design"])) if series["design"] else None
-        if body.style_id:
+        if body.identity_id or body.style_id:
+            table, ref = ("identities", body.identity_id) if body.identity_id else ("styles", body.style_id)
             raw = (await conn.execute(text(
-                "select design from public.styles where id = :id and user_id = :u and status = 'ready'"),
-                {"id": body.style_id, "u": user_id})).scalar_one_or_none()
+                f"select design from public.{table} where id = :id and user_id = :u and status = 'ready'"),
+                {"id": ref, "u": user_id})).scalar_one_or_none()
             if raw is None:
-                raise ApiError(404, "not_found", "Ese estilo no existe o aún no está listo.")
+                raise ApiError(404, "not_found", "Esa identidad o ese estilo no existe o aún no está listo.")
             design = Design.model_validate(_parse(raw))
         else:
             base = current or Design(theme=body.theme, palette=list(DEFAULT_PALETTE))
             design = base.model_copy(update={"theme": body.theme, "rationale": "Tema elegido por ti",
-                                             "head_font": None, "style_id": None})
-        await conn.execute(text(
-            "update public.series set design = cast(:d as jsonb), style_id = :st where id = :s"),
-            {"s": series_id, "d": design.model_dump_json(), "st": design.style_id})
-        # A cover painted (or being painted) in the old colours is repainted; a queued one reads the new design.
-        cover = (await conn.execute(text(
-            "select status::text from public.generation_jobs where series_id = :s and kind = 'cover'"
-            " order by created_at desc limit 1"), {"s": series_id})).scalar_one_or_none()
-        repaint = cover in ("running", "succeeded") and (current is None or current.palette != design.palette)
-        if repaint:
-            await enqueue_cover(conn, user_id, series_id)
-    return {"design": design.model_dump(), "cover_status": "queued" if repaint else cover}
+                                             "head_font": None, "style_id": None, "identity_id": None,
+                                             "brand": None})
+        cover = await apply_design(conn, user_id, series_id, current, design)
+    return {"design": design.model_dump(), "cover_status": cover}
+
+
+async def apply_design(conn, user_id, series_id, current: Design | None, design: Design) -> str | None:
+    """Saves the tome's look; a cover painted (or being painted) in the old colours is repainted, and a queued
+    one reads the new design. Returns the cover job's status."""
+    await conn.execute(text(
+        "update public.series set design = cast(:d as jsonb), style_id = :st, identity_id = :i where id = :s"),
+        {"s": series_id, "d": design.model_dump_json(), "st": design.style_id, "i": design.identity_id})
+    cover = (await conn.execute(text(
+        "select status::text from public.generation_jobs where series_id = :s and kind = 'cover'"
+        " order by created_at desc limit 1"), {"s": series_id})).scalar_one_or_none()
+    changed = current is None or current.palette != design.palette or current.brand != design.brand
+    if cover in ("running", "succeeded") and changed:
+        await enqueue_cover(conn, user_id, series_id)
+        return "queued"
+    return cover
 
 
 @router.get("/api/series/{series_id}/preview")

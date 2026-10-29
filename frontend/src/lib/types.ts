@@ -24,6 +24,31 @@ export type Design = {
   style_id?: string | null
   illustration?: 'acuarela' | 'crayon' | 'recorte' | 'gouache' | 'vector' | 'riso' | 'tinta' | 'plastilina' | 'grabado' | 'infografia' | null
   cover_layout?: 'plate' | 'band' | 'framed'
+  // set when the design comes from one of the user's identities (their editorial line)
+  identity_id?: string | null
+  brand?: Brand | null
+  mark_svg?: string  // the imprint's seal, drawn by the server exactly as the PDF prints it
+}
+
+export type Brand = {
+  name: string
+  tagline: string
+  personality: string[]
+  voice: string
+  mascot: { name: string; look: string } | null
+  mark: 'circle' | 'shield' | 'leaf' | 'star' | 'badge' | 'book'
+  initials: string
+}
+
+export type Identity = {
+  id: string
+  status: 'generating' | 'choosing' | 'ready' | 'failed'
+  brief: { about: string; audience?: string | null; personality?: string | null }
+  error: string | null
+  created_at: string
+  collection_ids: string[]
+  design: Design | null  // the chosen line
+  candidates: Design[]  // three proposals, each with its brand
 }
 
 export type Style = {
@@ -59,6 +84,7 @@ export type Collection = {
   name: string
   description: string | null
   series_ids: string[]  // in level order
+  identity_id: string | null  // the collection's editorial line: all its tomes share it
 }
 
 export type LessonSummary = {

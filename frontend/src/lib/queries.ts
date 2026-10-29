@@ -2,7 +2,7 @@ import { QueryClient, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { api, type Me } from './apiClient'
 import { supabase } from './supabase'
-import type { Collection, CoverFields, Export, Lesson, Preview, Progress, Quality, Series, SeriesSummary, Style } from './types'
+import type { Collection, CoverFields, Identity, Export, Lesson, Preview, Progress, Quality, Series, SeriesSummary, Style } from './types'
 
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, retry: 1, refetchOnWindowFocus: false } },
@@ -41,6 +41,16 @@ export const useStyles = () =>
   useQuery({
     queryKey: ['styles'],
     queryFn: () => api.get<Styles>('/api/styles'),
+    refetchInterval: (q) => q.state.data?.poll_after_ms ?? false,
+  })
+
+type Identities = { identities: Identity[]; poll_after_ms: number | null }
+
+/** Mis identidades; polls while the strategist and designer propose (~30 s). */
+export const useIdentities = () =>
+  useQuery({
+    queryKey: ['identities'],
+    queryFn: () => api.get<Identities>('/api/identities'),
     refetchInterval: (q) => q.state.data?.poll_after_ms ?? false,
   })
 

@@ -37,6 +37,14 @@
   .plate .kicker { font: 800 10pt {{ head|safe }}; letter-spacing: .14em; text-transform: uppercase; color: {{ c.accent }}; }
   .plate h1 { font: {{ th.head_weight }} 36pt/1.05 {{ head|safe }}; margin: 4mm 0 3mm; letter-spacing: -.02em; }
   .plate .audience { font: 600 13pt {{ head|safe }}; opacity: .75; }
+  .imprint { position: absolute; display: flex; align-items: center; gap: 2.5mm; font: 800 10pt {{ head|safe }}; }
+  .imprint .seal { width: 13mm; height: 13mm; }
+  .imprint span { white-space: nowrap; }
+  .front .imprint { right: {{ b + 16 }}mm; bottom: {{ b + 16 }}mm; background: rgba(255, 255, 255, .9); padding: 2mm 4mm 2mm 2mm; border-radius: 9mm; }
+  .back .imprint { left: {{ b + 16 }}mm; bottom: {{ b + 24 }}mm; }
+  .back .tagline { font: 600 9pt {{ head|safe }}; color: {{ c.muted }}; margin-left: 1mm; }
+  .spine .seal { position: absolute; left: 50%; bottom: {{ b + 8 }}mm; width: {{ [wrap.spine * 0.8, 10]|min }}mm; height: {{ [wrap.spine * 0.8, 10]|min }}mm;
+                 margin-left: -{{ [wrap.spine * 0.4, 5]|min }}mm; }
 </style>
 </head>
 <body>
@@ -46,17 +54,19 @@
     <div class="audience">{{ tome.audience }}</div>
     <div class="inside">En este libro</div>
     <ol>{% for s in tome.sections[:10] %}<li>{{ s.title }}</li>{% endfor %}</ol>
+    {% if seal %}<div class="imprint">{{ seal }}<span>{{ tome.brand.name }}{% if tome.brand.tagline %}<span class="tagline">· {{ tome.brand.tagline }}</span>{% endif %}</span></div>{% endif %}
     {% if tome.author %}<div class="by">Elaborado por {{ tome.author }}</div>{% endif %}
   </div>
   <div class="barcode"></div>
-  <div class="spine">{% if wrap.spine_text %}<div class="spine-t">{{ tome.title }}</div>{% endif %}</div>
+  <div class="spine">{% if wrap.spine_text %}<div class="spine-t">{{ tome.title }}</div>{% if seal %}{{ seal }}{% endif %}{% endif %}</div>
   <div class="front">
     {% if tome.cover_data_uri %}<img src="{{ tome.cover_data_uri }}" alt="">{% endif %}
     <div class="plate">
-      <div class="kicker">{{ GENRE_LABEL.get(tome.genre, "Material educativo") }}</div>
+      <div class="kicker">{{ tome.kicker }}</div>
       <h1>{{ tome.title }}</h1>
       <div class="audience">{{ tome.audience }}</div>
     </div>
+    {% if seal %}<div class="imprint">{{ seal }}<span>{{ tome.brand.name }}</span></div>{% endif %}
   </div>
 </div>
 </body>

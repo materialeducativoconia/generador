@@ -28,6 +28,11 @@ async def run_export(deps, job: dict) -> None:
         lessons = (await conn.execute(text(
             "select position, title, content_json from public.lessons where series_id = :s order by position"
         ), {"s": job["series_id"]})).mappings().all()
+        shelf = (await conn.execute(text(  # its collection and level, as the library shelf numbers them
+            """select c.name, (select count(*) from public.series o where o.collection_id = c.id and
+                      (o.collection_position, o.created_at) <= (s.collection_position, s.created_at)) as level
+                 from public.series s join public.collections c on c.id = s.collection_id where s.id = :s"""),
+            {"s": job["series_id"]})).one_or_none()
         await conn.execute(text("update public.exports set status = 'running' where id = :e"), {"e": export_id})
         asset_ids = list({i for lesson in lessons for b in (_json(lesson["content_json"]) or {}).get("blocks", [])
                           for i in block_assets(b)})
@@ -74,6 +79,7 @@ async def run_export(deps, job: dict) -> None:
         design=Design.model_validate(_json(series["design"])) if series["design"] else None,
         images=images, credits=credits,
         sources=(_json(series["research"]) or {}).get("sources") or [],
+        collection=shelf.name if shelf else None, level=shelf.level if shelf else None,
     )
     paper, print_edition = options.get("paper", "A4"), options.get("edition") == "print"
     if options.get("format") == "docx":

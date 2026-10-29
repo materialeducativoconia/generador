@@ -468,9 +468,30 @@ CoverLayout = Literal["plate", "band", "framed"]
 HeadFont = Literal["Fredoka", "Patrick Hand", "Fraunces", "Baloo 2", "Lexend", "Nunito", "Pacifico", "Sniglet"]
 
 
+Mark = Literal["circle", "shield", "leaf", "star", "badge", "book"]
+
+
+class Mascot(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    look: str = Field(min_length=3, max_length=300)  # English, fixed appearance repeated in every picture
+
+
+class Brand(BaseModel):
+    """An identity's editorial line: the imprint every tome of a collection carries, beside its Design."""
+
+    name: str = Field(min_length=2, max_length=40)  # the imprint, e.g. «Semillita Ediciones»
+    tagline: str = Field(default="", max_length=90)
+    personality: list[Annotated[str, Field(max_length=30)]] = Field(default_factory=list, max_length=4)
+    voice: str = Field(default="", max_length=400)  # Spanish, how the Writer addresses the reader
+    mascot: Mascot | None = None  # recurring character in the line's covers and pictures
+    mark: Mark = "circle"  # shape of the seal drawn by app.identity.mark_svg
+    initials: str = Field(default="", max_length=3)
+
+
 class Design(BaseModel):
     """The Designer's choice: one curated theme (app.themes), a palette and an ornament. A style from the
-    user's library (Phase 9) also sets the heading font, a page frame and the illustration style."""
+    user's library (Phase 9) also sets the heading font, a page frame and the illustration style. An identity
+    adds its brand: the same look, seal, voice and mascot on every tome of a collection."""
 
     theme: Literal["juego", "cuaderno", "editorial", "metodo", "ciencia", "clasico"]
     palette: list[Hex] = Field(min_length=3, max_length=3)  # light background, ink, accent
@@ -482,7 +503,24 @@ class Design(BaseModel):
     style_id: str | None = None  # the library style it came from
     illustration: ArtStyle | None = None  # the Designer's pick in app.themes.ART_STYLES
     cover_layout: CoverLayout = "plate"
+    identity_id: str | None = None  # the identity it came from
+    brand: Brand | None = None
 
+
+class BrandDirection(Brand):
+    visual_idea: str = Field(default="", max_length=300)  # what the line should look like, for the designer
+
+
+class BrandDirections(BaseModel):
+    """The Brand strategist's proposals: three clearly different editorial lines."""
+
+    directions: list[BrandDirection] = Field(min_length=3, max_length=3)
+
+
+class IdentityLooks(BaseModel):
+    """The Identity designer's visual system for each direction, in the same order."""
+
+    looks: list[Design] = Field(min_length=3, max_length=3)
 
 class StyleSpec(BaseModel):
     """The Style analyst's reading of a user's reference pages: style only, never their artwork or text."""

@@ -557,3 +557,39 @@ a.sec-row { transition: background-color 160ms ease; }
 .level-tag { font-size: 12px; font-weight: 600; color: var(--accent); margin-right: 6px; }
 .collection-chip { margin: 0 auto 10px; max-width: 40rem; font-size: 14px; color: var(--muted); }
 .delete-tome { margin-left: 8px; }
+
+/* Mis identidades */
+.identity-form { display: grid; gap: 12px; margin-bottom: 28px; }
+.identity-form textarea, .identity-form input[type='text'] { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; background: var(--surface, #fff); color: inherit; }
+.identity-form-row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+.identity-form .primary { justify-self: start; }
+.identity-row { margin-bottom: 32px; }
+.identity-row-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.identity-row-head .section-h { margin: 0; }
+.identity-row-head .spacer { flex: 1; }
+.identity-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); margin-bottom: 10px; }
+.identity-grid.one { grid-template-columns: minmax(0, 560px); }
+.identity-grid.one .identity-card { display: grid; grid-template-columns: minmax(0, 200px) 1fr; gap: 16px; }
+.identity-card { display: flex; flex-direction: column; gap: 12px; }
+.identity-card.chosen { outline: 2px solid var(--accent, currentColor); }
+.identity-cover { position: relative; aspect-ratio: 3 / 4; border-radius: 8px; overflow: hidden; padding: 14px; display: flex; flex-direction: column; gap: 6px;
+  background: linear-gradient(160deg, var(--t-tint) 0%, var(--t-soft) 60%, #fff 100%); color: var(--t-ink); border: 1px solid var(--border); }
+.identity-cover.band { justify-content: flex-end; padding-bottom: 54px; background: var(--t-tint); }
+.identity-cover.band::after { content: ''; position: absolute; inset: auto 0 0 0; height: 46%; background: var(--t-accent); z-index: 0; }
+.identity-cover.band > * { position: relative; z-index: 1; }
+.identity-cover.band .kicker, .identity-cover.band .title, .identity-cover.band .mascot { color: #fff; }
+.identity-cover.framed { text-align: center; background: var(--t-tint); }
+.identity-cover.framed::after { content: ''; position: absolute; left: 12%; right: 12%; top: 42%; bottom: 22%; border: 2px solid var(--t-accent); border-radius: 12px; background: var(--t-soft); }
+.identity-cover .kicker { font: 800 9px/1 var(--t-head); letter-spacing: .14em; text-transform: uppercase; color: var(--t-accent); }
+.identity-cover .title { font-size: 24px; font-weight: var(--t-head-w); line-height: 1.05; }
+.identity-cover .mascot { font-size: 12px; opacity: .75; }
+.identity-cover .imprint { position: absolute; right: 10px; bottom: 10px; display: flex; align-items: center; gap: 6px; font: 800 11px var(--t-head);
+  background: rgba(255, 255, 255, .92); color: var(--t-ink); padding: 3px 9px 3px 3px; border-radius: 99px; z-index: 2; }
+.seal { display: inline-flex; width: 26px; height: 26px; flex: none; }
+.seal svg { width: 100%; height: 100%; }
+.identity-body { display: flex; flex-direction: column; gap: 6px; }
+.identity-body h3 { margin: 0; font-size: 20px; }
+.identity-body p { margin: 0; }
+.identity-body .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.identity-body .voice { font-style: italic; }
+.brand-line { display: inline-flex; align-items: center; gap: 8px; }

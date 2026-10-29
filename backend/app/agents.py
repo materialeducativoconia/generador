@@ -10,15 +10,15 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from app.content import (ArtPlan, CoverPlan, Design, EditReview, FactSheet, Fix, Outline, ProgramReview, ProgramSheet,
-                         ResearchPlan, SectionContent)
+from app.content import (ArtPlan, BrandDirections, Character, CoverPlan, Design, EditReview, FactSheet, Fix,
+                         IdentityLooks, Outline, ProgramReview, ProgramSheet, ResearchPlan, SectionContent)
 from app.literacy import allowed_letters, check_blocks, check_section, tidy
 from app.themes import ART_STYLES, COVER_LAYOUTS, FONTS, FRAMES, THEMES
 from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@5", "writer": "writer@7", "editor": "editor@1", "cover": "cover@3", "designer": "designer@3", "art": "art@3", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1"}
+PROMPT_VERSION = {"architect": "architect@5", "writer": "writer@7", "editor": "editor@1", "cover": "cover@3", "designer": "designer@3", "art": "art@3", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1"}
 
 
 @dataclass
@@ -31,6 +31,7 @@ class Brief:
     extra_instructions: str | None = None
     facts: list[str] | None = None  # the Researcher's fact sheet, with sources
     program: list[str] | None = None  # the reference syllabus (official program or proven method), with sources
+    voice: str | None = None  # the identity's editorial voice: every tome of its collection sounds alike
 
     def describe(self) -> str:
         lines = [f"Pedido del usuario: {self.request}", f"Público: {self.audience}", f"Idioma: {self.language}"]
@@ -42,6 +43,8 @@ class Brief:
                          "secciones en el campo pages de cada una")
         if self.extra_instructions:
             lines.append(f"Instrucciones extra: {self.extra_instructions}")
+        if self.voice:
+            lines.append(f"Voz de la línea editorial (escribe así): {self.voice}")
         if self.program:
             lines.append("Programa educativo de referencia (oficial o de un método probado): básate en su orden y sus "
                          "contenidos en lugar de inventar otros:")
@@ -373,6 +376,9 @@ async def cover_director(llm: LLM, brief: Brief, title: str, genre: str, section
         style += f"\nEstilo de ilustración del tomo (respétalo en el illustration_prompt): {design.art_style}"
     if design:
         style += f"\nPortada elegida: {COVER_LAYOUTS[design.cover_layout][0]}. {COVER_LAYOUTS[design.cover_layout][1]}"
+    if design and design.brand and design.brand.mascot:
+        m = design.brand.mascot
+        style += f"\nLa mascota de la línea editorial protagoniza la portada: {m.name}: {m.look}"
     messages = [
         {"role": "system", "content": COVER_SYSTEM},
         {"role": "user", "content": f"Título del tomo: {title}\nTipo: {genre}\n{brief.describe()}\n"
@@ -438,6 +444,65 @@ async def designer(llm: LLM, brief: Brief, title: str, genre: str, sections: lis
     return result
 
 
+BRAND_SYSTEM = """Eres estratega de marca de una editorial de material educativo impreso. El usuario es un autor
+o docente que publica su propio material y quiere una línea editorial distintiva que lo diferencie de los demás:
+un sello reconocible en todos los tomos de una colección.
+
+Propón TRES líneas claramente distintas entre sí (no variaciones de la misma idea), cada una con:
+- name: nombre del sello, corto, memorable, en el idioma del usuario (p. ej. «Semillita», «Taller Brújula»);
+  nunca el nombre de una editorial o marca real.
+- tagline: lema de 3 a 8 palabras.
+- personality: 3 adjetivos de su carácter.
+- voice: cómo le habla al lector en una o dos frases (tú/usted, cercanía, humor, ritmo de las consignas).
+- mascot: un personaje recurrente {"name", "look" en inglés: especie, ropa, colores fijos} o null si la línea
+  es sobria (secundaria, adultos).
+- mark: forma del sello: circle, shield, leaf, star, badge o book.
+- visual_idea: en una frase, cómo se vería (colores, técnica de ilustración, tipografía).
+
+Responde solo con json: {"directions": [{"name", "tagline", "personality": [..], "voice", "mascot", "mark",
+"visual_idea"}, …3]}"""
+
+
+async def brand_strategist(llm: LLM, brief: str, existing: list[str] = ()) -> AgentResult[BrandDirections]:
+    taken = "".join(f"\n- {e}" for e in existing) or " (ninguna)"
+    messages = [
+        {"role": "system", "content": BRAND_SYSTEM},
+        {"role": "user", "content": f"{brief}\nSus identidades actuales (no las repitas):{taken}"},
+    ]
+    return await _json_call(llm, messages, BrandDirections, temperature=1.0, max_tokens=2000)
+
+
+IDENTITY_SYSTEM = """Eres diseñadora editorial. Recibes tres líneas editoriales y das a cada una su sistema
+visual, el que llevarán todos sus tomos: muy distintos entre sí y fieles a la personalidad de cada línea.
+
+Temas: """ + "; ".join(f"{key} ({t.use_for}, títulos en {t.head})" for key, t in THEMES.items()) + """
+Adornos: estrellas, notas, hojas, puntos, formas, ninguno.
+Ilustración: """ + "; ".join(f"{key} ({label})" for key, (label, _) in ART_STYLES.items()) + """
+Portadas: """ + "; ".join(f"{key} ({label})" for key, (label, _) in COVER_LAYOUTS.items()) + f"""
+Letras de títulos: {", ".join(FONTS)}. Marcos de página: {", ".join(FRAMES)}.
+
+Responde solo con json, una entrada por línea y en el mismo orden:
+{{"looks": [{{"theme", "palette": ["#fondo muy claro", "#tinta oscura", "#acento"], "ornament", "illustration",
+"cover_layout", "head_font", "frame", "rationale": "una frase"}}, …3]}}
+
+Cada línea usa un tema, una ilustración y una portada distintos de las otras dos, y un acento propio con
+carácter (nada de violeta ni naranja genéricos). No repitas las combinaciones ya usadas que te paso."""
+
+
+async def identity_designer(llm: LLM, directions: BrandDirections, taken: list[str] = (),
+                            style_hint: str | None = None) -> AgentResult[IdentityLooks]:
+    lines = [f"{i}. {d.name} — {d.tagline} | {', '.join(d.personality)} | {d.visual_idea}"
+             for i, d in enumerate(directions.directions, 1)]
+    extra = f"\nInspírate en este estilo de referencia del usuario: {style_hint}" if style_hint else ""
+    messages = [
+        {"role": "system", "content": IDENTITY_SYSTEM},
+        {"role": "user", "content": "Líneas:\n" + "\n".join(lines) + extra
+                                    + "\nCombinaciones ya usadas (evítalas):" + ("".join(f"\n- {t}" for t in taken)
+                                                                                  or " (ninguna)")},
+    ]
+    return await _json_call(llm, messages, IdentityLooks, temperature=0.9, max_tokens=1500)
+
+
 ART_SYSTEM = """Eres directora de arte de un libro educativo ilustrado. Todas sus imágenes deben parecer del
 mismo libro: una sola técnica, la misma paleta y los mismos personajes recurrentes.
 
@@ -461,12 +526,18 @@ async def art_director(llm: LLM, brief: Brief, title: str, design: Design | None
     look = f"Tema {design.theme}, paleta {', '.join(design.palette)}" if design else "Tema clásico"
     if design and design.art_style:
         look += f"\nEstilo de ilustración del tomo (basa tu style en él): {design.art_style}"
+    if design and design.brand and design.brand.mascot:
+        m = design.brand.mascot
+        look += f"\nMascota de la línea editorial (personaje fijo, úsalo con este nombre): {m.name}: {m.look}"
     messages = [
         {"role": "system", "content": ART_SYSTEM},
         {"role": "user", "content": f"Título: {title}\n{brief.describe()}\n{look}\n"
                                     f"Portada: {cover_concept or '(sin portada)'}\nImágenes:\n" + "\n".join(lines)},
     ]
     result = await _json_call(llm, messages, ArtPlan, temperature=0.8, max_tokens=4000)
+    mascot = design.brand.mascot if design and design.brand else None
+    if mascot and not any(c.name.lower() == mascot.name.lower() for c in result.value.characters):
+        result.value.characters = [Character(name=mascot.name, look=mascot.look), *result.value.characters][:4]
     # Keep only known refs; any the model skipped fall back to the Writer's own description.
     result.value.prompts = {r.ref: result.value.prompts.get(r.ref) or r.subject for r in requests}
     return result

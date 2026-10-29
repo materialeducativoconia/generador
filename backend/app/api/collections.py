@@ -10,7 +10,8 @@ from sqlalchemy import text
 from uuid6 import uuid7
 
 from app.api.deps import current_user_id
-from app.api.series import _own_series
+from app.api.series import _own_series, _parse, apply_design
+from app.content import Design
 from app.errors import ApiError
 
 log = logging.getLogger("api")
@@ -38,12 +39,13 @@ class Placement(BaseModel):
 async def list_collections(request: Request, user_id: UserId):
     async with request.app.state.engine.connect() as conn:
         rows = (await conn.execute(text(
-            """select c.id, c.name, c.description, c.created_at,
+            """select c.id, c.name, c.description, c.created_at, c.identity_id,
                       coalesce(array_agg(s.id order by s.collection_position, s.created_at)
                                filter (where s.id is not null), '{}') as series_ids
                  from public.collections c left join public.series s on s.collection_id = c.id
                 where c.user_id = :u group by c.id order by c.created_at desc"""), {"u": user_id})).mappings().all()
     return {"collections": [{**r, "id": str(r["id"]), "created_at": r["created_at"].isoformat(),
+                             "identity_id": str(r["identity_id"]) if r["identity_id"] else None,
                              "series_ids": [str(i) for i in r["series_ids"]]} for r in rows]}
 
 
@@ -92,6 +94,7 @@ async def place_tome(series_id: uuid.UUID, body: Placement, request: Request, us
             return {"collection_id": None}
         await own_collection(conn, body.collection_id, user_id)
         await place_in(conn, series_id, body.collection_id, body.place)
+        await follow_identity(conn, user_id, series_id, body.collection_id)
     return {"collection_id": str(body.collection_id)}
 
 
@@ -124,6 +127,19 @@ async def own_collection(conn, collection_id, user_id):
     if row is None:
         raise ApiError(404, "not_found", "Esta colección no existe.")
     return row
+
+
+async def follow_identity(conn, user_id, series_id, collection_id) -> None:
+    """A tome that joins a collection with an identity takes the line's look."""
+    raw = (await conn.execute(text(
+        """select i.design from public.collections c join public.identities i on i.id = c.identity_id
+            where c.id = :c and i.design is not null"""), {"c": collection_id})).scalar_one_or_none()
+    if raw is None:
+        return
+    current = (await conn.execute(text("select design from public.series where id = :s"),
+                                  {"s": series_id})).scalar_one()
+    await apply_design(conn, user_id, series_id, Design.model_validate(_parse(current)) if current else None,
+                       Design.model_validate(_parse(raw)))
 
 
 async def place_in(conn, series_id, collection_id, place: str = "end") -> None:

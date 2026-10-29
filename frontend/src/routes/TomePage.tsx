@@ -4,10 +4,10 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
 import { PageThumb } from '../components/Sheet'
-import { GENRE_LABEL } from '../lib/labels'
+import { ART_LABEL, COVER_LABEL, FRAME_LABEL, GENRE_LABEL, THEME_LABEL } from '../lib/labels'
 import { ApiError } from '../lib/api'
 import { api } from '../lib/apiClient'
-import { useExport, usePreview, useProgress, useQuality, useSeries, useStyles } from '../lib/queries'
+import { useExport, useIdentities, usePreview, useProgress, useQuality, useSeries, useStyles } from '../lib/queries'
 import type { Design, Export, LessonSummary, Level, Preflight, Progress, Series } from '../lib/types'
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback)
@@ -290,36 +290,22 @@ function OutlineFailed({ series }: { series: Series }) {
 
 type Draft = { id?: string; title: string; objectives: string; key_points: string; pages?: number | null }
 
-const THEME_LABEL: Record<Design['theme'], string> = {
-  juego: 'Juego', cuaderno: 'Cuaderno', editorial: 'Editorial', metodo: 'Método', ciencia: 'Ciencia', clasico: 'Clásico',
-}
-const FRAME_LABEL: Record<NonNullable<Design['frame']>, string> = {
-  none: 'sin marco', line: 'marco fino', rounded: 'marco redondeado', dashed: 'marco punteado', double: 'marco doble',
-}
-
-const ART_LABEL: Record<NonNullable<Design['illustration']>, string> = {
-  acuarela: 'acuarela', crayon: 'crayón y lápiz de color', recorte: 'papel recortado', gouache: 'gouache',
-  vector: 'vectorial plano', riso: 'impresión risográfica', tinta: 'tinta y aguada', plastilina: 'plastilina 3D',
-  grabado: 'grabado clásico', infografia: 'infografía limpia',
-}
-const COVER_LABEL: Record<NonNullable<Design['cover_layout']>, string> = {
-  plate: 'portada con tarjeta', band: 'portada con franja', framed: 'portada enmarcada',
-}
-
 /** The look the Designer chose with the outline, on a sample page; the user may swap it before writing. */
 function DesignPreview({ series }: { series: Series }) {
   const qc = useQueryClient()
   const d = series.design
   const preview = usePreview(series.id, JSON.stringify(d)).data
   const styles = (useStyles().data?.styles ?? []).filter((s) => s.status === 'ready')
+  const identities = (useIdentities().data?.identities ?? []).filter((i) => i.design?.brand)
   const change = useMutation({
     mutationFn: (value: string) =>
-      api.patch(`/api/series/${series.id}/design`, value.startsWith('s:') ? { style_id: value.slice(2) } : { theme: value.slice(2) }),
+      api.patch(`/api/series/${series.id}/design`, { [{ i: 'identity_id', s: 'style_id', t: 'theme' }[value[0]]!]: value.slice(2) }),
     onSettled: () => Promise.all([qc.invalidateQueries({ queryKey: ['series', series.id] }), qc.invalidateQueries({ queryKey: ['preview', series.id] })]),
   })
   if (!d) return <div className="panel design-preview"><p className="muted">El diseño se elige con la portada…</p></div>
   const style = styles.find((s) => s.id === d.style_id)
-  const value = d.style_id ? `s:${d.style_id}` : `t:${d.theme}`
+  const seal = identities.find((i) => i.id === d.identity_id)?.design?.mark_svg  // drawn by our server
+  const value = d.identity_id ? `i:${d.identity_id}` : d.style_id ? `s:${d.style_id}` : `t:${d.theme}`
   return (
     <section className="panel design-preview">
       <div className="design-sample">
@@ -327,7 +313,7 @@ function DesignPreview({ series }: { series: Series }) {
       </div>
       <div className="design-info">
         <p className="eyebrow">Diseño propuesto</p>
-        <h2>{style ? style.name : `Tema ${THEME_LABEL[d.theme]}`}</h2>
+        <h2>{d.brand ? <span className="brand-line">{seal && <span className="seal" dangerouslySetInnerHTML={{ __html: seal }} />}{d.brand.name}</span> : style ? style.name : `Tema ${THEME_LABEL[d.theme]}`}</h2>
         {d.rationale && <p className="muted small">{d.rationale}</p>}
         <div className="swatches">
           {d.palette.map((c) => <span key={c} style={{ background: c }} title={c} />)}
@@ -340,6 +326,11 @@ function DesignPreview({ series }: { series: Series }) {
         <label className="field">
           <span>Cambiar diseño</span>
           <select value={value} onChange={(e) => change.mutate(e.target.value)} disabled={change.isPending}>
+            {identities.length > 0 && (
+              <optgroup label="Mis identidades">
+                {identities.map((i) => <option key={i.id} value={`i:${i.id}`}>{i.design!.brand!.name}</option>)}
+              </optgroup>
+            )}
             {styles.length > 0 && (
               <optgroup label="Tus estilos">
                 {styles.map((s) => <option key={s.id} value={`s:${s.id}`}>{s.name}</option>)}

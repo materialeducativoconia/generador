@@ -13,6 +13,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span>Material Educativo IA</span>
         </Link>
         <div className="topbar-r">
+          <Link to="/app/identidades" className="ghost small">Identidades</Link>
           <Link to="/app/estilos" className="ghost small">Estilos</Link>
           {me && (
             <span className="quota" title="Secciones que puedes generar hoy">

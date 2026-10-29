@@ -17,9 +17,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.agents import (PROMPT_VERSION, AgentFailed, Attempt, Brief, apply_fixes, architect, art_director,
-                        cover_director, designer, editor, fact_sheet, program_review, program_sheet,
-                        research_planner, writer)
-from app.content import ArtPlan, Design, Outline, OutlineSection
+                        brand_strategist, cover_director, designer, editor, fact_sheet, identity_designer,
+                        program_review, program_sheet, research_planner, writer)
+from app.content import ArtPlan, Brand, Design, Outline, OutlineSection
+from app.identity import describe, guard, initials, look_key
 from app.llm import LLM, UpstreamAuthError, UpstreamError
 from app.artwork import ImageRequest, plan_sheets, sheet_prompt, slice_sheet
 from app.illustrator import (cover_jpeg, line_art_coverage, normalize_subject, prepare_image, reference_image,
@@ -79,7 +80,7 @@ async def reap_stale_jobs(engine: AsyncEngine, lease_seconds: int = 600) -> int:
 
 async def process_job(deps: Deps, job: dict) -> None:
     handler = {"outline": _outline, "lesson": _lesson, "pdf_export": _pdf_export, "cover": _cover,
-               "illustration": _illustration, "style": _style}[job["kind"]]
+               "illustration": _illustration, "style": _style, "identity": _identity}[job["kind"]]
     try:
         await handler(deps, job)
     except UpstreamError as exc:
@@ -310,8 +311,15 @@ async def enqueue_cover(conn, user_id, series_id) -> uuid.UUID:
 
 async def _design(deps: Deps, job: dict, series, brief: Brief, title: str, genre: str,
                   sections: list[str]) -> tuple[Design, list[Attempt]]:
-    """The tome's look: the style the user pinned, or the Designer's pick among their library and the themes."""
+    """The tome's look: its identity, the style the user pinned, or the Designer's pick among their library and
+    the themes."""
     async with deps.engine.connect() as conn:
+        if series["identity_id"]:  # the collection's editorial line: every tome looks the same, no Designer call
+            identity = (await conn.execute(text(
+                "select design from public.identities where id = :id and status = 'ready'"),
+                {"id": series["identity_id"]})).scalar_one_or_none()
+            if identity:
+                return Design.model_validate(_json(identity)), []
         library = {str(r["id"]): r for r in (await conn.execute(text(
             """select id, name, spec, design from public.styles where user_id = :u and status = 'ready'
                 order by created_at desc limit 12"""), {"u": job["user_id"]})).mappings().all()}
@@ -641,6 +649,66 @@ async def _style(deps: Deps, job: dict) -> None:
         await _succeed(conn, job)
 
 
+async def _identity(deps: Deps, job: dict) -> None:
+    """Mis identidades: the Brand strategist proposes three editorial lines, the Identity designer gives each a
+    visual system, and the Brand guard (app.identity) keeps them printable and unlike anything already in use."""
+    identity_id = job["payload"]["identity_id"]
+    async with deps.engine.connect() as conn:
+        row = (await conn.execute(text("select brief from public.identities where id = :id and user_id = :u"),
+                                  {"id": identity_id, "u": job["user_id"]})).mappings().one_or_none()
+        if row is None:  # deleted meanwhile
+            mine, popular, hint = [], [], None
+        else:
+            mine = [Design.model_validate(_json(d)) for d in (await conn.execute(text(
+                """select design from public.identities where user_id = :u and status = 'ready' and id <> :id"""),
+                {"u": job["user_id"], "id": identity_id})).scalars()]
+            # Other users' lines, as bare look combinations only: no names, no briefs.
+            popular = [Design.model_validate(_json(d)) for d in (await conn.execute(text(
+                """select (array_agg(design))[1] from public.identities where status = 'ready' and user_id <> :u
+                    group by design->>'theme', design->>'illustration', design->>'cover_layout', design->>'head_font'
+                   having count(*) >= 2 order by count(*) desc limit 12"""), {"u": job["user_id"]})).scalars()]
+            brief = _json(row["brief"])
+            hint = None
+            if brief.get("style_id"):
+                spec = (await conn.execute(text(
+                    "select spec from public.styles where id = :id and user_id = :u and status = 'ready'"),
+                    {"id": brief["style_id"], "u": job["user_id"]})).scalar_one_or_none()
+                spec = _json(spec) or {}
+                hint = "; ".join(filter(None, [spec.get("suits"), *spec.get("traits", [])[:4]])) or None
+    if row is None:
+        async with deps.engine.begin() as conn:
+            await _succeed(conn, job)
+        return
+    text_brief = "\n".join(filter(None, [
+        f"Qué publica: {brief['about']}", f"Público: {brief.get('audience') or 'variado'}",
+        f"Personalidad deseada: {brief['personality']}" if brief.get("personality") else None,
+        f"Idioma: {brief.get('language', 'es')}"]))
+    try:
+        strategy = await brand_strategist(deps.llm, text_brief, [describe(d) for d in mine])
+    except AgentFailed as exc:
+        await _log_attempts(deps.engine, job, "brand", exc.attempts)
+        raise
+    await _log_attempts(deps.engine, job, "brand", strategy.attempts)
+    try:
+        styled = await identity_designer(deps.llm, strategy.value, [describe(d) for d in [*mine, *popular]], hint)
+    except AgentFailed as exc:
+        await _log_attempts(deps.engine, job, "identity", exc.attempts)
+        raise
+    looks = guard(styled.value.looks, {look_key(d) for d in [*mine, *popular]})
+    candidates = []
+    for look, direction in zip(looks, strategy.value.directions):
+        brand = Brand.model_validate(direction.model_dump(exclude={"visual_idea"}))
+        brand.initials = (brand.initials or initials(brand.name))[:3]
+        candidates.append(look.model_copy(update={"brand": brand, "identity_id": str(identity_id),
+                                                  "rationale": direction.visual_idea or look.rationale}).model_dump())
+    async with deps.engine.begin() as conn:
+        await _insert_logs(conn, job, "identity", styled.attempts)
+        await conn.execute(text(
+            """update public.identities set status = 'choosing', candidates = cast(:c as jsonb), error = null
+                where id = :id"""), {"id": identity_id, "c": json.dumps(candidates)})
+        await _succeed(conn, job)
+
+
 async def _pdf_export(deps: Deps, job: dict) -> None:
     from app.exports import run_export  # WeasyPrint is heavy; only load it when exporting
 
@@ -698,6 +766,9 @@ async def _fail(engine: AsyncEngine, job: dict, code: str, message: str) -> None
         elif job["kind"] == "style":
             await conn.execute(text("update public.styles set status = 'failed', error = :m where id = :id"),
                                {"id": job["payload"]["style_id"], "m": message})
+        elif job["kind"] == "identity":
+            await conn.execute(text("update public.identities set status = 'failed', error = :m where id = :id"),
+                               {"id": job["payload"]["identity_id"], "m": message})
 
 
 # ---------------------------------------------------------------------------
@@ -711,14 +782,17 @@ async def _series(conn, series_id):
 
 def _brief(series, stored: dict | None) -> Brief:
     facts = _facts(_json(series["research"]))
+    brand = (_json(series["design"]) or {}).get("brand") or {}
+    voice = f"«{brand['name']}»: {brand['voice']}" if brand.get("voice") else None
     if stored:
         return Brief(request=stored["request"], audience=stored["audience"], language=stored.get("language", "es"),
                      section_count=stored.get("section_count"), extra_instructions=stored.get("extra_instructions"),
                      page_count=stored.get("page_count"), facts=facts,
-                     program=_program(_json(series["research"])))
+                     program=_program(_json(series["research"])), voice=voice)
     brief = Brief(request=series["topic"], audience=(_json(series["audience"]) or {}).get("label", ""),
                  language=series["language"], section_count=series["lesson_count"],
-                 extra_instructions=series["extra_instructions"], page_count=series["page_target"], facts=facts)
+                 extra_instructions=series["extra_instructions"], page_count=series["page_target"], facts=facts,
+                 voice=voice)
     brief.program = _program(_json(series["research"]))
     return brief
 

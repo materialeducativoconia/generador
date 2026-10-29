@@ -20,6 +20,7 @@ from app.printing import BLEED_MM, PAPERS, SPINE_TEXT_PAGES, is_color, page_geom
 from app.themes import DEFAULT_PALETTE, FRAMES, ORNAMENTS, THEMES, mix, theme_for
 from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Design, Keyboard, LetterGrid, SectionContent, Tracing
 from app.diagrams import render_diagram
+from app.identity import mark_svg
 from app.worksheets import answers as worksheet_answers, render_worksheet
 
 ASSETS = Path(__file__).parent / "assets"
@@ -52,6 +53,18 @@ class Tome:
     images: dict[str, tuple[bytes, str]] = field(default_factory=dict)  # asset id -> (bytes, media type)
     credits: dict[str, str] = field(default_factory=dict)  # asset id -> attribution, for photos we did not make
     sources: list[dict] = field(default_factory=list)  # the Researcher's documents: {title, url}
+    collection: str | None = None  # the collection's name and the tome's level in it, printed on the cover
+    level: int | None = None
+
+    @property
+    def kicker(self) -> str:
+        if self.collection:
+            return f"{self.collection} · Nivel {self.level}" if self.level else self.collection
+        return GENRE_LABEL.get(self.genre, "Material educativo")
+
+    @property
+    def brand(self):
+        return self.design.brand if self.design else None
 
     def image_uri(self, asset_id: str | None) -> str | None:
         if not asset_id or asset_id not in self.images:
@@ -161,7 +174,10 @@ def _look(tome: Tome) -> dict:
     theme_fonts = sorted({(th.head, th.head_file), (th.body, th.body_file)} - {("Andika", "Andika-Regular.ttf"),
                                                                               ("Nunito", "Nunito-Variable.ttf")})
     border, radius = FRAMES[tome.design.frame if tome.design else "none"]
-    return {"th": th, "c": colors, "head": f'"{th.head}"', "body": f'"{th.body}"', "theme_fonts": theme_fonts,
+    brand = tome.brand
+    seal = Markup(mark_svg(brand, colors["accent"], th.head)) if brand else ""
+    imprint = brand.name.replace("\\", "\\\\").replace('"', '\\"') if brand else ""  # for CSS content strings
+    return {"th": th, "c": colors, "seal": seal, "imprint": imprint, "head": f'"{th.head}"', "body": f'"{th.body}"', "theme_fonts": theme_fonts,
             "fonts": (ASSETS / "fonts").as_uri(), "frame": {"border": border, "radius": radius,
                                                          "pad": 0 if border == "none" else 4}}
 

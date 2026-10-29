@@ -21,12 +21,13 @@
     @top-left { content: string(tome-title); font: 600 8pt {{ head|safe }}; color: #8a8580; }
     @top-right { content: string(section-title); font: 600 8pt {{ head|safe }}; color: #8a8580; }
     @bottom-center { content: counter(page); font: 700 9pt {{ head|safe }}; color: #57534e; }
+    {% if imprint %}@bottom-right { content: "{{ imprint|safe }}"; font: 700 7.5pt {{ head|safe }}; color: {{ c.accent }}; letter-spacing: .06em; }{% endif %}
   }
   {% if print_edition %}
   @page :left { margin-left: {{ geo.outer - pad }}mm; margin-right: {{ geo.inner - pad }}mm; }
   @page :right { margin-left: {{ geo.inner - pad }}mm; margin-right: {{ geo.outer - pad }}mm; }
   {% endif %}
-  @page cover { margin: 0; padding: 0; border: none; @top-left { content: none } @top-right { content: none } @bottom-center { content: none } }
+  @page cover { margin: 0; padding: 0; border: none; @top-left { content: none } @top-right { content: none } @bottom-center { content: none } @bottom-right { content: none } }
 
   :root { --ink: {{ c.ink }}; --muted: {{ c.muted }}; --line: {{ c.line }}; --soft: {{ c.soft }}; --accent: {{ c.accent }}; --tint: {{ c.tint }}; }
   * { box-sizing: border-box; }
@@ -66,6 +67,15 @@
   .cover.framed .cover-art { top: auto; bottom: 46mm; left: 16mm; width: calc(100% - 32mm); height: 58%;
                              border-radius: 8mm; border: 2.4pt solid {{ c.accent }}; }
   .cover.framed .name { bottom: 30mm; left: 16mm; border: 1.2pt solid {{ c.line }}; }
+
+  /* the identity's imprint: its seal and name, the same on every tome of the line */
+  .imprint { position: absolute; right: 16mm; bottom: 16mm; display: flex; align-items: center; gap: 2.5mm;
+             font: 800 10pt {{ head|safe }}; color: var(--ink); letter-spacing: .04em; }
+  .imprint .seal { width: 13mm; height: 13mm; }
+  .imprint span { white-space: nowrap; }
+  .cover.art .imprint { background: rgba(255, 255, 255, .9); padding: 2mm 4mm 2mm 2mm; border-radius: 9mm; }
+  .cover.band .imprint { right: 16mm; bottom: 12mm; }
+  .title-page .imprint { left: 0; right: 0; bottom: 22mm; justify-content: center; }
 
   .title-page { page: cover; height: {{ geo.h }}mm; position: relative; padding: {{ geo.h * 0.2 }}mm {{ geo.inner + 6 }}mm 0; text-align: center; }
   .title-page .kicker { font: 800 10pt {{ head|safe }}; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
@@ -180,29 +190,31 @@
 
 {% if print_edition %}
 <div class="title-page">
-  <div class="kicker">{{ GENRE_LABEL.get(tome.genre, "Material educativo") }}</div>
+  <div class="kicker">{{ tome.kicker }}</div>
   <h1>{{ tome.title }}</h1>
   <div class="audience">{{ tome.audience }}</div>
   <div class="owner">Este libro pertenece a:<span></span></div>
   {% if tome.author %}<div class="by">Elaborado por {{ tome.author }}</div>{% endif %}
+  {% if seal %}<div class="imprint">{{ seal }}<span>{{ tome.brand.name }}</span></div>{% endif %}
 </div>
 {% else %}
 {% if tome.cover_data_uri %}
 <div class="cover art {{ tome.design.cover_layout if tome.design else 'plate' }}">
   <img class="cover-art" src="{{ tome.cover_data_uri }}" alt="">
   <div class="cover-plate">
-    <div class="kicker">{{ GENRE_LABEL.get(tome.genre, "Material educativo") }}</div>
+    <div class="kicker">{{ tome.kicker }}</div>
     <h1>{{ tome.title }}</h1>
     <div class="audience">{{ tome.audience }}</div>
   </div>
 {% else %}
 <div class="cover">
-  <div class="kicker">{{ GENRE_LABEL.get(tome.genre, "Material educativo") }}</div>
+  <div class="kicker">{{ tome.kicker }}</div>
   <h1>{{ tome.title }}</h1>
   <div class="audience">{{ tome.audience }}</div>
 {% endif %}
   <div class="name">Nombre:</div>
   {% if tome.author %}<div class="by">Elaborado por {{ tome.author }}</div>{% endif %}
+  {% if seal %}<div class="imprint">{{ seal }}<span>{{ tome.brand.name }}</span></div>{% endif %}
 </div>
 {% endif %}
 
