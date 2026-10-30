@@ -11,6 +11,7 @@ import socket
 from app.config import Settings
 from app.curriculum import ProgramSearch
 from app.db import make_engine
+from app.free_images import Finder, WorkersAI
 from app.jobs import Deps, claim_job, process_job, reap_stale_jobs
 from app.images import OpenRouterImages
 from app.llm import DeepSeek
@@ -39,6 +40,9 @@ async def run(stop: asyncio.Event | None = None) -> None:
         vision=OpenRouterVision(settings.openrouter_api_key, settings.openrouter_review_model)
         if settings.openrouter_api_key else None,
         web=Web(),
+        finder=Finder(),
+        free_images=WorkersAI(settings.cloudflare_account_id, settings.cloudflare_ai_token)
+        if settings.cloudflare_account_id and settings.cloudflare_ai_token else None,
         search=ProgramSearch(settings.openrouter_api_key, settings.openrouter_search_model)
         if settings.openrouter_api_key else None,
     )

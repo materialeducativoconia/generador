@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     openrouter_image_model: str = "google/gemini-nano-banana-2.1"
     openrouter_review_model: str = "qwen/qwen3.7-flash"  # vision model of the image Reviewer
     openrouter_search_model: str = "perplexity/sonar"  # web search with citations, for official programs
+    cloudflare_account_id: str = ""  # Workers AI: the free preview's Illustrator (free daily allowance)
+    cloudflare_ai_token: str = ""
     stripe_secret_key: str = ""  # sk_live_… / sk_test_…; empty disables billing
     stripe_webhook_secret: str = ""  # whsec_…, from scripts/stripe_setup.py
     app_url: str = "http://localhost:5173"  # where Stripe sends the user back

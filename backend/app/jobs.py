@@ -22,10 +22,11 @@ from app.agents import (PROMPT_VERSION, AgentFailed, Attempt, Brief, apply_fixes
 from app.content import ArtPlan, Brand, Design, Outline, OutlineSection
 from app.identity import describe, guard, initials, look_key
 from app import credits
+from app.free_images import FREE_STYLE
 from app.plans import SAMPLE_PAGES
 from app.llm import LLM, UpstreamAuthError, UpstreamError
 from app.artwork import ImageRequest, plan_sheets, sheet_prompt, slice_sheet
-from app.illustrator import (cover_jpeg, line_art_coverage, normalize_subject, prepare_image, reference_image,
+from app.illustrator import (ASPECT, cover_jpeg, line_art_coverage, normalize_subject, prepare_image, reference_image,
                              vectorize)
 from app.references import find_covers
 from app.styles import contact_sheet, read_spec, sample_pages, theme_from_spec
@@ -45,6 +46,8 @@ class Deps:
     web: Any = None  # app.research.Web (Wikipedia, Commons); None skips research and real photos
     search: Any = None  # app.curriculum.ProgramSearch (official programs on the web); None skips it
     edit: bool = True  # the Editor proofreads each section after the Writer
+    finder: Any = None  # app.free_images.Finder (openly licensed pictures); the free preview's first stop
+    free_images: Any = None  # app.free_images.WorkersAI; None leaves the preview with what the Finder found
 
 
 class JobFailed(Exception):
@@ -167,7 +170,8 @@ async def _outline(deps: Deps, job: dict) -> None:
         ), {"s": job["series_id"], "t": outline.title, "g": outline.genre, "n": len(outline.sections),
             "plan": json.dumps({"genre": outline.genre, "style_notes": outline.style_notes,
                                 "known_letters": outline.known_letters})})
-        cover_job = await enqueue_cover(conn, job["user_id"], job["series_id"])
+        # The free preview's cover comes from the free Illustrator; the paid one is painted when the tome is bought.
+        cover_job = await enqueue_cover(conn, job["user_id"], job["series_id"], free=bool(series["preview"]))
         await credits.move_charge(conn, job["id"], cover_job, "Portada")  # paid when the tome was created
         if series["preview"]:  # the free preview shows the first pages written, at our cost
             await _queue_sample(conn, job)
@@ -328,11 +332,12 @@ quality, genre conventions and composition. Do NOT copy their characters, artwor
 create an original illustration that would sit proudly next to them on a bookstore shelf."""
 
 
-async def enqueue_cover(conn, user_id, series_id) -> uuid.UUID:
+async def enqueue_cover(conn, user_id, series_id, free: bool = False) -> uuid.UUID:
     job_id = uuid.uuid4()
     await conn.execute(text(
         """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, max_attempts)
-           values (:j, :u, :s, 'cover', 'queued', '{}', 3)"""), {"j": job_id, "u": user_id, "s": series_id})
+           values (:j, :u, :s, 'cover', 'queued', cast(:p as jsonb), 3)"""),
+        {"j": job_id, "u": user_id, "s": series_id, "p": json.dumps({"free": True} if free else {})})
     return job_id
 
 
@@ -385,7 +390,8 @@ async def _cover(deps: Deps, job: dict) -> None:
             await _insert_logs(conn, job, "designer", attempts)
             await conn.execute(text("update public.series set design = cast(:d as jsonb) where id = :s"),
                                {"s": job["series_id"], "d": design.model_dump_json()})
-    if deps.images is None:
+    free = bool(job["payload"].get("free"))
+    if deps.images is None and not free:
         raise JobFailed("not_configured", "Falta OPENROUTER_API_KEY para generar portadas.")
     try:
         result = await cover_director(deps.llm, brief, title, genre, list(sections), design)
@@ -395,6 +401,9 @@ async def _cover(deps: Deps, job: dict) -> None:
     await _log_attempts(deps.engine, job, "cover", result.attempts)  # a retry below must not redo this log
     plan = result.value
     plan.palette = design.palette  # cover and interior share one palette
+    if free:
+        await _free_cover(deps, job, plan)
+        return
     references = await deps.references(plan.search_queries, limit=4)
     image = await deps.images.generate(
         f"{plan.illustration_prompt}\n\n{COVER_RULES.format(palette=', '.join(plan.palette))}",
@@ -410,6 +419,30 @@ async def _cover(deps: Deps, job: dict) -> None:
     async with deps.engine.begin() as conn:
         await conn.execute(text(
             "update public.series set cover_key = :k, cover = cast(:c as jsonb) where id = :s"
+        ), {"s": job["series_id"], "k": key, "c": json.dumps(cover)})
+        await _succeed(conn, job)
+
+
+async def _free_cover(deps: Deps, job: dict, plan) -> None:
+    """The preview's cover at no cost: the free Illustrator if it is available, else the typeset cover (title on
+    the palette). `free` marks it so buying the tome paints the premium one."""
+    key, model = None, None
+    if deps.free_images is not None:
+        try:
+            image = await deps.free_images.generate(
+                f"{plan.illustration_prompt}\n\n{COVER_RULES.format(palette=', '.join(plan.palette))}",
+                aspect_ratio="3:4")
+        except UpstreamError as exc:
+            log.warning("free cover skipped: %s", exc)
+        else:
+            key, model = f"{job['user_id']}/{job['series_id']}/{job['id']}.jpg", image.model
+            await deps.storage.upload(key, await asyncio.to_thread(cover_jpeg, image.data), "image/jpeg",
+                                      bucket="covers")
+    cover = {"concept": plan.concept, "palette": plan.palette, "model": model, "cost_usd": 0, "spent_usd": 0,
+             "free": True}
+    async with deps.engine.begin() as conn:
+        await conn.execute(text(
+            "update public.series set cover_key = coalesce(:k, cover_key), cover = cast(:c as jsonb) where id = :s"
         ), {"s": job["series_id"], "k": key, "c": json.dumps(cover)})
         await _succeed(conn, job)
 
@@ -451,13 +484,14 @@ async def _queue_artwork(conn, job: dict, sample: bool = False) -> None:
         return
     await conn.execute(text(
         """insert into public.generation_jobs (user_id, series_id, kind, status, payload, max_attempts)
-           select :u, :s, 'illustration', 'queued', '{}', 3
+           select :u, :s, 'illustration', 'queued', cast(:p as jsonb), 3
             where exists (select 1 from public.lessons l, jsonb_array_elements(l.content_json->'blocks') b
                            where l.series_id = :s and (b->>'type' = 'image' and b->>'asset_id' is null
                                                         or b->>'type' = any(cast(:pictured as text[]))))
               and not exists (select 1 from public.generation_jobs where series_id = :s and kind = 'illustration'
                                  and status in ('queued', 'running'))"""),
-        {"u": job["user_id"], "s": job["series_id"], "pictured": list(PICTURED)})
+        {"u": job["user_id"], "s": job["series_id"], "pictured": list(PICTURED),
+         "p": json.dumps({"free": True} if sample else {})})
 
 
 async def _illustration(deps: Deps, job: dict) -> None:
@@ -468,6 +502,9 @@ async def _illustration(deps: Deps, job: dict) -> None:
             "select id::text, position, content_json from public.lessons where series_id = :s order by position"
         ), {"s": job["series_id"]})).mappings().all()
     requests = _picture_requests(lessons)
+    free = bool(job["payload"].get("free"))  # the free preview's sample: library, web and free Illustrator only
+    if free:
+        requests = requests[:MAX_FREE_PICTURES]
     if not requests:
         async with deps.engine.begin() as conn:
             await _succeed(conn, job)
@@ -489,7 +526,8 @@ async def _illustration(deps: Deps, job: dict) -> None:
                                    and style_key = any(cast(:st as text[]))
                                  order by style_key = :own desc, created_at desc limit 1) returning id"""),
                 {"n": len(group), "k": kind, "own": key, "sn": norm,
-                 "st": {"line_art": [key, shared], "icon": [ICON_LIBRARY]}.get(kind, [key])})).scalar_one_or_none()
+                 "st": {"line_art": [key, shared], "icon": [ICON_LIBRARY]}.get(kind, [key]) + ([FREE_STYLE] if free else [])
+                 })).scalar_one_or_none()
             if asset_id:
                 for r in group:
                     await _attach_image(conn, r.lesson_id, r.block_id, asset_id, r.word)
@@ -497,6 +535,9 @@ async def _illustration(deps: Deps, job: dict) -> None:
     if not unique:
         async with deps.engine.begin() as conn:
             await _succeed(conn, job)
+        return
+    if free:
+        await _free_pictures(deps, job, series, design, unique)
         return
     if deps.images is None:
         raise JobFailed("not_configured", "Falta OPENROUTER_API_KEY para ilustrar.")
@@ -570,6 +611,71 @@ async def _illustration(deps: Deps, job: dict) -> None:
         await _succeed(conn, job)
 
 
+async def _free_pictures(deps: Deps, job: dict, series, design, unique: dict) -> None:
+    """The preview's pictures at no cost. The Art director (text only) writes English prompts; then for each
+    subject the Finder looks for an openly licensed picture and, failing that, the free Illustrator paints it.
+    Whatever they bring joins the free library. A subject neither can serve stays as an empty frame."""
+    todo = [group[0] for group in unique.values()]
+    try:
+        directed = await art_director(deps.llm, _brief(series, None), series["title"] or series["topic"], design,
+                                      (_json(series["cover"]) or {}).get("concept"), todo)
+        plan = directed.value
+        await _log_attempts(deps.engine, job, "art", directed.attempts)
+    except AgentFailed as exc:
+        await _log_attempts(deps.engine, job, "art", exc.attempts)
+        plan = ArtPlan(style="Simple clean children's book pictures.")
+
+    async def one(r: ImageRequest) -> None:
+        prompt = plan.prompts.get(r.ref) or r.subject
+        query = plan.photo_queries.get(r.ref) or " ".join(prompt.split(",")[0].split()[:6])
+        found = None
+        if r.kind == "photo" and deps.web is not None:
+            found = await deps.web.commons_photo(query)
+        if found is None and r.kind != "icon" and deps.finder is not None:
+            found = await deps.finder.find(query, r.kind, accept=lambda data: _shows(deps, data, r))
+        image = None
+        if found is None and deps.free_images is not None:
+            try:
+                image = await deps.free_images.generate(f"{FREE_STYLE_PROMPT.get(r.kind, '')}{prompt}. {plan.style}",
+                                                        aspect_ratio=ASPECT.get(r.size, "3:4"))
+            except UpstreamError as exc:
+                log.warning("free picture skipped for %s: %s", r.ref, exc)
+                return
+        if found is None and image is None:
+            return
+        data, media_type = prepare_image(found.data if found else image.data, r.kind)
+        attribution = {"author": found.author, "license": found.license, "source_url": found.source_url,
+                       "credit": f"{found.author}, {found.license}"} if found else None
+        await _store_image(deps, job, (FREE_STYLE, FREE_STYLE), r, unique[(r.kind, normalize_subject(r.subject))],
+                           data, media_type, image, 1, Review(ok=True), 1, plan, attribution=attribution,
+                           style_key=FREE_STYLE, source="openverse" if found else None)
+
+    await asyncio.gather(*(one(r) for r in todo))
+    async with deps.engine.begin() as conn:
+        await _succeed(conn, job)
+
+
+async def _shows(deps: Deps, data: bytes, r: ImageRequest) -> bool:
+    """The Reviewer's word on a picture found on the web (a fraction of a cent); without it, the kind check alone."""
+    if deps.vision is None:
+        return True
+    try:
+        verdict = (await deps.vision.review_sheet(data, [r.subject], kind=r.kind))[0]
+    except (UpstreamError, UpstreamAuthError):
+        return False
+    return verdict.matches_subject and not verdict.has_text
+
+
+MAX_FREE_PICTURES = 8  # a two-page sample rarely needs more; worksheet words beyond it stay as text
+FREE_STYLE_PROMPT = {
+    "line_art": "Black and white colouring page for children, clean thick outlines, pure white background, "
+                "no shading, no grey, no text. ",
+    "icon": "Simple flat icon for a children's worksheet, white background, no text. ",
+    "colour": "Children's book illustration, no text, no letters. ",
+    "photo": "Realistic photo, no text. ",
+}
+
+
 async def _review_sheet(deps: Deps, sheet_image: bytes, panels: list[tuple[bytes, str]], sheet) -> list[Review]:
     """Deterministic checks per panel, then one vision call for the whole sheet."""
     checks = []
@@ -595,10 +701,11 @@ async def _review_sheet(deps: Deps, sheet_image: bytes, panels: list[tuple[bytes
 
 
 async def _store_image(deps, job, keys, request, group, data, media_type, image, share, review, attempts, plan,
-                       attribution=None):
+                       attribution=None, style_key=None, source=None):
     prompt = plan.prompts.get(request.ref) or request.subject
     generic = not any(c.name.lower() in f"{prompt} {request.subject}".lower() for c in plan.characters)
-    key = ICON_LIBRARY if request.kind == "icon" else keys[1] if request.kind == "line_art" and generic else keys[0]
+    key = style_key or (ICON_LIBRARY if request.kind == "icon" else keys[1] if request.kind == "line_art" and generic
+                        else keys[0])
     if request.kind in ("line_art", "icon") and media_type == "image/png":
         svg = await asyncio.to_thread(vectorize, data)
         if svg:
@@ -613,7 +720,7 @@ async def _store_image(deps, job, keys, request, group, data, media_type, image,
                values (:id, :k, :subj, :n, :st, :key, :mt, :model, :cost, cast(:review as jsonb), :u, :uses,
                        cast(:attr as jsonb), :s)"""
         ), {"id": asset_id, "k": request.kind, "subj": request.subject, "n": normalize_subject(request.subject),
-            "st": key, "key": storage_key, "mt": media_type, "model": image.model if image else "wikimedia-commons",
+            "st": key, "key": storage_key, "mt": media_type, "model": image.model if image else source or "wikimedia-commons",
             "u": job["user_id"], "s": job["series_id"], "uses": len(group),
             "cost": ((image.cost_usd or 0) / share) if image else 0,
             "attr": json.dumps(attribution) if attribution else None,

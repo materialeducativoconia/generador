@@ -13,6 +13,10 @@ envVarGroups:
         value: "50"
       - key: DEEPSEEK_MAX_INFLIGHT
         value: "16"
+      - key: CLOUDFLARE_ACCOUNT_ID # Workers AI: imágenes gratis de la vista previa (cuota diaria gratuita)
+        sync: false
+      - key: CLOUDFLARE_AI_TOKEN # token con permiso "Workers AI: Read/Edit"
+        sync: false
       - key: STRIPE_SECRET_KEY # vacío desactiva los pagos; productos y precios: backend/scripts/stripe_setup.py
         sync: false
       - key: STRIPE_WEBHOOK_SECRET # whsec_… que imprime stripe_setup.py

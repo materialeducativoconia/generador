@@ -3,10 +3,17 @@ of the tome and the downloads need a plan, and signing in with Google carries th
 
 import json
 
+from app.research import Photo
+from tests.db.conftest import subscribe
+from tests.db.test_covers import FakeStorage
+from tests.db.test_illustrations import ART, LINE_ART, FakeImages, FakeVision
+from tests.db.test_illustrations import SECTION as PICTURED_SECTION
 from tests.db.test_jobs import OUTLINE, SECTION, engine, run_next  # noqa: F401  (engine is a fixture)
 from tests.db.test_me import bearer
 from tests.db.test_series_api import NEW_TOME
 from tests.fakes import ScriptedLLM
+from tests.test_covers import PLAN
+from tests.test_themes import DESIGN
 
 
 def visitor(key, user, ip="203.0.113.7"):
@@ -74,3 +81,52 @@ async def test_signing_in_with_google_carries_the_preview_over(raw_db, google_us
     # the real account's own free preview is spent too
     await raw_db.execute("update public.series set status = 'outline_ready' where id = $1", sid)
     assert (await client.post("/api/series", json=NEW_TOME, headers=bearer(key, teacher))).status_code == 402
+
+
+class FakeFinder:
+    """Openverse stand-in: it knows cows, nothing else."""
+
+    def __init__(self):
+        self.queries = []
+
+    async def find(self, subject, kind, accept=None):
+        self.queries.append((subject, kind))
+        if "cow" not in subject or (accept and not await accept(LINE_ART)):
+            return None
+        return Photo(LINE_ART, "image/png", "Ana", "CC BY 4.0", "https://flickr.test/cow")
+
+
+async def test_the_preview_pictures_cost_nothing(raw_db, google_user, client, key, engine):
+    anon = await google_user(anonymous=True)
+    h = visitor(key, anon, ip="203.0.113.61")
+    sid = (await client.post("/api/series", json={**NEW_TOME, "section_count": 1, "page_count": 2},
+                             headers=h)).json()["series"]["id"]
+    await run_next(engine, ScriptedLLM(json.dumps({**OUTLINE, "sections": OUTLINE["sections"][:1]})), covers=True)
+    paid, free, storage = FakeImages(), FakeImages(), FakeStorage()
+
+    # The cover first (the sample waits its turn): the free Illustrator paints it, marked free.
+    await raw_db.execute("update public.generation_jobs set run_after = now() + interval '1 hour'"
+                         " where series_id = $1 and kind = 'lesson'", sid)
+    job = await run_next(engine, ScriptedLLM(json.dumps(DESIGN), json.dumps(PLAN)), covers=True, images=paid,
+                         free_images=free, storage=storage)
+    assert job["kind"] == "cover"
+    cover = json.loads(await raw_db.fetchval("select cover from public.series where id = $1", sid))
+    assert cover["free"] is True and cover["spent_usd"] == 0 and len(free.calls) == 1
+
+    await raw_db.execute("update public.generation_jobs set run_after = now() where series_id = $1", sid)
+    await run_next(engine, ScriptedLLM(json.dumps(PICTURED_SECTION)))
+    finder = FakeFinder()
+    job = await run_next(engine, ScriptedLLM(json.dumps(ART)), images=paid, free_images=free, finder=finder,
+                         storage=storage, vision=FakeVision())  # the Reviewer confirms the cow
+    assert job["kind"] == "illustration" and paid.calls == []  # not one premium picture for the preview
+    assets = await raw_db.fetch("select model, style_key, cost_usd, attribution from public.assets"
+                                " where series_id = $1 order by model", sid)
+    assert [(a["model"], a["style_key"], a["cost_usd"]) for a in assets] == [("fake-image", "free", 0.04),
+                                                                             ("openverse", "free", 0)]
+    assert json.loads(assets[1]["attribution"])["license"] == "CC BY 4.0"  # the Finder's picture is credited
+
+    # Bought: the full tome brings the premium cover, paid with credits.
+    await subscribe(raw_db, anon, "docente", 40)
+    assert (await client.post(f"/api/series/{sid}/lessons/generate", json={}, headers=h)).status_code == 202
+    assert await raw_db.fetchval("select count(*) from public.generation_jobs where series_id = $1 and kind = 'cover'"
+                                 " and status = 'queued' and payload = '{}'", sid) == 1

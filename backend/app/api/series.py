@@ -452,6 +452,8 @@ async def generate_lessons(series_id: uuid.UUID, body: Generate, request: Reques
             ), {"id": job_id, "u": user_id, "s": series_id, "l": lesson_id})
             await credits.charge(conn, user_id, max(pages or 1, 1), "Sección", job_id)
             jobs.append({"id": str(job_id), "kind": "lesson", "lesson_id": str(lesson_id), "status": "queued"})
+        if (_json_value(series["cover"]) or {}).get("free"):  # the preview's free cover: now the premium one
+            await credits.charge(conn, user_id, COVER, "Portada", await enqueue_cover(conn, user_id, series_id))
         await conn.execute(text(
             "update public.lessons set status = 'queued', last_error = null where id = any(:ids)"
         ), {"ids": list(targets)})
@@ -589,6 +591,10 @@ async def _created(conn, series_id, job_id):
     job = (await conn.execute(text("select id, kind, status from public.generation_jobs where id = :j"),
                               {"j": job_id})).mappings().one()
     return JSONResponse({"series": _jsonable(series), "job": _jsonable(job)}, status_code=202)
+
+
+def _json_value(value):
+    return json.loads(value) if isinstance(value, str) else value
 
 
 def _jsonable(row) -> dict:
