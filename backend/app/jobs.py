@@ -315,7 +315,7 @@ async def _lesson(deps: Deps, job: dict) -> None:
         ), {"l": job["lesson_id"], "c": content.model_dump_json(), "r": json.dumps(review) if review else None,
             "sample": bool(sample)})
         await conn.execute(text("select public.refresh_series_status(:s)"), {"s": job["series_id"]})
-        await _queue_artwork(conn, job)
+        await _queue_artwork(conn, job, sample=bool(sample))
         await _succeed(conn, job)
 
 
@@ -442,11 +442,12 @@ def _picture_requests(lessons) -> list[ImageRequest]:
 EXTENSION = {"image/png": "png", "image/svg+xml": "svg", "image/jpeg": "jpg"}
 
 
-async def _queue_artwork(conn, job: dict) -> None:
-    """Once every section is written, one job illustrates the whole tome (style needs the full picture)."""
+async def _queue_artwork(conn, job: dict, sample: bool = False) -> None:
+    """Once every section is written, one job illustrates the whole tome (style needs the full picture).
+    The free preview's sample is illustrated right away: a colouring book without drawings shows nothing."""
     ready = (await conn.execute(text("select status = 'ready' from public.series where id = :s"),
                                 {"s": job["series_id"]})).scalar_one()
-    if not ready:
+    if not ready and not sample:
         return
     await conn.execute(text(
         """insert into public.generation_jobs (user_id, series_id, kind, status, payload, max_attempts)

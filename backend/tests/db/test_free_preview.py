@@ -27,7 +27,8 @@ async def test_a_visitor_gets_outline_cover_and_a_sample_free_and_nothing_more(r
                                  "using (org_id) where m.user_id = $1", anon) == 0
 
     await run_next(engine, ScriptedLLM(json.dumps(OUTLINE)))
-    llm = ScriptedLLM(json.dumps(SECTION))
+    drawing = {"id": "b9", "type": "image", "kind": "line_art", "size": "full", "subject": "Un dragón amable"}
+    llm = ScriptedLLM(json.dumps({**SECTION, "blocks": [*SECTION["blocks"], drawing]}))
     await run_next(engine, llm)  # the sample of section 1, queued by the outline job
 
     assert "es una muestra: escribe solo sus primeras 2 páginas" in json.dumps(llm.calls[0], ensure_ascii=False)
@@ -35,6 +36,8 @@ async def test_a_visitor_gets_outline_cover_and_a_sample_free_and_nothing_more(r
                                    sid)
     assert dict(lesson) == {"status": "generated", "sample": True}
     assert await raw_db.fetchval("select status from public.series where id = $1", sid) == "outline_ready"
+    assert await raw_db.fetchval("select count(*) from public.generation_jobs where series_id = $1"
+                                 " and kind = 'illustration'", sid) == 1  # its drawings are painted right away
 
     again = await client.post("/api/series", json=NEW_TOME, headers=h)
     assert again.status_code == 402  # one free preview; after that, credits

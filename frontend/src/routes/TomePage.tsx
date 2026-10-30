@@ -66,11 +66,13 @@ function PreviewBanner({ series: s }: { series: Series }) {
     <>
       {me.plan.key === 'prueba' && (
         <section className="panel preview-banner">
-          <p><strong>Tu vista previa gratis:</strong> portada ilustrada, índice y una muestra de la primera sección.
-            Para generar el tomo completo y descargarlo en PDF, elige un plan.</p>
-          {me.anonymous
-            ? <button className="primary" onClick={() => void saveWithGoogle(pathname)}>Continuar con Google</button>
-            : <Link to="/app/plan" className="primary">Ver planes</Link>}
+          <strong>Vista previa</strong>
+          <div className="preview-cta">
+            {me.anonymous
+              ? <button className="primary" onClick={() => void saveWithGoogle(pathname)}>Descargar</button>
+              : <Link to="/app/plan" className="primary">Descargar</Link>}
+            <span className="muted small">{me.anonymous ? 'Ingresa para descargar' : 'Elige un plan para descargar'}</span>
+          </div>
         </section>
       )}
       {(writing || (first?.sample && first.content_json)) && (

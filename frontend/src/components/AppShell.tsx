@@ -48,9 +48,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         {me?.anonymous && (
           <div className="sidenav-foot">
             <div className="wallet-mini">
-              <strong className="small">Vista previa gratis</strong>
-              <span className="muted">Entra con Google para guardarla, generar el tomo completo y descargarlo.</span>
-              <button className="primary small-cta" onClick={() => void saveWithGoogle(pathname)}>Continuar con Google</button>
+              <strong className="small">Vista previa</strong>
+              <button className="primary small-cta" onClick={() => void saveWithGoogle(pathname)}>Descargar</button>
+              <span className="muted">Ingresa para descargar</span>
             </div>
           </div>
         )}

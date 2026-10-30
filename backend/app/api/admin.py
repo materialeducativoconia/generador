@@ -1,7 +1,7 @@
 """Platform analytics for our own staff (profiles.platform_role staff/admin): growth, activation, revenue, AI cost."""
 
 import uuid
-from datetime import date, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -50,7 +50,7 @@ async def _staff(conn, user_id) -> None:
 
 @router.get("/api/admin/analytics")
 async def analytics(request: Request, user_id: UserId, days: int = Query(30, ge=7, le=365)):
-    since = date.today() - timedelta(days=days - 1)
+    since = datetime.now(UTC).date() - timedelta(days=days - 1)  # the database counts days in UTC
     async with request.app.state.engine.connect() as conn:
         await _staff(conn, user_id)
         s = (await conn.execute(SUMMARY, {"since": since})).mappings().one()
