@@ -482,7 +482,7 @@ async def _free_preview(conn, org_id, ip: str | None) -> bool:
         """select count(*) as total, count(*) filter (where preview_ip = :ip) as mine from public.series
             where preview and created_at > now() - interval '1 day'"""), {"ip": ip})).mappings().one()
     if today["mine"] >= FREE_PREVIEWS_PER_IP or today["total"] >= FREE_PREVIEWS_PER_DAY:
-        raise ApiError(429, "preview_limit", "Por hoy ya no hay vistas previas gratis. Suscríbete para crear tu "
+        raise ApiError(429, "preview_limit", "Por hoy ya no hay más vistas previas. Suscríbete para crear tu "
                        "material ahora, o vuelve mañana.", {"plan": "prueba"})
     await conn.execute(text("update public.organizations set free_preview_at = now() where id = :o"), {"o": org_id})
     return True
