@@ -5,6 +5,7 @@ import { AUDIENCES } from '../lib/labels'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
 import { errorText } from '../components/ErrorNote'
+import { FREE_PREVIEW_PAGES } from '../lib/pricing'
 import { api } from '../lib/apiClient'
 import { useCollections, useEstimate, useIdentities, useMe, useSeriesList, useStyles } from '../lib/queries'
 import type { Collection, Identity, SeriesSummary } from '../lib/types'
@@ -36,7 +37,7 @@ export function Studio() {
   const [sections, setSections] = useState<number | null>(null)
   const [pages, setPages] = useState<number | null>(null)
   // The free preview (outline, cover and a sample) needs no credits; after it, the outline and cover take 5.
-  const affordable = !me ? Infinity : me.free_preview ? me.plan.max_pages : Math.min(me.plan.max_pages, Math.max(0, me.credits - 5))
+  const affordable = !me ? Infinity : me.free_preview ? FREE_PREVIEW_PAGES : Math.min(me.plan.max_pages, Math.max(0, me.credits - 5))
   const sized = sections !== null && pages !== null
   const [quoting, setQuoting] = useState(false)  // the cost window, shown before anything is created
   const [style, setStyle] = useState('auto')
@@ -116,14 +117,14 @@ export function Studio() {
               }}>
                 <option value="" disabled>Páginas…</option>
                 {PAGES.map((n) => <option key={n} value={n} disabled={n > affordable}>
-                  {n} {n === 1 ? 'página' : 'páginas'}{me && n > me.plan.max_pages ? ' · plan superior' : n > affordable ? ' · sin créditos' : ''}</option>)}
+                  {n} {n === 1 ? 'página' : 'páginas'}{me && (n > me.plan.max_pages || (me.free_preview && n > affordable)) ? ' · con plan' : n > affordable ? ' · sin créditos' : ''}</option>)}
               </select>
             </label>
             <label className={`select-pill${sections === null ? ' needed' : ''}`}>
               <span className="sr-only">Secciones</span>
               <select value={sections ?? ''} required onChange={(e) => setSections(Number(e.target.value))}>
                 <option value="" disabled>Secciones…</option>
-                {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
+                {Array.from({ length: me?.free_preview ? FREE_PREVIEW_PAGES : 20 }, (_, i) => i + 1).map((n) => (
                   <option key={n} value={n} disabled={pages !== null && n > pages}>{n} {n === 1 ? 'sección' : 'secciones'}</option>
                 ))}
               </select>
@@ -157,7 +158,7 @@ export function Studio() {
                       onConfirm={() => create.mutate()} onCancel={() => setQuoting(false)} />
         )}
         {me && affordable < 1 && (
-          <p className="notice small composer-hint">Ya usaste tu vista previa gratis y no tienes créditos.{' '}
+          <p className="notice small composer-hint">Ya usaste tu vista previa y no tienes créditos.{' '}
             <Link to="/app/plan">Elige un plan</Link> para crear tu material.</p>
         )}
         {request.trim().length >= 3 && !sized && <p className="muted small composer-hint">Elige cuántas páginas de contenido y en cuántas secciones repartirlas. La portada, el índice y el solucionario no cuentan.</p>}
@@ -340,7 +341,7 @@ function CostDialog({ sections, pages, pending, onConfirm, onCancel }: {
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="cost-title" onClick={(e) => e.stopPropagation()}>
-        <h2 id="cost-title">{me?.free_preview ? 'Vista previa gratis' : 'Créditos de este tomo'}</h2>
+        <h2 id="cost-title">{me?.free_preview ? 'Vista previa' : 'Créditos de este tomo'}</h2>
         {!q ? <div className="skeleton" /> : me?.free_preview ? (
           <p className="muted">Te mostramos el índice, la portada y una muestra de 2 páginas, sin costo. Para generar el tomo
             completo y descargarlo, elige un plan.</p>

@@ -17,6 +17,9 @@ from tests.test_covers import PLAN
 from tests.test_themes import DESIGN
 
 
+PREVIEW = {**NEW_TOME, "page_count": 4}  # a visitor's preview: up to 4 pages and 4 sections
+
+
 def visitor(key, user, ip="203.0.113.7"):
     return {**bearer(key, user), "X-Forwarded-For": f"{ip}, 10.0.0.1"}
 
@@ -28,7 +31,9 @@ async def test_a_visitor_gets_outline_cover_and_a_sample_free_and_nothing_more(r
     me = (await client.get("/api/me", headers=h)).json()
     assert me["anonymous"] is True and me["credits"] == 0 and me["free_preview"] is True
 
-    created = await client.post("/api/series", json={**NEW_TOME, "section_count": 3, "page_count": 9}, headers=h)
+    too_big = await client.post("/api/series", json={**NEW_TOME, "section_count": 3, "page_count": 9}, headers=h)
+    assert too_big.status_code == 403 and too_big.json()["error"]["details"]["max_pages"] == 4
+    created = await client.post("/api/series", json={**NEW_TOME, "section_count": 3, "page_count": 4}, headers=h)
     assert created.status_code == 202
     sid = created.json()["series"]["id"]
     assert await raw_db.fetchval("select count(*) from public.credit_ledger l join public.memberships m "
@@ -56,19 +61,19 @@ async def test_a_visitor_gets_outline_cover_and_a_sample_free_and_nothing_more(r
     assert checkout.status_code in (409, 503)
 
 
-async def test_free_previews_are_capped_per_visitor(google_user, client, key):
-    ip = "198.51.100.23"
-    for _ in range(2):
+async def test_free_previews_are_capped_per_visitor(raw_db, google_user, client, key):
+    ip = "198.51.100.23"  # what Supabase Auth saw; each request below forges another X-Forwarded-For
+    for n in range(3):
         anon = await google_user(anonymous=True)
-        assert (await client.post("/api/series", json=NEW_TOME, headers=visitor(key, anon, ip))).status_code == 202
-    anon = await google_user(anonymous=True)
-    third = await client.post("/api/series", json=NEW_TOME, headers=visitor(key, anon, ip))
-    assert third.status_code == 429 and third.json()["error"]["code"] == "preview_limit"
+        await raw_db.execute("insert into auth.sessions (id, user_id, created_at, updated_at, ip)"
+                             " values (gen_random_uuid(), $1, now(), now(), $2::inet)", anon, ip)
+        response = await client.post("/api/series", json=PREVIEW, headers=visitor(key, anon, f"192.0.2.{n}"))
+    assert response.status_code == 429 and response.json()["error"]["code"] == "preview_limit"
 
 
 async def test_signing_in_with_google_carries_the_preview_over(raw_db, google_user, client, key):
     anon = await google_user(anonymous=True)
-    sid = (await client.post("/api/series", json=NEW_TOME,
+    sid = (await client.post("/api/series", json=PREVIEW,
                              headers=visitor(key, anon, ip="203.0.113.44"))).json()["series"]["id"]
     code = (await client.post("/api/claims", headers=bearer(key, anon))).json()["code"]
 
@@ -111,7 +116,7 @@ async def test_the_preview_pictures_cost_nothing(raw_db, google_user, client, ke
     await raw_db.execute("delete from public.assets where style_key = 'free'")  # an earlier run fills the library
     anon = await google_user(anonymous=True)
     h = visitor(key, anon, ip="203.0.113.61")
-    sid = (await client.post("/api/series", json={**NEW_TOME, "section_count": 1, "page_count": 2},
+    sid = (await client.post("/api/series", json={**PREVIEW, "section_count": 1, "page_count": 2},
                              headers=h)).json()["series"]["id"]
     await run_next(engine, ScriptedLLM(json.dumps({**OUTLINE, "sections": OUTLINE["sections"][:1]})), covers=True)
     paid, free, storage = FakeImages(), FakeImages(), FakeStorage()

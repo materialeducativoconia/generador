@@ -37,6 +37,7 @@ PAID = ("docente", "creador", "editorial")
 TRIAL_CREDITS = 0  # replaced by the free preview; organizations from before keep what they were given
 # The free preview, paid by us to convert: outline, design, illustrated cover and the first pages of section 1.
 SAMPLE_PAGES = 2
+FREE_PREVIEW_PAGES = 4  # a visitor's preview: up to 4 pages and 4 sections
 FREE_PREVIEWS_PER_IP = 2  # a day
 FREE_PREVIEWS_PER_DAY = 300  # for everyone: about $30 of AI a day at most
 # Extra credits, one-off: pricier per credit than a plan, so moving up a plan is the better deal. Valid 12 months.

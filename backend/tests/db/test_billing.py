@@ -64,7 +64,7 @@ async def test_each_plan_unlocks_its_features(raw_db, google_user, client, key):
     style = await client.post("/api/styles", json={"name": "x", "content_type": "image/png", "size": 10}, headers=h)
     assert style.status_code == 403 and "Creador" in style.json()["error"]["message"]
     assert (await client.post("/api/identities", json={"about": "Fichas"}, headers=h)).status_code == 403
-    sid = (await create_tome(client, key, user))["series"]["id"]  # the free preview
+    sid = (await create_tome(client, key, user, page_count=4))["series"]["id"]  # the free preview (4 pages at most)
     await outline_ready(raw_db, sid)
     await raw_db.execute("update public.series set status = 'ready' where id = $1", sid)
     pdf = await client.post(f"/api/series/{sid}/exports", json={}, headers=h)

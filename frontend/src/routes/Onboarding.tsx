@@ -5,7 +5,7 @@ import { Logo } from '../components/AppShell'
 import { errorText } from '../components/ErrorNote'
 import { api, type Me } from '../lib/apiClient'
 import { AUDIENCES } from '../lib/labels'
-import { useMe } from '../lib/queries'
+import { useMe, useSeriesList } from '../lib/queries'
 
 type Use = NonNullable<NonNullable<Me['onboarding']>['use']>
 const USES: [Use, string, string][] = [
@@ -33,8 +33,16 @@ const SUBJECTS = Object.keys(FIRST)
 export function FirstVisit({ children }: { children: ReactNode }) {
   const { data: me } = useMe()
   const [params] = useSearchParams()
+  if (me?.anonymous) return <VisitorHome />
   if (me && !me.anonymous && !me.onboarded && !params.get('pedido')) return <Navigate to="/app/bienvenida" replace />
   return children
+}
+
+/** A landing visitor has no studio: their preview, or the landing to make one. */
+export function VisitorHome() {
+  const { data: series } = useSeriesList()
+  if (!series) return <p className="center muted">Cargando…</p>
+  return <Navigate to={series.length ? `/app/tomos/${series[0].id}` : '/#crear'} replace />
 }
 
 export function Onboarding() {

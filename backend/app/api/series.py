@@ -15,7 +15,7 @@ from app.api.deps import current_user_id
 from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Block, Design, OutlineSection, block_assets
 from app.diagrams import render_diagram
 from app.errors import ApiError
-from app.plans import COVER, FREE_PREVIEWS_PER_DAY, FREE_PREVIEWS_PER_IP, OUTLINE, PAID, tome_credits
+from app.plans import COVER, FREE_PREVIEW_PAGES, FREE_PREVIEWS_PER_DAY, FREE_PREVIEWS_PER_IP, OUTLINE, PAID, tome_credits
 from app.jobs import enqueue_cover
 from app.llm import USD_PER_M
 from app.pricing import estimate
@@ -93,8 +93,12 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
             raise ApiError(429, "too_many_running", f"Tu plan {acc.plan.label} genera {acc.plan.concurrent} "
                            f"{'tomo' if acc.plan.concurrent == 1 else 'tomos'} a la vez; espera a que termine.",
                            {"plan": acc.plan_key})
-        ip = _client_ip(request)
+        ip = await _client_ip(conn, user_id, request)
         free = acc.plan_key not in PAID and await _free_preview(conn, acc.org_id, ip)
+        if free and (body.page_count > FREE_PREVIEW_PAGES or body.section_count > FREE_PREVIEW_PAGES):
+            raise ApiError(403, "plan_required", f"La vista previa admite hasta {FREE_PREVIEW_PAGES} páginas y "
+                           f"{FREE_PREVIEW_PAGES} secciones. Elige un plan para tomos más grandes.",
+                           {"plan": acc.plan_key, "max_pages": FREE_PREVIEW_PAGES})
         series_id, job_id = uuid7(), uuid7()
         await conn.execute(text(
             """insert into public.series (id, user_id, topic, audience, language, lesson_count,
@@ -484,8 +488,15 @@ async def _free_preview(conn, org_id, ip: str | None) -> bool:
     return True
 
 
-def _client_ip(request: Request) -> str | None:
-    """Vercel puts the visitor first in X-Forwarded-For; Render appends the hops after it."""
+async def _client_ip(conn, user_id, request: Request) -> str | None:
+    """The IP Supabase Auth saw when the visitor's session started: the browser talks to Supabase directly, so a
+    script calling our API with a made-up X-Forwarded-For cannot dodge the per-visitor cap. The header is only the
+    fallback for sessions without one."""
+    ip = (await conn.execute(text(
+        "select host(ip) from auth.sessions where user_id = :u and ip is not null order by created_at desc limit 1"),
+        {"u": user_id})).scalar_one_or_none()
+    if ip:
+        return ip
     forwarded = request.headers.get("x-forwarded-for", "")
     return forwarded.split(",")[0].strip() or (request.client.host if request.client else None)
 

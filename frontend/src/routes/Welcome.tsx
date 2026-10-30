@@ -4,12 +4,18 @@ import { useAuth } from '../auth/context'
 import { signInWithGoogle } from '../auth/google'
 import { Logo } from '../components/AppShell'
 import { LandingComposer } from '../components/LandingComposer'
+import { useSeriesList } from '../lib/queries'
 import { PUBLIC_PLANS } from '../lib/pricing'
 import { TOPICS, topicHref } from '../lib/topics'
 
 const ERRORS: Record<string, string> = {
   cancelled: 'No se completó el inicio de sesión.',
   failed: 'No pudimos iniciar sesión con Google. Inténtalo de nuevo.',
+}
+
+function ReturningVisitor() {
+  const { data: series } = useSeriesList()
+  return series?.length ? <Navigate to={`/app/tomos/${series[0].id}`} replace /> : null
 }
 
 export function Welcome() {
@@ -19,7 +25,8 @@ export function Welcome() {
   const [previewing, setPreviewing] = useState(false)  // the visitor's anonymous session must not bounce them to /app
   const [error, setError] = useState<string | null>(() => ERRORS[params.get('error') ?? ''] ?? null)
 
-  if (!loading && session && !previewing) return <Navigate to="/app" replace />
+  // A signed-in user goes to the studio; a visitor who already has a preview goes back to it (VisitorHome).
+  if (!loading && session && !previewing && !session.user.is_anonymous) return <Navigate to="/app" replace />
 
   async function start() {
     setStarting(true)
@@ -36,6 +43,7 @@ export function Welcome() {
     <>
     <main className="welcome">
       <div className="orb" aria-hidden="true" />
+      {session?.user.is_anonymous && !previewing && <ReturningVisitor />}
       <span className="brand"><Logo /><span>Material Educativo IA</span></span>
       <h1 className="display">Material educativo de cualquier tema, listo para imprimir.</h1>
       <p className="lede">Describe lo que necesitas y mira gratis tu portada ilustrada, el índice y una muestra de la primera sección. Sin registrarte.</p>

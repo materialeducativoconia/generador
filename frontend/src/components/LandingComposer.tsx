@@ -4,8 +4,9 @@ import { ensureVisitorSession } from '../auth/google'
 import { api } from '../lib/apiClient'
 import { AUDIENCES } from '../lib/labels'
 import { errorText } from './ErrorNote'
+import { FREE_PREVIEW_PAGES } from '../lib/pricing'
 
-const PAGES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24]  // the free plan's longest tome
+const PAGES = Array.from({ length: FREE_PREVIEW_PAGES }, (_, i) => i + 1)  // the preview's longest tome
 const SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined
 
 /** The landing's request box: no account needed. The visitor becomes an anonymous user and gets the free preview
@@ -62,7 +63,7 @@ export function LandingComposer({ onStart }: { onStart: (busy: boolean) => void 
         <label className={`select-pill${sections === null ? ' needed' : ''}`}><span className="sr-only">Secciones</span>
           <select value={sections ?? ''} required onChange={(e) => setSections(Number(e.target.value))}>
             <option value="" disabled>Secciones…</option>
-            {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
+            {PAGES.map((n) => (
               <option key={n} value={n} disabled={pages !== null && n > pages}>{n} {n === 1 ? 'sección' : 'secciones'}</option>
             ))}
           </select>
