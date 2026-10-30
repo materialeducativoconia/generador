@@ -3,6 +3,7 @@ of the tome and the downloads need a plan, and signing in with Google carries th
 
 import json
 
+from app.llm import UpstreamError
 from app.research import Photo
 from tests.db.conftest import subscribe
 from tests.db.test_covers import FakeStorage
@@ -84,6 +85,15 @@ async def test_signing_in_with_google_carries_the_preview_over(raw_db, google_us
     assert (await client.post("/api/series", json=NEW_TOME, headers=bearer(key, teacher))).status_code == 402
 
 
+class BusyIllustrator(FakeImages):
+    """The free Illustrator, out of its daily allowance for cows."""
+
+    async def generate(self, prompt, **kw):
+        if "cow" in prompt:
+            raise UpstreamError("upstream_unavailable", "Workers AI respondió 429.")
+        return await super().generate(prompt, **kw)
+
+
 class FakeFinder:
     """Openverse stand-in: it knows cows, nothing else."""
 
@@ -117,9 +127,9 @@ async def test_the_preview_pictures_cost_nothing(raw_db, google_user, client, ke
 
     await raw_db.execute("update public.generation_jobs set run_after = now() where series_id = $1", sid)
     await run_next(engine, ScriptedLLM(json.dumps(PICTURED_SECTION)))
-    finder = FakeFinder()
-    job = await run_next(engine, ScriptedLLM(json.dumps(ART)), images=paid, free_images=free, finder=finder,
-                         storage=storage, vision=FakeVision())  # the Reviewer confirms the cow
+    finder = FakeFinder()  # the fallback when the free Illustrator cannot paint
+    job = await run_next(engine, ScriptedLLM(json.dumps(ART)), images=paid, free_images=BusyIllustrator(),
+                         finder=finder, storage=storage, vision=FakeVision())  # the Reviewer confirms the cow
     assert job["kind"] == "illustration" and paid.calls == []  # not one premium picture for the preview
     assets = await raw_db.fetch("select model, style_key, cost_usd, attribution from public.assets"
                                 " where series_id = $1 order by model", sid)

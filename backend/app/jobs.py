@@ -628,19 +628,21 @@ async def _free_pictures(deps: Deps, job: dict, series, design, unique: dict) ->
     async def one(r: ImageRequest) -> None:
         prompt = plan.prompts.get(r.ref) or r.subject
         query = plan.photo_queries.get(r.ref) or " ".join(prompt.split(",")[0].split()[:6])
-        found = None
-        if r.kind == "photo" and deps.web is not None:
+        found = image = None
+        if r.kind == "photo" and deps.web is not None:  # a real photo beats a painted one
             found = await deps.web.commons_photo(query)
-        if found is None and r.kind != "icon" and deps.finder is not None:
-            found = await deps.finder.find(query, r.kind, accept=lambda data: _shows(deps, data, r))
-        image = None
-        if found is None and deps.free_images is not None:
+        if found is None and deps.free_images is not None:  # fast (~5 s) and on topic: the Illustrator first
             try:
                 image = await deps.free_images.generate(f"{FREE_STYLE_PROMPT.get(r.kind, '')}{prompt}. {plan.style}",
                                                         aspect_ratio=ASPECT.get(r.size, "3:4"))
             except UpstreamError as exc:
-                log.warning("free picture skipped for %s: %s", r.ref, exc)
-                return
+                log.warning("free picture failed for %s: %s", r.ref, exc)
+        if found is None and image is None and r.kind != "icon" and deps.finder is not None:
+            try:  # the web index is slow and rarely on topic: a fallback with a time limit
+                found = await asyncio.wait_for(
+                    deps.finder.find(query, r.kind, accept=lambda data: _shows(deps, data, r)), FINDER_SECONDS)
+            except TimeoutError:
+                log.warning("finder gave up on %s", r.ref)
         if found is None and image is None:
             return
         data, media_type = prepare_image(found.data if found else image.data, r.kind)
@@ -666,6 +668,7 @@ async def _shows(deps: Deps, data: bytes, r: ImageRequest) -> bool:
     return verdict.matches_subject and not verdict.has_text
 
 
+FINDER_SECONDS = 30
 MAX_FREE_PICTURES = 8  # a two-page sample rarely needs more; worksheet words beyond it stay as text
 FREE_STYLE_PROMPT = {
     "line_art": "Black and white colouring page for children, clean thick outlines, pure white background, "

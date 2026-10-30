@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Link, NavLink, useLocation } from 'react-router'
-import { saveWithGoogle } from '../auth/google'
+import { Link, NavLink } from 'react-router'
 import { useMe } from '../lib/queries'
 import { supabase } from '../lib/supabase'
 
@@ -15,7 +14,6 @@ const NAV: [string, string, ReactNode][] = [
 export function AppShell({ children }: { children: ReactNode }) {
   const { data: me } = useMe()
   const [open, setOpen] = useState(false)
-  const { pathname } = useLocation()
   const nav = me?.anonymous ? NAV.filter(([to]) => to === '/app' || to === '/app/plan') : NAV
   const name = me?.display_name || me?.email
   return (
@@ -45,14 +43,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             </NavLink>
           )}
         </nav>
-        {me?.anonymous && (
-          <div className="sidenav-foot">
-            <div className="wallet-mini">
-              <strong className="small">Vista previa</strong>
-              <button className="link-button small" onClick={() => void saveWithGoogle(pathname)}>Ingresa para descargar</button>
-            </div>
-          </div>
-        )}
         {me && !me.anonymous && (
           <div className="sidenav-foot">
             <Link to="/app/plan" className="wallet-mini">
