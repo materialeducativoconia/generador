@@ -4,6 +4,7 @@ of the tome and the downloads need a plan, and signing in with Google carries th
 import json
 
 from app.llm import UpstreamError
+from app.plans import FREE_PREVIEWS_PER_IP
 from app.research import Photo
 from tests.db.conftest import subscribe
 from tests.db.test_covers import FakeStorage
@@ -63,7 +64,7 @@ async def test_a_visitor_gets_outline_cover_and_a_sample_free_and_nothing_more(r
 
 async def test_free_previews_are_capped_per_visitor(raw_db, google_user, client, key):
     ip = "198.51.100.23"  # what Supabase Auth saw; each request below forges another X-Forwarded-For
-    for n in range(3):
+    for n in range(FREE_PREVIEWS_PER_IP + 1):
         anon = await google_user(anonymous=True)
         await raw_db.execute("insert into auth.sessions (id, user_id, created_at, updated_at, ip)"
                              " values (gen_random_uuid(), $1, now(), now(), $2::inet)", anon, ip)
