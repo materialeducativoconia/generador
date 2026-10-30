@@ -12,6 +12,7 @@ from uuid6 import uuid7
 from app import credits
 from app.api.deps import current_user_id
 from app.errors import ApiError
+from app.plans import PAID
 
 router = APIRouter()
 log = logging.getLogger("api")
@@ -45,7 +46,7 @@ async def get_me(request: Request, user_id: UserId) -> dict:
         acc = await credits.account(conn, user_id)
         wallet = await credits.balance(conn, acc.org_id)
         org = (await conn.execute(text(
-            """select o.name, o.logo_key, m.role from public.organizations o
+            """select o.name, o.logo_key, o.free_preview_at, m.role from public.organizations o
                  join public.memberships m on m.org_id = o.id and m.user_id = :u where o.id = :o"""),
             {"u": user_id, "o": acc.org_id})).mappings().one()
     plan = acc.plan
@@ -67,6 +68,7 @@ async def get_me(request: Request, user_id: UserId) -> dict:
                  "print_edition": plan.print_edition, "styles": plan.styles, "identities": plan.identities,
                  "max_pages": plan.max_pages, "watermark": plan.watermark, "commercial": plan.commercial},
         "credits": wallet["total"],
+        "free_preview": acc.plan_key not in PAID and org["free_preview_at"] is None,  # the next tome is free
         "quota": {
             "daily_lessons": row["daily_lesson_quota"],
             "used_today": used,

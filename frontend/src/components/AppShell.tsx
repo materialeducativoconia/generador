@@ -49,8 +49,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="sidenav-foot">
             <div className="wallet-mini">
               <strong className="small">Vista previa</strong>
-              <button className="primary small-cta" onClick={() => void saveWithGoogle(pathname)}>Descargar</button>
-              <span className="muted">Ingresa para descargar</span>
+              <button className="link-button small" onClick={() => void saveWithGoogle(pathname)}>Ingresa para descargar</button>
             </div>
           </div>
         )}

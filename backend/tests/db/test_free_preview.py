@@ -25,7 +25,7 @@ async def test_a_visitor_gets_outline_cover_and_a_sample_free_and_nothing_more(r
     anon = await google_user(anonymous=True)
     h = visitor(key, anon, ip="203.0.113.10")
     me = (await client.get("/api/me", headers=h)).json()
-    assert me["anonymous"] is True and me["credits"] == 0
+    assert me["anonymous"] is True and me["credits"] == 0 and me["free_preview"] is True
 
     created = await client.post("/api/series", json={**NEW_TOME, "section_count": 3, "page_count": 9}, headers=h)
     assert created.status_code == 202
@@ -48,6 +48,7 @@ async def test_a_visitor_gets_outline_cover_and_a_sample_free_and_nothing_more(r
 
     again = await client.post("/api/series", json=NEW_TOME, headers=h)
     assert again.status_code == 402  # one free preview; after that, credits
+    assert (await client.get("/api/me", headers=h)).json()["free_preview"] is False
     rest = await client.post(f"/api/series/{sid}/lessons/generate", json={}, headers=h)
     assert rest.status_code == 402
     checkout = await client.post("/api/billing/checkout", json={"plan": "docente"}, headers=h)

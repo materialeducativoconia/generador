@@ -64,7 +64,7 @@ function PreviewBanner({ series: s }: { series: Series }) {
   const writing = first && ['queued', 'generating'].includes(first.status)
   return (
     <>
-      {me.plan.key === 'prueba' && (
+      {me.plan.key === 'prueba' && first?.sample && first.content_json && (  // once there is something to download
         <section className="panel preview-banner">
           <strong>Vista previa</strong>
           <div className="preview-cta">

@@ -35,7 +35,8 @@ export function Studio() {
   // the sections share them, so a section never brings pages of its own.
   const [sections, setSections] = useState<number | null>(null)
   const [pages, setPages] = useState<number | null>(null)
-  const affordable = me ? Math.min(me.plan.max_pages, Math.max(0, me.credits - 5)) : Infinity
+  // The free preview (outline, cover and a sample) needs no credits; after it, the outline and cover take 5.
+  const affordable = !me ? Infinity : me.free_preview ? me.plan.max_pages : Math.min(me.plan.max_pages, Math.max(0, me.credits - 5))
   const sized = sections !== null && pages !== null
   const [quoting, setQuoting] = useState(false)  // the cost window, shown before anything is created
   const [style, setStyle] = useState('auto')
@@ -154,6 +155,10 @@ export function Studio() {
         {quoting && (
           <CostDialog sections={sections} pages={pages} pending={create.isPending}
                       onConfirm={() => create.mutate()} onCancel={() => setQuoting(false)} />
+        )}
+        {me && affordable < 1 && (
+          <p className="notice small composer-hint">Ya usaste tu vista previa gratis y no tienes créditos.{' '}
+            <Link to="/app/plan">Elige un plan</Link> para crear tu material.</p>
         )}
         {request.trim().length >= 3 && !sized && <p className="muted small composer-hint">Elige cuántas páginas de contenido y en cuántas secciones repartirlas. La portada, el índice y el solucionario no cuentan.</p>}
         {create.error && <p className="error" role="alert">{errorText(create.error, 'No pudimos crear el tomo.')}</p>}
@@ -335,8 +340,11 @@ function CostDialog({ sections, pages, pending, onConfirm, onCancel }: {
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="cost-title" onClick={(e) => e.stopPropagation()}>
-        <h2 id="cost-title">Créditos de este tomo</h2>
-        {!q ? <div className="skeleton" /> : (
+        <h2 id="cost-title">{me?.free_preview ? 'Vista previa gratis' : 'Créditos de este tomo'}</h2>
+        {!q ? <div className="skeleton" /> : me?.free_preview ? (
+          <p className="muted">Te mostramos el índice, la portada y una muestra de 2 páginas, sin costo. Para generar el tomo
+            completo y descargarlo, elige un plan.</p>
+        ) : (
           <>
             <p className="muted small">
               {q.pages} {q.pages === 1 ? 'página' : 'páginas'} de contenido en {q.sections} {q.sections === 1 ? 'sección' : 'secciones'} · más portada{q.sections > 1 ? ', índice' : ''} y solucionario sin costo
@@ -357,7 +365,7 @@ function CostDialog({ sections, pages, pending, onConfirm, onCancel }: {
         )}
         <div className="modal-actions">
           <button className="ghost" onClick={onCancel} disabled={pending}>Cancelar</button>
-          <button ref={confirm} className="primary" onClick={onConfirm} disabled={!q || pending || q.balance < 5}>{pending ? 'Creando…' : 'Crear el esquema'}</button>
+          <button ref={confirm} className="primary" onClick={onConfirm} disabled={!q || pending || (!me?.free_preview && q.balance < 5)}>{pending ? 'Creando…' : 'Crear el esquema'}</button>
         </div>
       </div>
     </div>
