@@ -98,6 +98,7 @@ class FakeFinder:
 
 
 async def test_the_preview_pictures_cost_nothing(raw_db, google_user, client, key, engine):
+    await raw_db.execute("delete from public.assets where style_key = 'free'")  # an earlier run fills the library
     anon = await google_user(anonymous=True)
     h = visitor(key, anon, ip="203.0.113.61")
     sid = (await client.post("/api/series", json={**NEW_TOME, "section_count": 1, "page_count": 2},
