@@ -68,7 +68,7 @@ export function LandingComposer({ onStart }: { onStart: (busy: boolean) => void 
           </select>
         </label>
         <button className="primary landing-go" type="submit" disabled={!ready || busy}>
-          {busy ? 'Creando…' : 'Crear vista previa gratis'}
+          {busy ? 'Generando…' : 'Generar'}
         </button>
       </div>
       {SITE_KEY && <Turnstile siteKey={SITE_KEY} onToken={setCaptcha} />}
