@@ -7,7 +7,7 @@ import { TOPICS, topicHref, type Topic } from '../src/lib/topics.ts'
 const SITE = (process.env.SITE_URL
   ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : 'http://localhost:5173'))
   .replace(/\/$/, '')
-const NAME = 'Material Educativo IA'
+const NAME = 'Jelyx Docs'
 const DIST = new URL('../dist/', import.meta.url)
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
@@ -22,6 +22,7 @@ function head(title: string, description: string, path: string, extra = '') {
 <meta name="description" content="${esc(description)}">
 <link rel="canonical" href="${url}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="${NAME}">
 <meta property="og:locale" content="es_MX">

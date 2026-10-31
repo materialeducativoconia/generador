@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 import httpx
 
-USER_AGENT = "MaterialEducativoIA/1.0 (+https://github.com/materialeducativoconia)"
+USER_AGENT = "JelyxDocs/1.0 (+https://jelyx.app)"
 # Open Library matches these against every field, so "book cover" pulls in unrelated books.
 NOISE = {"cover", "covers", "book", "books", "libro", "libros", "portada", "portadas", "illustration",
          "ilustracion", "flat", "vector", "style", "estilo"}

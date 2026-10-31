@@ -75,7 +75,7 @@ function Steps({ me }: { me: Me }) {
   const ideas = (subjects.length ? subjects : ['Lectoescritura', 'Matemáticas', 'Ciencias']).slice(0, 3)
   const steps = [
     {
-      title: '¿Cómo usarás Material Educativo IA?',
+      title: '¿Cómo usarás Jelyx Docs?',
       body: (
         <div className="choice-grid">
           {USES.map(([key, label, hint]) => (
@@ -153,7 +153,7 @@ function Steps({ me }: { me: Me }) {
   return (
     <main className="onboarding">
       <div className="onb-top">
-        <span className="brand"><Logo /><span>Material Educativo IA</span></span>
+        <span className="brand"><Logo /><span>Jelyx Docs</span></span>
         <button type="button" className="ghost small" disabled={finish.isPending} onClick={() => void go('/app', true)}>Omitir</button>
       </div>
       <ol className="onb-dots" aria-label={`Paso ${step + 1} de ${steps.length}`}>

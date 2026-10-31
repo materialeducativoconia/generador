@@ -40,7 +40,7 @@ class ProgramSearch:
             async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as http:
                 response = await http.post("https://openrouter.ai/api/v1/chat/completions", json=body,
                                            headers={"Authorization": f"Bearer {self.api_key}",
-                                                    "X-Title": "Material Educativo IA"})
+                                                    "X-Title": "Jelyx Docs"})
         except httpx.HTTPError as exc:
             raise UpstreamError("upstream_unavailable", "No se pudo conectar con el buscador.") from exc
         if response.status_code in (401, 402, 403):

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import httpx
 
-USER_AGENT = "MaterialEducativoIA/1.0 (+https://github.com/materialeducativoconia)"
+USER_AGENT = "JelyxDocs/1.0 (+https://jelyx.app)"
 # Printable and redistributable without asking: public domain, CC0, CC BY, CC BY-SA. No NC/ND.
 FREE_LICENSE = re.compile(r"^(cc0|pd|public domain|cc-by(-sa)?-\d)", re.I)
 

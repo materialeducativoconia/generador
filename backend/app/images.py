@@ -32,7 +32,7 @@ class OpenRouterImages:
         try:
             async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as http:
                 response = await http.post("https://openrouter.ai/api/v1/images", json=body, headers={
-                    "Authorization": f"Bearer {self.api_key}", "X-Title": "Material Educativo IA"})
+                    "Authorization": f"Bearer {self.api_key}", "X-Title": "Jelyx Docs"})
         except httpx.TimeoutException as exc:
             raise UpstreamError("timeout", "OpenRouter no respondió a tiempo.") from exc
         except httpx.HTTPError as exc:

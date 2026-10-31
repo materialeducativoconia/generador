@@ -22,11 +22,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         <button className="icon menu" aria-label="Abrir menú" aria-expanded={open} onClick={() => setOpen(!open)}>
           <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
         </button>
-        <Link to="/app" className="brand"><Logo /><span>Material Educativo IA</span></Link>
+        <Link to="/app" className="brand"><Logo /><span>Jelyx Docs</span></Link>
         {me && !me.anonymous && <Link to="/app/plan" className="quota"><span className="quota-dot" />{me.credits}</Link>}
       </header>
       <aside className="sidenav" aria-label="Navegación" onClick={(e) => { if ((e.target as HTMLElement).closest('a')) setOpen(false) }}>
-        <Link to="/app" className="brand"><Logo /><span>Material Educativo IA</span></Link>
+        <Link to="/app" className="brand"><Logo /><span>Jelyx Docs</span></Link>
         <nav>
           {nav.map(([to, label, icon]) => (
             <NavLink key={to} to={to} end={to === '/app'} className="nav-item">
@@ -69,10 +69,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 export function Logo() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="3" y="3" width="13" height="18" rx="2.5" fill="currentColor" opacity=".18" />
-      <rect x="8" y="3" width="13" height="18" rx="2.5" fill="currentColor" />
-      <path d="M11.5 8.5h6M11.5 12h6M11.5 15.5h3.5" stroke="var(--bg)" strokeWidth="1.6" strokeLinecap="round" />
+    <svg width="22" height="22" viewBox="0 0 64 64" aria-hidden="true">
+      <rect width="64" height="64" rx="15" fill="currentColor" />
+      <path d="M40 15v20a11 11 0 0 1-22 0" fill="none" stroke="var(--bg)" strokeWidth="8.5" />
     </svg>
   )
 }

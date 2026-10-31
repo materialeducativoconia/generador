@@ -44,7 +44,7 @@ export function Welcome() {
     <main className="welcome">
       <div className="orb" aria-hidden="true" />
       {session?.user.is_anonymous && !previewing && <ReturningVisitor />}
-      <span className="brand"><Logo /><span>Material Educativo IA</span></span>
+      <span className="brand"><Logo /><span>Jelyx Docs</span></span>
       <h1 className="display">Material educativo de cualquier tema, listo para imprimir.</h1>
       <p className="lede">Describe lo que necesitas y mira gratis tu portada ilustrada, el índice y una muestra de la primera sección. Sin registrarte.</p>
       <LandingComposer onStart={setPreviewing} />
