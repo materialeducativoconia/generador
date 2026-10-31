@@ -23,8 +23,9 @@ export function Sheet({ design, position, title, blocks, assets = {}, credits = 
   const { theme, ornament, style } = themeVars(design)
   const label = theme.opener === 'blob' ? String(position) : theme.opener === 'numeral' ? String(position).padStart(2, '0') : `Sección ${position}`
   return (
-    <article className={`sheet opener-${theme.opener} ${className}`} style={style}>
+    <article className={`sheet opener-${theme.opener}${theme.kids ? ' kids' : ''} ${className}`} style={style}>
       <header className="op">
+        {theme.kids && <><i className="d1" /><i className="d2" /><i className="d3" /></>}
         {/* Static markup from lib/themes, never model output. */}
         {ornament && <svg className="orn" viewBox="0 0 24 24" aria-hidden="true" dangerouslySetInnerHTML={{ __html: ornament }} />}
         <span className="num">{label}</span>

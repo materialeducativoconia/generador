@@ -130,7 +130,7 @@ export function BlockView({ block, index }: { block: Block; index: number }) {
     case 'exercise':
       return (
         <div className="exercise">
-          <p className="q"><span className="n">{index}.</span><Inline text={block.prompt} /></p>
+          <p className="q"><span className={`n c${index % 3}`}>{index}</span><Inline text={block.prompt} /></p>
           {block.kind === 'multiple_choice' && <ul className="opts">{block.options.map((o, i) => <li key={i}><Inline text={o} /></li>)}</ul>}
           {block.kind === 'true_false' && <ul className="opts"><li>Verdadero</li><li>Falso</li></ul>}
           {block.answer && (

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
+import { saveWithGoogle } from '../auth/google'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
 import { errorText } from '../components/ErrorNote'
@@ -372,6 +373,11 @@ function OutlineEditor({ series }: { series: Series }) {
   )
   const [dirty, setDirty] = useState(false)
   const [redo, setRedo] = useState('')
+  const { data: me } = useMe()
+  const navigate = useNavigate()
+  const choosePlan = `/app/plan?tomo=${series.id}`
+  // The free preview stops at the outline and cover: the full tome comes with a plan (Google first for a visitor).
+  const needsPlan = series.preview && !!me && (me.anonymous || me.plan.key === 'prueba')
 
   const update = (i: number, patch: Partial<Draft>) => {
     setDraft((d) => d.map((x, j) => (j === i ? { ...x, ...patch } : x)))
@@ -396,6 +402,11 @@ function OutlineEditor({ series }: { series: Series }) {
 
   const approve = useMutation({
     mutationFn: async () => {
+      if (needsPlan) {
+        if (me.anonymous) await saveWithGoogle(choosePlan)
+        else navigate(choosePlan)
+        return
+      }
       if (dirty) {
         await api.patch(`/api/series/${series.id}/outline`, {
           version: series.version,

@@ -420,6 +420,58 @@ a.sec-row { transition: background-color 160ms ease; }
 .sheet.opener-badge .op .num { justify-self: start; background: var(--accent-t); color: #fff; border-radius: 999px; padding: 5px 16px; }
 .sheet.opener-bar .op { border-left: 10px solid var(--accent-t); padding: 4px 60px 4px 20px; }
 
+.sheet .exercise .n::after { content: '.'; }
+
+/* The children's layer, as tome.html.j2 prints it: colour opener with confetti, sticker callouts, numbered
+   bubbles in three colours, answer pills and pale page corners. */
+.sheet.kids { --k-soft1: color-mix(in srgb, var(--t-pop1) 10%, #fff); --k-soft2: color-mix(in srgb, var(--t-pop2) 10%, #fff); }
+.sheet.kids { background: radial-gradient(circle at calc(100% + 40px) -40px, color-mix(in srgb, var(--accent-t) 16%, #fff) 0 150px, transparent 151px),
+  radial-gradient(ellipse 210px 90px at 50px 100%, color-mix(in srgb, var(--t-pop1) 20%, #fff) 0 99%, transparent 100%), #fff; }
+.sheet.kids .op { position: relative; overflow: hidden; background: var(--accent-t); border: 0; border-radius: 34px; padding: 34px 130px 38px 38px; margin-bottom: 34px; justify-items: start; }
+.sheet.kids .sheet-title { color: #fff; font-size: 40px; line-height: 1.05; border: 0; padding: 0; position: relative; }
+.sheet.kids .op .num { position: relative; background: #fff; color: var(--accent-t); border-radius: 22px; padding: 5px 18px; font-size: 16px; letter-spacing: 0.02em; text-transform: none; transform: rotate(-3deg); margin-bottom: 8px; width: auto; height: auto; }
+.sheet.kids.opener-blob .op .num { width: 58px; height: 58px; border-radius: 50%; padding: 0; display: grid; place-items: center; font-size: 28px; transform: none; border: 5px solid var(--t-pop2); }
+.sheet.kids .op .orn { fill: #fff; width: 76px; height: 76px; top: 50%; right: 34px; margin-top: -38px; transform: rotate(8deg); }
+.sheet.kids .op i { position: absolute; border-radius: 50%; }
+.sheet.kids .op .d1 { width: 128px; height: 128px; right: -46px; bottom: -60px; background: var(--t-pop1); }
+.sheet.kids .op .d2 { width: 34px; height: 34px; right: 120px; top: -12px; background: var(--t-pop2); }
+.sheet.kids .op .d3 { width: 18px; height: 18px; right: 98px; top: 22px; border: 5px solid #fff; }
+.sheet.kids h2 { display: inline-block; font-size: 23px; padding: 0 6px; background: linear-gradient(transparent 58%, color-mix(in srgb, var(--t-pop1) 22%, #fff) 58% 92%, transparent 92%); }
+.sheet.kids h3 { color: var(--accent-t); }
+.sheet.kids ul:not(.check):not(.opts) { list-style: none; padding-left: 26px; }
+.sheet.kids ul:not(.check):not(.opts) li { position: relative; margin-bottom: 4px; }
+.sheet.kids ul:not(.check):not(.opts) li::before { content: ''; position: absolute; left: -22px; top: 0.55em; width: 11px; height: 11px; border-radius: 50%; background: var(--accent-t); }
+.sheet.kids ul:not(.check):not(.opts) li:nth-child(3n+2)::before { background: var(--t-pop1); }
+.sheet.kids ul:not(.check):not(.opts) li:nth-child(3n)::before { background: var(--t-pop2); }
+.sheet.kids ol li::marker { color: var(--accent-t); font-weight: 800; }
+.sheet.kids .callout { position: relative; background: var(--t-soft); border: 3px solid var(--accent-t); border-radius: 22px; padding: 24px 22px 16px; margin: 30px 0 20px; }
+.sheet.kids .callout.key_idea .callout-t { color: #fff; }
+.sheet.kids .callout-t { position: absolute; top: -14px; left: 18px; background: var(--accent-t); color: #fff; border-radius: 14px; padding: 4px 14px; letter-spacing: 0.04em; }
+.sheet.kids .callout.tip, .sheet.kids .callout.fun_fact { border-color: var(--t-pop1); background: var(--k-soft1); }
+.sheet.kids .callout.tip .callout-t, .sheet.kids .callout.fun_fact .callout-t { background: var(--t-pop1); color: #fff; }
+.sheet.kids .callout.warning { border-color: var(--t-pop2); background: var(--k-soft2); }
+.sheet.kids .callout.warning .callout-t { background: var(--t-pop2); color: #fff; }
+.sheet.kids .exercise .n::after { content: none; }
+.sheet.kids .exercise .q { display: flex; gap: 10px; align-items: flex-start; }
+.sheet.kids .exercise .n { flex: none; min-width: 0; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-t); color: #fff; font-size: 16px; margin-top: -3px; }
+.sheet.kids .exercise .n.c1 { background: var(--t-pop1); } .sheet.kids .exercise .n.c2 { background: var(--t-pop2); }
+.sheet.kids .opts { padding-left: 42px; margin-top: 8px; }
+.sheet.kids .opts li { display: inline-block; border: 2px solid #e2ded9; border-radius: 18px; padding: 5px 18px 5px 12px; margin: 0 8px 8px 0; }
+.sheet.kids .opts li::before { content: ''; display: inline-block; width: 13px; height: 13px; border: 2px solid var(--accent-t); border-radius: 50%; margin-right: 8px; vertical-align: -1px; }
+.sheet.kids .line { border-bottom: 2px dashed #b9b4ae; height: 40px; }
+.sheet.kids .activity { border: 0; background: var(--k-soft1); border-radius: 26px; padding: 20px 24px; }
+.sheet.kids .activity-h { align-items: center; }
+.sheet.kids .activity-h strong::before { content: '★'; display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--t-pop1); color: #fff; font-size: 14px; margin-right: 10px; }
+.sheet.kids .activity-h span { background: #fff; border-radius: 12px; padding: 2px 10px; }
+.sheet.kids .activity ol li::marker { color: var(--t-pop1); }
+.sheet.kids table { border-collapse: separate; border-spacing: 0; border: 3px solid var(--accent-t); border-radius: 18px; }
+.sheet.kids th:first-child { border-top-left-radius: 14px; } .sheet.kids th:last-child { border-top-right-radius: 14px; }
+.sheet.kids th { background: var(--accent-t); color: #fff; border: 0; }
+.sheet.kids td { border: 0; border-top: 1px solid #e2ded9; background: #fff; }
+.sheet.kids tr:nth-child(odd) td { background: var(--t-soft); }
+.sheet.kids caption { color: var(--accent-t); }
+.sheet.kids .example { border-left: 0; background: var(--k-soft2); border-radius: 18px; padding: 14px 18px; }
+
 /* Section previews: the real page, scaled down. */
 .thumbs { list-style: none; padding: 0; margin: 20px 0 24px; display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 24px 18px; }
 .thumb-item { animation: enter 320ms var(--ease-out) both; animation-delay: calc(min(var(--i, 0), 8) * 40ms); }
@@ -750,3 +802,17 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .turnstile { padding: 0 14px 12px; }
 .blurred-pages { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .blurred-pages .thumb { filter: blur(5px); user-select: none; pointer-events: none; }
+
+/* The landing's carousel of example covers: two copies of the row, the track slides one copy's width. */
+.showcase { width: 100vw; margin: 28px calc(50% - 50vw) 8px; overflow: hidden;
+            mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+.showcase-track { display: flex; gap: 20px; width: max-content; padding: 12px 0 20px; animation: showcase 60s linear infinite; }
+.showcase:hover .showcase-track { animation-play-state: paused; }
+.showcase img { width: 200px; height: auto; aspect-ratio: 210 / 297; object-fit: cover; border-radius: 6px 12px 12px 6px; background: var(--surface-2, #f1efec);
+                box-shadow: inset 6px 0 8px -6px rgb(0 0 0 / 0.25), 0 1px 2px rgb(12 10 9 / 0.08), 0 16px 30px -16px rgb(12 10 9 / 0.45); }
+@keyframes showcase { from { transform: translateX(calc(-50% - 10px)); } to { transform: translateX(0); } }
+@media (max-width: 640px) { .showcase img { width: 150px; } .showcase-track { gap: 14px; } }
+@media (prefers-reduced-motion: reduce) {
+  .showcase { overflow-x: auto; mask-image: none; }
+  .showcase-track { animation: none; padding-inline: 16px; }
+}

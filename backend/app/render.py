@@ -12,12 +12,13 @@ import textwrap
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from pathlib import Path
+from urllib.parse import quote
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
 from app.printing import BLEED_MM, PAPERS, SPINE_TEXT_PAGES, is_color, page_geometry, spine_mm
-from app.themes import DEFAULT_PALETTE, FRAMES, ORNAMENTS, THEMES, mix, theme_for
+from app.themes import DEFAULT_PALETTE, FRAMES, ORNAMENTS, THEMES, mix, pops, theme_for
 from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Design, Keyboard, LetterGrid, SectionContent, Tracing
 from app.diagrams import render_diagram
 from app.identity import mark_svg
@@ -177,8 +178,24 @@ def theme_colors(design: Design | None, palette: list[str] | None = None):
     """The theme and its colours: the web preview's diagrams use these too."""
     th = theme_for(design)
     bg, ink, accent = (design.palette if design else None) or palette or DEFAULT_PALETTE
+    pop1, pop2 = pops(accent)
     return th, {"ink": ink, "accent": accent, "tint": mix(bg, accent, 0.28), "soft": mix("#FFFFFF", accent, 0.09),
-                "line": mix("#FFFFFF", ink, 0.18), "muted": mix(ink, "#FFFFFF", 0.38)}
+                "line": mix("#FFFFFF", ink, 0.18), "muted": mix(ink, "#FFFFFF", 0.38),
+                "pop1": pop1, "pop2": pop2, "soft1": mix("#FFFFFF", pop1, 0.1), "soft2": mix("#FFFFFF", pop2, 0.1),
+                "pale": mix("#FFFFFF", accent, 0.16), "pale1": mix("#FFFFFF", pop1, 0.2), "pale2": mix("#FFFFFF", pop2, 0.22)}
+
+
+def confetti(c: dict) -> tuple[str, str]:
+    """The children's pages' corner decoration (top right, bottom left), in pale tints so it costs little ink and
+    never fights the text. Data URIs for @page backgrounds."""
+    top = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="168" cy="22" r="74" fill="{c["pale"]}"/>'
+           f'<circle cx="92" cy="40" r="15" fill="{c["pale1"]}"/><circle cx="150" cy="118" r="11" fill="none" '
+           f'stroke="{c["pale2"]}" stroke-width="6"/><circle cx="58" cy="12" r="6" fill="{c["pale2"]}"/>'
+           f'<path d="M104 92q8-10 16 0t16 0" fill="none" stroke="{c["pale1"]}" stroke-width="6" stroke-linecap="round"/></svg>')
+    bottom = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120"><path d="M0 120V52c30-16 52 10 80 6s46-40 '
+              f'80-30 36 52 40 92z" fill="{c["pale1"]}"/><circle cx="150" cy="40" r="9" fill="{c["pale2"]}"/>'
+              f'<circle cx="24" cy="26" r="7" fill="{c["pale"]}"/></svg>')
+    return tuple("data:image/svg+xml;utf8," + quote(svg) for svg in (top, bottom))
 
 
 def _look(tome: Tome) -> dict:
@@ -190,7 +207,7 @@ def _look(tome: Tome) -> dict:
     brand = tome.brand
     seal = Markup(mark_svg(brand, colors["accent"], th.head)) if brand else ""
     imprint = brand.name.replace("\\", "\\\\").replace('"', '\\"') if brand else ""  # for CSS content strings
-    return {"th": th, "c": colors, "seal": seal, "imprint": imprint, "head": f'"{th.head}"', "body": f'"{th.body}"', "theme_fonts": theme_fonts,
+    return {"th": th, "c": colors, "seal": seal, "confetti": confetti(colors) if th.kids else None, "imprint": imprint, "head": f'"{th.head}"', "body": f'"{th.body}"', "theme_fonts": theme_fonts,
             "fonts": (ASSETS / "fonts").as_uri(), "frame": {"border": border, "radius": radius,
                                                          "pad": 0 if border == "none" else 4}}
 

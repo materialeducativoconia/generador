@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
-import { useSearchParams } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { AppShell } from '../components/AppShell'
 import { errorText } from '../components/ErrorNote'
 import { api } from '../lib/apiClient'
@@ -21,6 +21,7 @@ export function Plan() {
   const qc = useQueryClient()
   const [params, setParams] = useSearchParams()
   const paid = params.get('pago') === 'ok'
+  const tome = useWaitingTome(params.get('tomo'))
   useEffect(() => {  // Stripe's webhook may land a moment after the redirect
     if (!paid) return
     const t = setInterval(() => { void qc.invalidateQueries({ queryKey: ['billing'] }); void qc.invalidateQueries({ queryKey: ['me'] }) }, 2500)
@@ -57,7 +58,9 @@ export function Plan() {
         <p className="notice">Para suscribirte, entra con Google; tu vista previa se guarda en tu cuenta.{' '}
           <button className="link-button" onClick={() => void saveWithGoogle('/app/plan')}>Continuar con Google</button></p>
       )}
+      {tome && !paid && b.plan === 'prueba' && <p className="notice">Elige tu plan para generar tu tomo completo, editarlo y descargarlo.</p>}
       {paid && <p className="notice" role="status">¡Gracias! Estamos acreditando tu pago…</p>}
+      {tome && b.plan !== 'prueba' && <p className="notice"><Link to={`/app/tomos/${tome}`} className="primary">Volver a tu tomo</Link></p>}
       {!b.enabled && <p className="notice">Los pagos se activan muy pronto.</p>}
       {go.error && <p className="error" role="alert">{errorText(go.error, 'No pudimos abrir el pago.')}</p>}
 
@@ -126,4 +129,16 @@ function Features({ plan: p }: { plan: Billing['plans'][number] }) {
       {rows.map(([on, label]) => <li key={label} className={on ? '' : 'off'}>{on ? '✓' : '—'} {label}</li>)}
     </ul>
   )
+}
+
+const TOME_KEY = 'plan:tomo'
+
+/** The tome that sent the user here to pick a plan; remembered across Stripe's checkout, which returns without it. */
+function useWaitingTome(fromUrl: string | null) {
+  try {
+    if (fromUrl) localStorage.setItem(TOME_KEY, fromUrl)
+    return fromUrl ?? localStorage.getItem(TOME_KEY)
+  } catch {
+    return fromUrl
+  }
 }

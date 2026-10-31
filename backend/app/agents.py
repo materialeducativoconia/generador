@@ -419,10 +419,20 @@ tomos.""" + """
 Si el usuario tiene estilos propios en su biblioteca (sacados de sus referencias), prefiere uno cuando encaje con
 el tipo de tomo y su público; si ninguno encaja, deja style_id en null y elige tema y paleta.
 
+Si el público es infantil (preescolar o primaria) el tomo compite con Larousse infantil, Editorial SM,
+Flamboyant y Kalandraka: elige siempre juego, cuaderno o método (traen la capa infantil: aperturas a todo color
+con confeti, avisos tipo sticker, ejercicios numerados en burbujas de colores), un acento vivo y alegre que aguante
+texto blanco encima, y una ilustración con oficio de álbum ilustrado (gouache, recorte, crayón, acuarela o
+plastilina), nunca vectorial plano genérico ni infografía.
+
 La paleta se imprime: fondo casi blanco con un matiz, tinta con contraste alto sobre ese fondo, y un acento
 con carácter sacado del tema del tomo (verde selva, azul océano, mostaza, coral, turquesa, ciruela, rojo
 tomate…). Evita el violeta y el naranja genéricos salvo que el tema los pida, y no repitas el acento de sus
 últimos tomos."""
+
+
+def _for_children(audience: str) -> bool:
+    return any(word in audience.lower() for word in ("preescolar", "primaria", "infantil", "niñ"))
 
 
 async def designer(llm: LLM, brief: Brief, title: str, genre: str, sections: list[str],
@@ -440,6 +450,8 @@ async def designer(llm: LLM, brief: Brief, title: str, genre: str, sections: lis
     ]
     result = await _json_call(llm, messages, Design, temperature=0.9, max_tokens=700)
     design = result.value
+    if not design.style_id and _for_children(brief.audience) and not THEMES[design.theme].kids:
+        design.theme = "juego"  # a children's tome always gets the children's layer
     if not design.style_id and design.illustration:  # the curated style's prompt travels with the tome
         design.art_style = ART_STYLES[design.illustration][1]
     return result

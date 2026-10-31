@@ -2,13 +2,13 @@ import { useEffect } from 'react'
 import type { Design } from './types'
 
 /** Mirrors backend/app/themes.py so the web preview matches the PDF. */
-type Theme = { head: string; headWeight: number; body: string; opener: string; radius: number; fonts: string }
+type Theme = { head: string; headWeight: number; body: string; opener: string; radius: number; fonts: string; kids?: boolean }
 
 export const THEMES: Record<Design['theme'], Theme> = {
-  juego: { head: 'Fredoka', headWeight: 600, body: 'Andika', opener: 'blob', radius: 22, fonts: 'Fredoka:wght@400..700' },
-  cuaderno: { head: 'Patrick Hand', headWeight: 400, body: 'Andika', opener: 'tape', radius: 6, fonts: 'Patrick+Hand' },
+  juego: { head: 'Fredoka', headWeight: 600, body: 'Andika', opener: 'blob', radius: 22, fonts: 'Fredoka:wght@400..700', kids: true },
+  cuaderno: { head: 'Patrick Hand', headWeight: 400, body: 'Andika', opener: 'tape', radius: 6, fonts: 'Patrick+Hand', kids: true },
   editorial: { head: 'Fraunces', headWeight: 700, body: 'Nunito', opener: 'numeral', radius: 6, fonts: 'Fraunces:opsz,wght@9..144,300..800&family=Nunito:wght@400..900' },
-  metodo: { head: 'Baloo 2', headWeight: 800, body: 'Nunito', opener: 'badge', radius: 14, fonts: 'Baloo+2:wght@400..800&family=Nunito:wght@400..900' },
+  metodo: { head: 'Baloo 2', headWeight: 800, body: 'Nunito', opener: 'badge', radius: 14, fonts: 'Baloo+2:wght@400..800&family=Nunito:wght@400..900', kids: true },
   ciencia: { head: 'Lexend', headWeight: 700, body: 'Lexend', opener: 'bar', radius: 10, fonts: 'Lexend:wght@300..800' },
   clasico: { head: 'Nunito', headWeight: 900, body: 'Andika', opener: 'plain', radius: 14, fonts: 'Nunito:wght@400..900' },
 }
@@ -46,18 +46,29 @@ function mix(a: string, b: string, t: number) {
   return '#' + [0, 1, 2].map((i) => Math.round(ch(a, i) + (ch(b, i) - ch(a, i)) * t).toString(16).padStart(2, '0')).join('')
 }
 
+/** The accent's two playful companions, as backend/app/themes.py pops(): its hue turned round the wheel. */
+function pops(accent: string): [string, string] {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(accent.slice(i, i + 2), 16) / 255)
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min
+  let h = 0
+  if (d) h = (max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4) / 6
+  const hsl = (turn: number) => `hsl(${Math.round((((h + turn) % 1) + 1) % 1 * 360)} 72% 50%)`
+  return [hsl(0.36), hsl(0.58)]
+}
+
 /** CSS variables for a themed sheet, computed like the PDF's tints. */
 export function themeVars(design: Design | null | undefined) {
   const d = design ?? DEFAULT
   const t = themeOf(d)
   const [bg, ink, accent] = d.palette
+  const [pop1, pop2] = pops(accent)
   return {
     theme: t,
     ornament: ORNAMENTS[d.ornament],
     style: {
       '--t-head': `'${t.head}', 'Geist', sans-serif`, '--t-body': `'${t.body}', 'Andika', sans-serif`, '--t-head-w': t.headWeight,
       '--t-ink': ink, '--t-accent': accent, '--t-tint': mix(bg, accent, 0.28), '--t-soft': mix('#ffffff', accent, 0.09),
-      '--t-radius': `${t.radius}px`,
+      '--t-radius': `${t.radius}px`, '--t-pop1': pop1, '--t-pop2': pop2,
       '--t-frame': d.frame && d.frame !== 'none' ? `${FRAMES[d.frame]} ${ink}` : 'none',
     } as React.CSSProperties,
   }

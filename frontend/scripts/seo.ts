@@ -61,7 +61,7 @@ function topicPage(t: Topic) {
 ${HEADER}<main>
 <nav class="crumbs" aria-label="Ruta"><a href="/material-educativo">Material educativo</a> › ${esc(t.name)}</nav>
 <section class="hero"><p class="eyebrow">${esc(t.name)} · ${esc(t.audience)}</p><h1>${esc(t.title)}</h1><p class="lede">${esc(t.intro)}</p>
-<a class="btn" href="${esc(studio(t))}">Ver mi vista previa</a><p class="muted small">Portada ilustrada, índice y una muestra, sin registrarte.</p></section>
+<a class="btn" href="${esc(studio(t))}">Ver mi vista previa</a><p class="muted small">Portada ilustrada e índice, sin registrarte.</p></section>
 <section class="two"><div class="card"><h2>Ejemplo de índice</h2><p class="muted small">«${esc(t.request)}»</p><ol>${t.outline.map((o) => `<li>${esc(o)}</li>`).join('')}</ol></div>
 <div class="card"><h2>Qué incluye</h2><ul>${t.includes.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
 <p class="muted small">Tú describes el tema y el nivel; un equipo de agentes planifica, investiga, escribe, ilustra y maqueta. Revisas y editas el texto gratis antes de descargar en PDF${' '}o Word.</p></div></section>

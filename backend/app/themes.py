@@ -4,6 +4,7 @@ Every font here is bundled (OFL) under assets/fonts for WeasyPrint and is also o
 so the web preview (frontend/src/lib/themes.ts) matches the PDF.
 """
 
+import colorsys
 from dataclasses import dataclass, replace
 
 
@@ -20,17 +21,18 @@ class Theme:
     opener: str  # section opener style, see the template
     radius_mm: float
     title_case: str = "none"  # text-transform for section titles
+    kids: bool = False  # the children's layer: colour openers, sticker callouts, numbered bubbles, page confetti
 
 
 THEMES: dict[str, Theme] = {
     "juego": Theme("Juego", "preescolar y primeros grados: formas redondas, grande y alegre",
-                   "Fredoka", "Fredoka-Variable.ttf", 600, "Andika", "Andika-Regular.ttf", 13.5, "blob", 6),
+                   "Fredoka", "Fredoka-Variable.ttf", 600, "Andika", "Andika-Regular.ttf", 13.5, "blob", 6, kids=True),
     "cuaderno": Theme("Cuaderno", "fichas y cuadernillos de práctica: escrito a mano, cercano, como un cuaderno escolar",
-                      "Patrick Hand", "PatrickHand-Regular.ttf", 400, "Andika", "Andika-Regular.ttf", 12.5, "tape", 2),
+                      "Patrick Hand", "PatrickHand-Regular.ttf", 400, "Andika", "Andika-Regular.ttf", 12.5, "tape", 2, kids=True),
     "editorial": Theme("Editorial", "adultos, secundaria o temas serios: tipografía con serifa, elegante y sobria",
                        "Fraunces", "Fraunces-Variable.ttf", 700, "Nunito", "Nunito-Variable.ttf", 11, "numeral", 1.5),
     "metodo": Theme("Método", "métodos paso a paso (música, deportes, manualidades): lecciones con insignia",
-                    "Baloo 2", "Baloo2-Variable.ttf", 800, "Nunito", "Nunito-Variable.ttf", 11.5, "badge", 4),
+                    "Baloo 2", "Baloo2-Variable.ttf", 800, "Nunito", "Nunito-Variable.ttf", 11.5, "badge", 4, kids=True),
     "ciencia": Theme("Ciencia", "ciencias, matemáticas, tecnología: limpio, moderno, muy legible",
                      "Lexend", "Lexend-Variable.ttf", 700, "Lexend", "Lexend-Variable.ttf", 10.5, "bar", 3),
     "clasico": Theme("Clásico", "cuando ninguno encaja: neutro y claro",
@@ -106,3 +108,15 @@ def mix(hex_a: str, hex_b: str, t: float) -> str:
     a = [int(hex_a[i:i + 2], 16) for i in (1, 3, 5)]
     b = [int(hex_b[i:i + 2], 16) for i in (1, 3, 5)]
     return "#" + "".join(f"{round(x + (y - x) * t):02X}" for x, y in zip(a, b))
+
+
+def pops(accent: str) -> tuple[str, str]:
+    """Two playful companions for the accent (children's books never live on one colour): the accent's hue
+    turned a third and a half of the way round the wheel, bright but dark enough for white text."""
+    r, g, b = (int(accent[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    h, _, _ = colorsys.rgb_to_hls(r, g, b)
+    out = []
+    for turn in (0.36, 0.58):
+        rr, gg, bb = colorsys.hls_to_rgb((h + turn) % 1, 0.5, 0.72)
+        out.append("#" + "".join(f"{round(x * 255):02X}" for x in (rr, gg, bb)))
+    return out[0], out[1]

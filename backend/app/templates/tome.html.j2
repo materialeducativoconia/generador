@@ -186,9 +186,83 @@
   #solucionario h2 { font: 900 22pt {{ head|safe }}; margin: 0 0 6mm; }
   #solucionario h3 { font: 800 12pt {{ head|safe }}; margin: 5mm 0 2mm; }
   #solucionario p { font-size: 10.5pt; }
+  {% if th.kids %}
+  /* The children's layer (benchmark: SM, Larousse infantil, Flamboyant, Kalandraka): a colour opener with
+     confetti, sticker callouts, numbered bubbles in three colours, answer pills and pale page corners. */
+  @page { background: url("{{ confetti[0] }}") no-repeat right -{{ geo.outer - pad }}mm top -{{ geo.top - pad }}mm / 62mm 62mm,
+                      url("{{ confetti[1] }}") no-repeat left -{{ geo.outer - pad }}mm bottom -{{ geo.bottom - pad }}mm / 58mm 35mm;
+          @bottom-center { content: counter(page); font: 800 10pt {{ head|safe }}; color: #fff; background: {{ c.accent }};
+                           width: 9mm; height: 9mm; border-radius: 4.5mm; text-align: center; vertical-align: middle; margin-top: 4mm; } }
+  @page cover { background: none; }
+  .kids .op { background: var(--accent); border-radius: 9mm; padding: 9mm 34mm 10mm 10mm; margin: 0 0 9mm; overflow: hidden; border: 0; }
+  .kids .op h2.title { color: #fff; font-size: 30pt; line-height: 1.05; border: 0; padding: 0; position: relative; }
+  .kids .op .num { display: inline-block; width: auto; height: auto; background: #fff; color: var(--accent); border-radius: 6mm;
+                   padding: 1.4mm 5mm; font: {{ th.head_weight }} 12pt {{ head|safe }}; letter-spacing: .02em; text-transform: none;
+                   transform: rotate(-3deg); margin: 0 0 3.5mm; position: relative; }
+  .kids.opener-blob .op .num { width: 15mm; height: 15mm; border-radius: 7.5mm; padding: 0; font-size: 22pt; line-height: 15mm;
+                               text-align: center; transform: none; border: 1.2mm solid {{ c.pop2 }}; line-height: 12.6mm; }
+  .kids .op .orn { top: 50%; right: 9mm; width: 20mm; height: 20mm; margin-top: -10mm; transform: rotate(8deg); }
+  .kids .op i { position: absolute; display: block; border-radius: 50%; }
+  .kids .op i.d1 { width: 34mm; height: 34mm; right: -12mm; bottom: -16mm; background: {{ c.pop1 }}; }
+  .kids .op i.d2 { width: 9mm; height: 9mm; right: 32mm; top: -3mm; background: {{ c.pop2 }}; }
+  .kids .op i.d3 { width: 5mm; height: 5mm; right: 26mm; top: 6mm; border: 1.3mm solid #fff; }
+
+  .kids h2.b { display: inline-block; font-size: 17pt; margin: 8mm 0 3mm; padding: 0 1.5mm;
+               background: linear-gradient(transparent 58%, {{ c.pale1 }} 58%, {{ c.pale1 }} 92%, transparent 92%); }
+  .kids h3.b { color: var(--accent); font-size: 13.5pt; }
+  .kids h2.b.tab, .kids h3.b.tab { background-color: {{ c.pop2 }}; border-radius: 5mm; padding: 1.6mm 5mm 1.6mm 10mm; font-size: 13pt;
+                                   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M3 17.2V21h3.8L17.8 9.9l-3.7-3.7zM20.7 7a1 1 0 0 0 0-1.4l-2.3-2.3a1 1 0 0 0-1.4 0l-1.8 1.8 3.7 3.7z'/%3E%3C/svg%3E");
+                                   background-repeat: no-repeat; background-position: 3.5mm center; background-size: 4.5mm 4.5mm; }
+  .kids ul.bullet { list-style: none; padding-left: 7mm; }
+  .kids ul.bullet li { position: relative; margin-bottom: 1.2mm; }
+  .kids ul.bullet li::before { content: ""; position: absolute; left: -6mm; top: 1.8mm; width: 3mm; height: 3mm; border-radius: 1.5mm; background: var(--accent); }
+  .kids ul.bullet li:nth-child(3n+2)::before { background: {{ c.pop1 }}; }
+  .kids ul.bullet li:nth-child(3n)::before { background: {{ c.pop2 }}; }
+  .kids ol li::marker { color: var(--accent); font-family: {{ head|safe }}; font-weight: 800; }
+
+  .kids .callout { position: relative; background: var(--soft); border: .8mm solid var(--accent); border-radius: 6mm;
+                   padding: 6.5mm 6mm 4.5mm; margin: 8mm 0 5mm; }
+  .kids .callout .t { position: absolute; top: -4mm; left: 5mm; background: var(--accent); color: #fff; border-radius: 4mm;
+                      padding: 1.3mm 4mm; font-size: 9.5pt; letter-spacing: .04em; }
+  .kids .callout.tip, .kids .callout.fun_fact { border-color: {{ c.pop1 }}; background: {{ c.soft1 }}; }
+  .kids .callout.tip .t, .kids .callout.fun_fact .t { background: {{ c.pop1 }}; color: #fff; }
+  .kids .callout.warning { border-color: {{ c.pop2 }}; background: {{ c.soft2 }}; }
+  .kids .callout.warning .t { background: {{ c.pop2 }}; color: #fff; }
+
+  .kids .exercise .q { display: flex; align-items: flex-start; gap: 3mm; font-size: 1.04em; }
+  .kids .exercise .q .n { flex: none; width: 8.5mm; min-width: 0; height: 8.5mm; border-radius: 4.25mm; background: var(--accent); color: #fff;
+                          text-align: center; font-size: 12pt; line-height: 8.5mm; margin-top: -.6mm; }
+  .kids .exercise .q .n.c1 { background: {{ c.pop1 }}; } .kids .exercise .q .n.c2 { background: {{ c.pop2 }}; }
+  .kids .exercise .opts { padding-left: 11.5mm; margin-top: 2mm; }
+  .kids .exercise .opts li { display: inline-block; border: .5mm solid var(--line); border-radius: 5mm; padding: 1.6mm 5mm 1.6mm 3.5mm; margin: 0 2.5mm 2.5mm 0; }
+  .kids .exercise .opts li::before { content: ""; display: inline-block; width: 3.6mm; height: 3.6mm; border: .5mm solid var(--accent);
+                                     border-radius: 2mm; margin-right: 2mm; vertical-align: -.5mm; }
+  .kids .exercise .blank-line, .kids .lines .blank-line { margin-left: 11.5mm; border-bottom: .5mm dashed {{ c.muted }}; height: 11mm; }
+  .kids .lines .blank-line { margin-left: 0; }
+
+  .kids .activity { border: 0; background: {{ c.soft1 }}; border-radius: 7mm; padding: 5mm 6mm; }
+  .kids .activity .t { font-size: 13pt; color: var(--ink); }
+  .kids .activity .t::before { content: "★"; display: inline-block; width: 8mm; height: 8mm; border-radius: 4mm; background: {{ c.pop1 }};
+                               color: #fff; text-align: center; line-height: 8mm; font-size: 11pt; margin-right: 2.5mm; }
+  .kids .activity .t { justify-content: flex-start; align-items: center; }
+  .kids .activity .d { margin-left: auto; background: #fff; border-radius: 3mm; padding: .8mm 3mm; }
+  .kids .activity ol li::marker { color: {{ c.pop1 }}; }
+
+  .kids table { border-collapse: separate; border-spacing: 0; border: .7mm solid var(--accent); border-radius: 5mm; overflow: hidden; }
+  .kids th { background: var(--accent); color: #fff; border: 0; padding: 2.6mm 3.5mm; }
+  .kids td { border: 0; border-top: .4mm solid var(--line); padding: 2.4mm 3.5mm; }
+  .kids tr:nth-child(odd) td { background: var(--soft); }
+  .kids caption { color: var(--accent); }
+  .kids .example { border-left: 0; background: {{ c.soft2 }}; border-radius: 5mm; padding: 4mm 5mm; }
+  .kids .figure.illustration img, .kids .figure.photo img { border-radius: 7mm; border: 1mm solid {{ c.pale1 }}; }
+  .kids .toc a .n { display: inline-block; width: 7mm; height: 7mm; border-radius: 3.5mm; background: var(--accent); color: #fff;
+                    text-align: center; line-height: 7mm; margin-right: 3mm; font-size: 9.5pt; }
+  .kids .toc a:nth-child(3n+3) .n { background: {{ c.pop1 }}; } .kids .toc a:nth-child(3n+1) .n { background: {{ c.pop2 }}; }
+  .kids .toc h2 { color: var(--accent); font-size: 26pt; }
+  {% endif %}
 </style>
 </head>
-<body>
+<body{% if th.kids %} class="kids"{% endif %}>
 
 {% if print_edition %}
 <div class="title-page">
@@ -231,9 +305,11 @@
 {% endif %}
 
 {% for s in tome.sections %}
-<section class="sec opener-{{ th.opener }}" id="s{{ s.position }}">
+<section class="sec opener-{{ th.opener }}{% if th.kids %} kids{% endif %}" id="s{{ s.position }}">
   <header class="op">
-    {% if ornament %}<div class="orn"><svg width="48" height="48" viewBox="0 0 24 24" fill="{{ c.accent }}" stroke="{{ c.accent }}">{{ ornament|safe }}</svg></div>{% endif %}
+    {% if th.kids %}<i class="d1"></i><i class="d2"></i><i class="d3"></i>{% endif %}
+    {% set orn_fill = "#FFFFFF" if th.kids else c.accent %}
+    {% if ornament %}<div class="orn"><svg width="48" height="48" viewBox="0 0 24 24" fill="{{ orn_fill }}" stroke="{{ orn_fill }}">{{ ornament|safe }}</svg></div>{% endif %}
     <span class="num">{{ s.position if th.opener == "blob" else ("%02d"|format(s.position) if th.opener == "numeral" else "Sección " ~ s.position) }}</span>
     <h2 class="title" data-title="{{ s.title }}">{{ s.title }}</h2>
   </header>
@@ -264,7 +340,7 @@
     {% elif b.type == "exercise" %}
       {% set ex.n = ex.n + 1 %}
       <div class="exercise">
-        <div class="q"><span class="n">{{ ex.n }}.</span>{{ b.prompt|inline }}</div>
+        <div class="q"><span class="n c{{ ex.n % 3 }}">{{ ex.n }}{% if not th.kids %}.{% endif %}</span>{{ b.prompt|inline }}</div>
         {% if b.kind == "multiple_choice" and b.options %}
           <ul class="opts">{% for o in b.options %}<li>{{ o|inline }}</li>{% endfor %}</ul>
         {% elif b.kind == "true_false" %}
