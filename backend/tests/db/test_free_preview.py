@@ -25,7 +25,7 @@ def visitor(key, user, ip="203.0.113.7"):
     return {**bearer(key, user), "X-Forwarded-For": f"{ip}, 10.0.0.1"}
 
 
-async def test_a_visitor_gets_outline_cover_and_a_sample_free_and_nothing_more(raw_db, google_user, client, key,
+async def test_a_visitor_gets_outline_and_cover_free_and_nothing_more(raw_db, google_user, client, key,
                                                                                engine):
     anon = await google_user(anonymous=True)
     h = visitor(key, anon, ip="203.0.113.10")
@@ -41,17 +41,9 @@ async def test_a_visitor_gets_outline_cover_and_a_sample_free_and_nothing_more(r
                                  "using (org_id) where m.user_id = $1", anon) == 0
 
     await run_next(engine, ScriptedLLM(json.dumps(OUTLINE)))
-    drawing = {"id": "b9", "type": "image", "kind": "line_art", "size": "full", "subject": "Un dragón amable"}
-    llm = ScriptedLLM(json.dumps({**SECTION, "blocks": [*SECTION["blocks"], drawing]}))
-    await run_next(engine, llm)  # the sample of section 1, queued by the outline job
-
-    assert "es una muestra: escribe solo sus primeras 2 páginas" in json.dumps(llm.calls[0], ensure_ascii=False)
-    lesson = await raw_db.fetchrow("select status, sample from public.lessons where series_id = $1 and position = 1",
-                                   sid)
-    assert dict(lesson) == {"status": "generated", "sample": True}
     assert await raw_db.fetchval("select status from public.series where id = $1", sid) == "outline_ready"
     assert await raw_db.fetchval("select count(*) from public.generation_jobs where series_id = $1"
-                                 " and kind = 'illustration'", sid) == 1  # its drawings are painted right away
+                                 " and kind = 'lesson'", sid) == 0  # only the cover: the pages show blurred
 
     again = await client.post("/api/series", json=NEW_TOME, headers=h)
     assert again.status_code == 402  # one free preview; after that, credits
@@ -122,16 +114,17 @@ async def test_the_preview_pictures_cost_nothing(raw_db, google_user, client, ke
     await run_next(engine, ScriptedLLM(json.dumps({**OUTLINE, "sections": OUTLINE["sections"][:1]})), covers=True)
     paid, free, storage = FakeImages(), FakeImages(), FakeStorage()
 
-    # The cover first (the sample waits its turn): the free Illustrator paints it, marked free.
-    await raw_db.execute("update public.generation_jobs set run_after = now() + interval '1 hour'"
-                         " where series_id = $1 and kind = 'lesson'", sid)
+    # The cover: the free Illustrator paints it, marked free.
     job = await run_next(engine, ScriptedLLM(json.dumps(DESIGN), json.dumps(PLAN)), covers=True, images=paid,
                          free_images=free, storage=storage)
     assert job["kind"] == "cover"
     cover = json.loads(await raw_db.fetchval("select cover from public.series where id = $1", sid))
     assert cover["free"] is True and cover["spent_usd"] == 0 and len(free.calls) == 1
 
-    await raw_db.execute("update public.generation_jobs set run_after = now() where series_id = $1", sid)
+    # A sample of the first pages (no longer shown to visitors) still gets its pictures for free.
+    await raw_db.execute("insert into public.generation_jobs (user_id, series_id, lesson_id, kind, status, payload)"
+                         " select $1, $2, id, 'lesson', 'queued', '{\"sample_pages\": 2}' from public.lessons"
+                         " where series_id = $2 and position = 1", anon, sid)
     await run_next(engine, ScriptedLLM(json.dumps(PICTURED_SECTION)))
     finder = FakeFinder()  # the fallback when the free Illustrator cannot paint
     job = await run_next(engine, ScriptedLLM(json.dumps(ART)), images=paid, free_images=BusyIllustrator(),

@@ -23,7 +23,6 @@ from app.content import ArtPlan, Brand, Design, Outline, OutlineSection
 from app.identity import describe, guard, initials, look_key
 from app import credits
 from app.free_images import FREE_STYLE
-from app.plans import SAMPLE_PAGES
 from app.llm import LLM, UpstreamAuthError, UpstreamError
 from app.artwork import ImageRequest, plan_sheets, sheet_prompt, slice_sheet
 from app.illustrator import (ASPECT, cover_jpeg, line_art_coverage, normalize_subject, prepare_image, reference_image,
@@ -173,23 +172,7 @@ async def _outline(deps: Deps, job: dict) -> None:
         # The free preview's cover comes from the free Illustrator; the paid one is painted when the tome is bought.
         cover_job = await enqueue_cover(conn, job["user_id"], job["series_id"], free=bool(series["preview"]))
         await credits.move_charge(conn, job["id"], cover_job, "Portada")  # paid when the tome was created
-        if series["preview"]:  # the free preview shows the first pages written, at our cost
-            await _queue_sample(conn, job)
         await _succeed(conn, job)
-
-
-async def _queue_sample(conn, job: dict) -> None:
-    lesson_id = (await conn.execute(text(
-        "select id from public.lessons where series_id = :s order by position limit 1"), {"s": job["series_id"]})
-    ).scalar_one_or_none()
-    if lesson_id is None:
-        return
-    await conn.execute(text(
-        """insert into public.generation_jobs (user_id, series_id, lesson_id, kind, status, payload)
-           values (:u, :s, :l, 'lesson', 'queued', cast(:p as jsonb))"""),
-        {"u": job["user_id"], "s": job["series_id"], "l": lesson_id,
-         "p": json.dumps({"sample_pages": SAMPLE_PAGES})})
-    await conn.execute(text("update public.lessons set status = 'queued' where id = :l"), {"l": lesson_id})
 
 
 async def _research(deps: Deps, job: dict, brief: Brief) -> dict:

@@ -1,15 +1,14 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router'
-import { saveWithGoogle } from '../auth/google'
+import { Link, useNavigate, useParams } from 'react-router'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
 import { errorText } from '../components/ErrorNote'
-import { PageThumb, Sheet } from '../components/Sheet'
+import { PageThumb } from '../components/Sheet'
 import { ART_LABEL, COVER_LABEL, FRAME_LABEL, GENRE_LABEL, THEME_LABEL } from '../lib/labels'
 import { api } from '../lib/apiClient'
 import { useExport, useIdentities, useMe, usePreview, useProgress, useQuality, useSeries, useStyles } from '../lib/queries'
-import type { Design, Export, LessonSummary, Level, Preflight, Progress, Series } from '../lib/types'
+import type { Block, Design, Export, LessonSummary, Level, Preflight, Progress, Series } from '../lib/types'
 
 
 export function TomePage() {
@@ -36,7 +35,7 @@ export function TomePage() {
       </header>
 
       <Pipeline status={status} progress={progress.data} />
-      {s.preview && <PreviewBanner series={s} />}
+      {s.preview && <BlurredPages series={s} />}
 
       {status === 'outlining' && <Planning />}
       {status === 'outline_failed' && <OutlineFailed series={s} />}
@@ -55,38 +54,22 @@ export function TomePage() {
   )
 }
 
-/** The free preview: what it includes, the sample of section 1 as it will print, and the way to the full tome. */
-function PreviewBanner({ series: s }: { series: Series }) {
-  const { data: me } = useMe()
-  const { pathname } = useLocation()
-  const first = s.lessons.find((l) => l.position === 1)
-  if (!me || (me.plan.key !== 'prueba' && !first?.sample)) return null
-  const writing = first && ['queued', 'generating'].includes(first.status)
+/** The free preview shows only the cover; the pages the visitor chose stay blurred until the tome is bought. */
+function BlurredPages({ series: s }: { series: Series }) {
+  const pages = s.page_target ?? s.lessons.reduce((n, l) => n + (l.pages ?? 1), 0)
+  const titles = s.lessons.flatMap((l) => Array.from({ length: l.pages ?? 1 }, () => l.title))
+  if (!s.design || pages < 1) return null
   return (
-    <>
-      {me.plan.key === 'prueba' && first?.sample && first.content_json && (  // once there is something to download
-        <section className="panel preview-banner">
-          <strong>Vista previa</strong>
-          <div className="preview-cta">
-            {me.anonymous
-              ? <button className="primary" onClick={() => void saveWithGoogle(pathname)}>Descargar</button>
-              : <Link to="/app/plan" className="primary">Descargar</Link>}
-            <span className="muted small">{me.anonymous ? 'Ingresa para descargar' : 'Elige un plan para descargar'}</span>
-          </div>
-        </section>
-      )}
-      {(writing || (first?.sample && first.content_json)) && (
-        <section className="sample">
-          <div className="sample-h"><h2 className="h3">Muestra: {first!.title}</h2><span className="muted small">Así se imprime</span></div>
-          {writing ? <div className="skeleton tall" aria-label="Escribiendo la muestra…" /> : (
-            <Sheet design={s.design} position={first!.position} title={first!.title} blocks={first!.content_json!.blocks}
-                   assets={s.assets} credits={s.credits} diagrams={first!.diagrams} />
-          )}
-        </section>
-      )}
-    </>
+    <section className="blurred-pages" aria-label="Páginas del tomo">
+      {titles.slice(0, pages).map((title, i) => (
+        <PageThumb key={i} design={s.design!} position={i + 1} title={title} blocks={FILLER} />
+      ))}
+    </section>
   )
 }
+
+const FILLER: Block[] = Array.from({ length: 6 }, (_, i) => ({ id: `f${i}`, type: 'paragraph' as const,
+  text: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore.' }))
 
 function CoverPanel({ series: s }: { series: Series }) {
   const qc = useQueryClient()
