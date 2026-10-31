@@ -804,9 +804,11 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .blurred-pages .thumb { filter: blur(5px); user-select: none; pointer-events: none; }
 
 /* The landing's carousel of example covers: two copies of the row, the track slides one copy's width. */
-.showcase { width: 100vw; margin: 28px calc(50% - 50vw) 8px; overflow: hidden;
+.showcase { width: 100vw; margin: 28px calc(50% - 50vw) 8px; overflow: hidden; height: 0; opacity: 0; transition: opacity 400ms ease;
             mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
 .showcase-track { display: flex; gap: 20px; width: max-content; padding: 12px 0 20px; animation: showcase 60s linear infinite; }
+
+.showcase.ready { height: auto; opacity: 1; }
 .showcase:hover .showcase-track { animation-play-state: paused; }
 .showcase img { width: 200px; height: auto; aspect-ratio: 210 / 297; object-fit: cover; border-radius: 6px 12px 12px 6px; background: var(--surface-2, #f1efec);
                 box-shadow: inset 6px 0 8px -6px rgb(0 0 0 / 0.25), 0 1px 2px rgb(12 10 9 / 0.08), 0 16px 30px -16px rgb(12 10 9 / 0.45); }

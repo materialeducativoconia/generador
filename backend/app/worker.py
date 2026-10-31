@@ -17,6 +17,7 @@ from app.images import OpenRouterImages
 from app.llm import DeepSeek
 from app.research import Web
 from app.vision import OpenRouterVision
+from app.showcase import paint_missing
 from app.storage import Storage
 
 log = logging.getLogger("worker")
@@ -64,6 +65,10 @@ async def run(stop: asyncio.Event | None = None) -> None:
             slots.release()
 
     print("worker started", flush=True)
+    if deps.images:  # the landing's example covers, painted once
+        showcase = asyncio.create_task(paint_missing(deps.images, deps.storage))
+        running.add(showcase)
+        showcase.add_done_callback(running.discard)
     last_reap = 0.0
     while not stop.is_set():
         try:

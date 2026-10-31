@@ -4,6 +4,7 @@ import { useAuth } from '../auth/context'
 import { signInWithGoogle } from '../auth/google'
 import { Logo } from '../components/AppShell'
 import { LandingComposer } from '../components/LandingComposer'
+import { Showcase } from '../components/Showcase'
 import { useSeriesList } from '../lib/queries'
 import { PUBLIC_PLANS } from '../lib/pricing'
 import { TOPICS, topicHref } from '../lib/topics'
@@ -46,8 +47,9 @@ export function Welcome() {
       {session?.user.is_anonymous && !previewing && <ReturningVisitor />}
       <span className="brand"><Logo /><span>Jelyx Docs</span></span>
       <h1 className="display">Material educativo de cualquier tema, listo para imprimir.</h1>
-      <p className="lede">Describe lo que necesitas y mira gratis tu portada ilustrada, el índice y una muestra de la primera sección. Sin registrarte.</p>
+      <p className="lede">Describe lo que necesitas y mira gratis tu portada ilustrada y el índice de tu tomo. Sin registrarte.</p>
       <LandingComposer onStart={setPreviewing} />
+      <Showcase />
       <p className="fine-print muted">
         ¿Ya tienes cuenta?{' '}
         <button className="link-button" onClick={start} disabled={starting || loading}>{starting ? 'Abriendo Google…' : 'Entrar con Google'}</button>

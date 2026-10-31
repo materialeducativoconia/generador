@@ -1,27 +1,20 @@
-"""Paints (once) the landing's carousel of example covers: premium Illustrator art, laid out by the same cover
-template the tomes print with, saved as WebP under frontend/public/showcase/.
-
-    OPENROUTER_API_KEY=sk-or-… uv run python scripts/showcase.py
-
-About 8 × $0.09. Existing files are kept: delete one to paint it again.
-"""
+"""The landing's carousel of example covers: painted once by the worker (which holds the premium Illustrator's
+key) with the same cover template the tomes print with, kept in the public `covers` bucket under showcase/.
+Each start of the worker paints only the ones missing: about 8 × $0.09 the first time, nothing after."""
 
 import asyncio
 import io
-import os
-import sys
-from pathlib import Path
+import logging
 
+import httpx
 import pypdfium2
 from PIL import Image
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from app.content import Design  # noqa: E402
-from app.images import OpenRouterImages  # noqa: E402
-from app.render import Tome, render_pdf  # noqa: E402
-from app.themes import ART_STYLES, COVER_LAYOUTS  # noqa: E402
+from app.content import Design
+from app.render import Tome, render_pdf
+from app.themes import ART_STYLES, COVER_LAYOUTS
 
-OUT = Path(__file__).resolve().parents[2] / "frontend/public/showcase"
+log = logging.getLogger("showcase")
 
 # slug, kicker, title, audience, theme, palette, illustration, layout, picture
 COVERS = [
@@ -52,30 +45,43 @@ COVERS = [
 ]
 
 
-async def main() -> None:
-    images = OpenRouterImages(os.environ["OPENROUTER_API_KEY"], os.environ.get("OPENROUTER_IMAGE_MODEL",
-                                                                               "google/gemini-nano-banana-2.1"))
-    OUT.mkdir(parents=True, exist_ok=True)
+async def paint_missing(images, storage) -> int:
+    """Paints the covers not yet in storage; returns how many it painted. A failure skips that cover until the
+    next start."""
+    painted = 0
     for slug, kicker, title, audience, theme, palette, art, layout, picture in COVERS:
-        path = OUT / f"{slug}.webp"
-        if path.exists():
-            print(f"= {slug}")
+        key = f"showcase/{slug}.webp"
+        if await _exists(storage.public_url(key)):
             continue
         prompt = (f"Premium children's book cover illustration, award-winning picture book quality (Kalandraka, "
                   f"Flamboyant, SM). {picture}. Style: {ART_STYLES[art][1]}. Vibrant, joyful, rich detail, "
                   f"no text, no letters except those described. {COVER_LAYOUTS[layout][1]}")
-        art_image = await images.generate(prompt, aspect_ratio="3:4", resolution="2K")
-        design = Design(theme=theme, palette=palette, ornament="ninguno", illustration=art, cover_layout=layout)
-        tome = Tome(title=title, genre="worksheets", audience=audience, author=None, sections=[], design=design,
-                    cover_image=art_image.data, cover_media_type=art_image.media_type, collection=kicker)
-        pdf, _ = render_pdf(tome, paper="A4", include_answer_key=False)
-        page = pypdfium2.PdfDocument(pdf)[0].render(scale=1.6).to_pil()
-        page.thumbnail((720, 1020), Image.LANCZOS)
-        buf = io.BytesIO()
-        page.save(buf, "WEBP", quality=82)
-        path.write_bytes(buf.getvalue())
-        print(f"+ {slug} (${art_image.cost_usd:.3f})")
+        try:
+            art_image = await images.generate(prompt, aspect_ratio="3:4", resolution="2K")
+            design = Design(theme=theme, palette=palette, ornament="ninguno", illustration=art, cover_layout=layout)
+            tome = Tome(title=title, genre="worksheets", audience=audience, author=None, sections=[], design=design,
+                        cover_image=art_image.data, cover_media_type=art_image.media_type, collection=kicker)
+            await storage.upload(key, await asyncio.to_thread(_webp, tome), "image/webp", bucket="covers")
+        except Exception:  # noqa: BLE001  the carousel waits for the next start
+            log.exception("showcase cover %s failed", slug)
+            continue
+        painted += 1
+        log.info("showcase cover %s painted ($%.3f)", slug, art_image.cost_usd)
+    return painted
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+def _webp(tome: Tome) -> bytes:
+    pdf, _ = render_pdf(tome, paper="A4", include_answer_key=False)
+    page = pypdfium2.PdfDocument(pdf)[0].render(scale=1.6).to_pil()
+    page.thumbnail((720, 1020), Image.LANCZOS)
+    buf = io.BytesIO()
+    page.save(buf, "WEBP", quality=82)
+    return buf.getvalue()
+
+
+async def _exists(url: str) -> bool:
+    try:
+        async with httpx.AsyncClient(timeout=15) as http:
+            return (await http.head(url)).status_code == 200
+    except httpx.HTTPError:
+        return True  # storage unreachable: don't pay for a cover we may already have
