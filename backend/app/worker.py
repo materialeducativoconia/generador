@@ -17,7 +17,7 @@ from app.images import OpenRouterImages
 from app.llm import DeepSeek
 from app.research import Web
 from app.vision import OpenRouterVision
-from app.showcase import paint_missing
+from app.showcase import keep_painted
 from app.storage import Storage
 
 log = logging.getLogger("worker")
@@ -65,10 +65,8 @@ async def run(stop: asyncio.Event | None = None) -> None:
             slots.release()
 
     print("worker started", flush=True)
-    if deps.images:  # the landing's example covers, painted once
-        showcase = asyncio.create_task(paint_missing(deps.images, deps.storage))
-        running.add(showcase)
-        showcase.add_done_callback(running.discard)
+    # The landing's example covers, painted once; a shutdown simply cancels it.
+    showcase = asyncio.create_task(keep_painted(deps.images, deps.storage)) if deps.images else None
     last_reap = 0.0
     while not stop.is_set():
         try:
@@ -90,6 +88,8 @@ async def run(stop: asyncio.Event | None = None) -> None:
             log.exception("worker loop error")
             await _sleep_unless(stop, 5)
 
+    if showcase:
+        showcase.cancel()
     if running:
         # Jobs still running after the grace period stay `running`; the reaper requeues them.
         await asyncio.wait(running, timeout=SHUTDOWN_GRACE_SECONDS)

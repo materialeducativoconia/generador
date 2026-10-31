@@ -45,14 +45,26 @@ COVERS = [
 ]
 
 
-async def paint_missing(images, storage) -> int:
-    """Paints the covers not yet in storage; returns how many it painted. A failure skips that cover until the
-    next start."""
-    painted = 0
+RETRY_SECONDS = 1800  # a refused or rate-limited cover is tried again half an hour later
+PAUSE_SECONDS = 20  # between covers, to stay clear of the image API's rate limit
+
+
+async def keep_painted(images, storage) -> None:
+    """The worker's background task: paints what is missing, again every half hour until nothing is."""
+    while await paint_missing(images, storage) is not None:
+        await asyncio.sleep(RETRY_SECONDS)
+
+
+async def paint_missing(images, storage, pause: float = PAUSE_SECONDS) -> int | None:
+    """Paints the covers not yet in storage; returns how many it painted, or None when none is missing."""
+    painted, missing = 0, 0
     for slug, kicker, title, audience, theme, palette, art, layout, picture in COVERS:
         key = f"showcase/{slug}.webp"
         if await _exists(storage.public_url(key)):
             continue
+        if missing:
+            await asyncio.sleep(pause)
+        missing += 1
         prompt = (f"Premium children's book cover illustration, award-winning picture book quality (Kalandraka, "
                   f"Flamboyant, SM). {picture}. Style: {ART_STYLES[art][1]}. Vibrant, joyful, rich detail, "
                   f"no text, no letters except those described. {COVER_LAYOUTS[layout][1]}")
@@ -67,7 +79,7 @@ async def paint_missing(images, storage) -> int:
             continue
         painted += 1
         log.info("showcase cover %s painted ($%.3f)", slug, art_image.cost_usd)
-    return painted
+    return painted if missing else None
 
 
 def _webp(tome: Tome) -> bytes:

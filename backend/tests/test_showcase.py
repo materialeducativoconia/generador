@@ -38,7 +38,9 @@ async def test_the_worker_paints_only_the_example_covers_still_missing(monkeypat
     monkeypatch.setattr(showcase, "COVERS", showcase.COVERS[:2])
     images, storage = Images(), Storage()
 
-    assert await showcase.paint_missing(images, storage) == 1
+    assert await showcase.paint_missing(images, storage, pause=0) == 1
     assert len(images.prompts) == 1 and "pencil" in images.prompts[0]
     data, kind = storage.uploads[("covers", "showcase/escritura-letras.webp")]
     assert kind == "image/webp" and Image.open(io.BytesIO(data)).format == "WEBP"
+    have.add("https://storage.test/covers/showcase/escritura-letras.webp")
+    assert await showcase.paint_missing(images, storage, pause=0) is None  # all there: the worker stops trying
