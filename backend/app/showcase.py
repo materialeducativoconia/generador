@@ -46,7 +46,7 @@ COVERS = [
 
 
 RETRY_SECONDS = 1800  # a refused or rate-limited cover is tried again half an hour later
-PAUSE_SECONDS = 20  # between covers, to stay clear of the image API's rate limit
+PAUSE_SECONDS = 75  # between covers and between tries: the image API refuses requests that come too close
 
 
 async def keep_painted(images, storage) -> None:
@@ -69,7 +69,7 @@ async def paint_missing(images, storage, pause: float = PAUSE_SECONDS) -> int | 
                   f"Flamboyant, SM). {picture}. Style: {ART_STYLES[art][1]}. Vibrant, joyful, rich detail, "
                   f"no text, no letters except those described. {COVER_LAYOUTS[layout][1]}")
         try:
-            art_image = await images.generate(prompt, aspect_ratio="3:4", resolution="2K")
+            art_image = await _generate(images, prompt, pause)
             design = Design(theme=theme, palette=palette, ornament="ninguno", illustration=art, cover_layout=layout)
             tome = Tome(title=title, genre="worksheets", audience=audience, author=None, sections=[], design=design,
                         cover_image=art_image.data, cover_media_type=art_image.media_type, collection=kicker)
@@ -80,6 +80,17 @@ async def paint_missing(images, storage, pause: float = PAUSE_SECONDS) -> int | 
         painted += 1
         log.info("showcase cover %s painted ($%.3f)", slug, art_image.cost_usd)
     return painted if missing else None
+
+
+async def _generate(images, prompt: str, pause: float, tries: int = 3):
+    for attempt in range(tries):
+        try:
+            return await images.generate(prompt, aspect_ratio="3:4", resolution="2K")
+        except Exception as exc:  # noqa: BLE001
+            if attempt == tries - 1:
+                raise
+            log.warning("showcase cover try %s failed: %s", attempt + 1, exc)
+            await asyncio.sleep(pause * (attempt + 1))
 
 
 def _webp(tome: Tome) -> bytes:
