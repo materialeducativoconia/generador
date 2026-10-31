@@ -72,7 +72,7 @@ async def paint_missing(images, storage, pause: float = PAUSE_SECONDS) -> int | 
             art_image = await _generate(images, prompt, pause)
             design = Design(theme=theme, palette=palette, ornament="ninguno", illustration=art, cover_layout=layout)
             tome = Tome(title=title, genre="worksheets", audience=audience, author=None, sections=[], design=design,
-                        cover_image=art_image.data, cover_media_type=art_image.media_type, collection=kicker)
+                        cover_image=_small(art_image.data), cover_media_type="image/jpeg", collection=kicker)
             await storage.upload(key, await asyncio.to_thread(_webp, tome), "image/webp", bucket="covers")
         except Exception:  # noqa: BLE001  the carousel waits for the next start
             log.exception("showcase cover %s failed", slug)
@@ -85,7 +85,7 @@ async def paint_missing(images, storage, pause: float = PAUSE_SECONDS) -> int | 
 async def _generate(images, prompt: str, pause: float, tries: int = 3):
     for attempt in range(tries):
         try:
-            return await images.generate(prompt, aspect_ratio="3:4", resolution="2K")
+            return await images.generate(prompt, aspect_ratio="3:4", resolution="1K")  # shown 200 px wide
         except Exception as exc:  # noqa: BLE001
             if attempt == tries - 1:
                 raise
@@ -93,9 +93,18 @@ async def _generate(images, prompt: str, pause: float, tries: int = 3):
             await asyncio.sleep(pause * (attempt + 1))
 
 
+def _small(data: bytes) -> bytes:
+    """The art at the size the carousel needs: a small worker renders it without running out of memory."""
+    picture = Image.open(io.BytesIO(data)).convert("RGB")
+    picture.thumbnail((900, 1200), Image.LANCZOS)
+    buf = io.BytesIO()
+    picture.save(buf, "JPEG", quality=88)
+    return buf.getvalue()
+
+
 def _webp(tome: Tome) -> bytes:
     pdf, _ = render_pdf(tome, paper="A4", include_answer_key=False)
-    page = pypdfium2.PdfDocument(pdf)[0].render(scale=1.6).to_pil()
+    page = pypdfium2.PdfDocument(pdf)[0].render(scale=1.2).to_pil()
     page.thumbnail((720, 1020), Image.LANCZOS)
     buf = io.BytesIO()
     page.save(buf, "WEBP", quality=82)
