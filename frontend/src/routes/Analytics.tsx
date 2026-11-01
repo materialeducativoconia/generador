@@ -6,6 +6,7 @@ import { errorText } from '../components/ErrorNote'
 import { api } from '../lib/apiClient'
 import { GENRE_LABEL } from '../lib/labels'
 import { useMe } from '../lib/queries'
+import { AdminTabs } from './AdminUsers'
 
 type Count = { key: string; count: number }
 type Analytics = {
@@ -50,6 +51,7 @@ export function Analytics() {
           ))}
         </div>
       </section>
+      <AdminTabs />
       {error && <p className="error" role="alert">{errorText(error, 'No se pudo cargar la analítica.')}</p>}
       {!a ? <div className="skeleton" /> : (
         <div className="analytics">

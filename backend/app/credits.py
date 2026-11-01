@@ -27,14 +27,16 @@ class Account:
 async def account(conn, user_id) -> Account:
     """The user's organization and its plan; no active subscription means the free trial's limits."""
     row = (await conn.execute(text(
-        """select m.org_id, s.plan, s.status, s.current_period_end
+        """select m.org_id, s.plan, s.status, s.current_period_end,
+                  s.stripe_subscription_id is null and s.current_period_end < now() as lapsed
              from public.memberships m
              left join public.subscriptions s on s.org_id = m.org_id and s.app = :app
             where m.user_id = :u order by (m.role = 'owner') desc, m.created_at limit 1"""),
         {"u": user_id, "app": APP})).mappings().one_or_none()
     if row is None:
         raise ApiError(403, "forbidden", "Tu cuenta no tiene organización.")
-    active = row["plan"] and row["status"] in ("active", "trialing", "past_due")
+    # A plan given by hand (no Stripe) ends at its period end; Stripe's are kept current by the webhook.
+    active = row["plan"] and row["status"] in ("active", "trialing", "past_due") and not row["lapsed"]
     return Account(row["org_id"], row["plan"] if active else "prueba", row["status"], row["current_period_end"])
 
 

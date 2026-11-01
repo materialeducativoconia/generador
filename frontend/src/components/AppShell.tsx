@@ -36,10 +36,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             </NavLink>
           ))}
           {(me?.platform_role === 'admin' || me?.platform_role === 'staff') && (
-            <NavLink to="/admin/analytics" className="nav-item">
+            <NavLink to="/admin" className="nav-item">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
-                   strokeLinecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M21 20H3" /></svg>
-              Analítica
+                   strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z" /></svg>
+              Administración
             </NavLink>
           )}
         </nav>

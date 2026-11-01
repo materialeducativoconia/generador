@@ -12,6 +12,7 @@ import { Identities } from './routes/Identities'
 import { Plan } from './routes/Plan'
 import { Profile } from './routes/Profile'
 import { Analytics } from './routes/Analytics'
+import { AdminUsers } from './routes/AdminUsers'
 import { FirstVisit, Onboarding } from './routes/Onboarding'
 import { TomePage } from './routes/TomePage'
 import { Welcome } from './routes/Welcome'
@@ -34,7 +35,9 @@ export default function App() {
             <Route path="/app/identidades" element={authed(<Identities />)} />
             <Route path="/app/plan" element={authed(<Plan />)} />
             <Route path="/app/perfil" element={authed(<Profile />)} />
+            <Route path="/admin" element={authed(<AdminUsers />)} />
             <Route path="/admin/analytics" element={authed(<Analytics />)} />
+            <Route path="/adminpanel" element={<Navigate to="/admin" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
