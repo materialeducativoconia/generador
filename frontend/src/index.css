@@ -50,7 +50,7 @@
 }
 
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; overflow-x: clip; } /* full-bleed rows use 100vw, which counts a fixed scrollbar */
 body {
   margin: 0;
   background: var(--bg);
