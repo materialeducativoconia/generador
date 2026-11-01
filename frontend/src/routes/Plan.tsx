@@ -1,17 +1,13 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { AppShell } from '../components/AppShell'
 import { errorText } from '../components/ErrorNote'
 import { api } from '../lib/apiClient'
-import { useBilling, useMe, type Billing } from '../lib/queries'
+import { useBilling, useMe } from '../lib/queries'
+import { PlanCards } from '../components/PlanCards'
 import { saveWithGoogle } from '../auth/google'
 
-const PITCH: Record<string, string> = {
-  docente: 'Para tu grupo: material listo para imprimir y usar en clase.',
-  creador: 'Para vender tu material con tu propia marca.',
-  editorial: 'Para varias marcas o clientes, con equipo y los mejores modelos.',
-}
 const date = (iso: string) => new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'long' })
 
 /** Plan and credits: one credit is about one generated page; the plan refills them every month. */
@@ -32,6 +28,15 @@ export function Plan() {
     mutationFn: ({ path, body }: { path: string; body?: object }) => api.post<{ url: string }>(path, body),
     onSuccess: ({ url }) => window.location.assign(url),
   })
+  const choose = (plan: string) => go.mutate({ path: '/api/billing/checkout', body: { plan } })
+  // The landing's "Suscribirme" signs in with Google and lands here with ?plan=: straight on to Stripe.
+  const wanted = params.get('plan')
+  const started = useRef(false)
+  useEffect(() => {
+    if (started.current || !wanted || !b?.enabled || !me || me.anonymous || b.plan === wanted || !b.plans.some((p) => p.key === wanted)) return
+    started.current = true
+    go.mutate({ path: '/api/billing/checkout', body: { plan: wanted } })
+  }, [wanted, b, me, go])
   if (isLoading || !b) return <AppShell><div className="skeleton" /></AppShell>
   const current = b.plans.find((p) => p.key === b.plan)
   return (
@@ -64,24 +69,12 @@ export function Plan() {
       {!b.enabled && <p className="notice">Los pagos se activan muy pronto.</p>}
       {go.error && <p className="error" role="alert">{errorText(go.error, 'No pudimos abrir el pago.')}</p>}
 
-      <div className="plan-grid">
-        {b.plans.map((p) => (
-          <article key={p.key} className={`panel plan-card${p.key === b.plan ? ' current' : ''}${p.key === 'creador' ? ' featured' : ''}`}>
-            {p.key === 'creador' && <span className="pill info">Más elegido</span>}
-            <h2>{p.label}</h2>
-            <p className="price"><strong>${p.price_usd}</strong> USD/mes</p>
-            <p className="small muted">{PITCH[p.key]}</p>
-            <p className="credits-line"><strong>{p.credits}</strong> créditos al mes <span className="muted small">(~{Math.round(p.credits / 29)} tomos de 24 páginas)</span></p>
-            <Features plan={p} />
-            {p.key === b.plan ? <button className="ghost" disabled>Tu plan</button> : (
-              <button className={p.key === 'creador' ? 'primary' : 'ghost'} disabled={!b.enabled || go.isPending}
-                onClick={() => go.mutate({ path: '/api/billing/checkout', body: { plan: p.key } })}>
-                {current ? 'Cambiar a este plan' : 'Suscribirme'}
-              </button>
-            )}
-          </article>
-        ))}
-      </div>
+      <PlanCards plans={b.plans} current={b.plan} action={(p) => p.key === b.plan ? <button className="ghost block" disabled>Tu plan actual</button> : (
+        <button className={`${p.key === 'creador' ? 'primary' : 'ghost'} block`} disabled={!b.enabled || go.isPending || me?.anonymous}
+          onClick={() => choose(p.key)}>
+          {go.isPending && go.variables?.body && (go.variables.body as { plan?: string }).plan === p.key ? 'Abriendo pago…' : current ? 'Cambiar a este plan' : 'Suscribirme'}
+        </button>
+      )} />
 
       <section className="packs">
         <h2 className="section-h">¿Te faltan créditos?</h2>
@@ -108,26 +101,6 @@ export function Plan() {
         </section>
       )}
     </AppShell>
-  )
-}
-
-function Features({ plan: p }: { plan: Billing['plans'][number] }) {
-  const rows: [boolean, string][] = [
-    [true, `Tomos de hasta ${p.max_pages} páginas`],
-    [true, 'Editar texto, colecciones y niveles'],
-    [!p.watermark, p.watermark ? 'PDF con marca «Hecho con…» · uso en el aula' : 'Sin marca de agua · licencia para vender'],
-    [p.word, 'Descargar en Word editable'],
-    [p.print_edition, 'Edición para imprenta (KDP)'],
-    [p.styles > 0, p.styles ? `${p.styles} estilos de referencia` : 'Biblioteca de estilos'],
-    [p.identities > 0, p.identities > 1 ? `${p.identities} identidades de marca` : 'Tu identidad de marca'],
-    [p.premium, 'Modelos de IA premium'],
-    [true, `${p.concurrent} ${p.concurrent === 1 ? 'tomo' : 'tomos'} generándose a la vez`],
-    [p.seats > 1, p.seats > 1 ? `Equipo de ${p.seats} personas` : 'Equipo'],
-  ]
-  return (
-    <ul className="features">
-      {rows.map(([on, label]) => <li key={label} className={on ? '' : 'off'}>{on ? '✓' : '—'} {label}</li>)}
-    </ul>
   )
 }
 
