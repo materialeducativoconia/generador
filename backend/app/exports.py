@@ -7,11 +7,12 @@ import logging
 from sqlalchemy import text
 
 from app.content import Design, SectionContent, block_assets
-from app.illustrator import vectorize
+from app.illustrator import ink_saver, vectorize
 from app.printing import preflight
 from app.render import Tome, TomeSection, render_checked, render_cover_wrap
 from app.word import render_docx
 
+MONO = ["#FFFFFF", "#262626", "#737373"]  # paper, ink, accent for the black-and-white edition
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 log = logging.getLogger("worker")
@@ -41,6 +42,7 @@ async def run_export(deps, job: dict) -> None:
         ), {"ids": asset_ids})).all() if asset_ids else []
 
     options = _json(export["options"])
+    saver = options.get("ink") == "saver"  # the black-and-white edition: same tome, no AI, little ink
     images, credits = {}, {}
     slots = asyncio.Semaphore(8)  # a worksheet tome can point at a hundred small pictures
 
@@ -56,6 +58,8 @@ async def run_export(deps, job: dict) -> None:
         if kind == "line_art" and media_type == "image/png":  # painted before colouring pages were traced
             svg = await asyncio.to_thread(vectorize, data)
             data, media_type = (svg, "image/svg+xml") if svg else (data, media_type)
+        if saver and media_type != "image/svg+xml":
+            data, media_type = await asyncio.to_thread(ink_saver, data)
         images[asset_id] = (data, media_type)
 
     await asyncio.gather(*(fetch(*row) for row in assets))
@@ -67,6 +71,8 @@ async def run_export(deps, job: dict) -> None:
                 "image/png" if series["cover_key"].endswith(".png") else "image/jpeg")
         except Exception:  # a missing cover must not cost the user their PDF
             log.exception("cover %s unavailable, exporting with the plain cover", series["cover_key"])
+    if saver and cover_image:
+        cover_image, media_type = await asyncio.to_thread(ink_saver, cover_image)
     signature = job["payload"].get("signature") or {"author": series["display_name"]}
     logo = None
     if signature.get("logo"):
@@ -76,7 +82,14 @@ async def run_export(deps, job: dict) -> None:
                     "image/webp" if key.endswith(".webp") else "image/jpeg")
         except Exception:  # the signature prints without the logo
             log.exception("logo %s unavailable", signature["logo"])
+    if saver and logo:
+        logo = await asyncio.to_thread(ink_saver, logo[0])
     audience = (_json(series["audience"]) or {}).get("label", "")
+    design = Design.model_validate(_json(series["design"])) if series["design"] else None
+    palette = (_json(series["cover"]) or {}).get("palette")
+    if saver:  # every theme colour from greys: tints, frames and openers print light
+        palette = MONO
+        design = design.model_copy(update={"palette": MONO}) if design else None
     tome = Tome(
         title=series["title"] or series["topic"], genre=series["genre"] or "lesson_series", audience=audience,
         author=signature.get("author"), school=signature.get("school"), logo=logo,
@@ -84,12 +97,11 @@ async def run_export(deps, job: dict) -> None:
                               content=SectionContent.model_validate(_json(lesson["content_json"])))
                   for lesson in lessons if lesson["content_json"]],
         cover_image=cover_image, cover_media_type=media_type,
-        palette=(_json(series["cover"]) or {}).get("palette"),
-        design=Design.model_validate(_json(series["design"])) if series["design"] else None,
+        palette=palette, design=design,
         images=images, credits=credits,
         sources=(_json(series["research"]) or {}).get("sources") or [],
         collection=shelf.name if shelf else None, level=shelf.level if shelf else None,
-        watermark=job["payload"].get("watermark", False),
+        watermark=job["payload"].get("watermark", False), mono=saver,
     )
     paper, print_edition = options.get("paper", "A4"), options.get("edition") == "print"
     if options.get("format") == "docx":

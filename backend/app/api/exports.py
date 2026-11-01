@@ -27,6 +27,7 @@ class ExportOptions(BaseModel):
     include_answer_key: bool = True
     edition: Literal["digital", "print"] = "digital"  # print: KDP-ready interior plus a separate cover wrap
     format: Literal["pdf", "docx"] = "pdf"  # docx: editable Word file, digital edition only
+    ink: Literal["color", "saver"] = "color"  # saver: black and white, light greys, for a home printer
 
     @model_validator(mode="after")
     def _word_is_digital(self):

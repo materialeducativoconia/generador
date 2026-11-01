@@ -114,7 +114,9 @@ def pops(accent: str) -> tuple[str, str]:
     """Two playful companions for the accent (children's books never live on one colour): the accent's hue
     turned a third and a half of the way round the wheel, bright but dark enough for white text."""
     r, g, b = (int(accent[i:i + 2], 16) / 255 for i in (1, 3, 5))
-    h, _, _ = colorsys.rgb_to_hls(r, g, b)
+    h, _, sat = colorsys.rgb_to_hls(r, g, b)
+    if sat < 0.05:  # a grey accent (the black-and-white edition) keeps grey companions
+        return "#525252", "#8A8A8A"
     out = []
     for turn in (0.36, 0.58):
         rr, gg, bb = colorsys.hls_to_rgb((h + turn) % 1, 0.5, 0.72)

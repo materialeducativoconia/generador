@@ -201,3 +201,18 @@ async def test_print_edition_ships_a_cover_wrap_and_a_preflight(raw_db, google_u
     assert len(wrap.pages) == 1 and float(wrap.pages[0].mediabox.width) > 2 * 576  # back + spine + front
     await storage.delete(status["storage_key"])
     await storage.delete(status["cover_storage_key"])
+
+
+async def test_black_and_white_edition_is_its_own_export(raw_db, google_user, client_with_storage, key, engine,
+                                                          storage):
+    client = client_with_storage
+    user = await google_user()
+    sid = await ready_tome(client, key, user, engine)
+    h = bearer(key, user)
+
+    color = (await client.post(f"/api/series/{sid}/exports", json={}, headers=h)).json()["export"]
+    await run_next_with_storage(engine, storage)
+    mono = (await client.post(f"/api/series/{sid}/exports", json={"ink": "saver"}, headers=h)).json()["export"]
+    assert mono["id"] != color["id"] and mono["options"]["ink"] == "saver"
+    await run_next_with_storage(engine, storage)
+    assert (await client.get(f"/api/exports/{mono['id']}", headers=h)).json()["status"] == "succeeded"

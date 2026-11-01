@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import unicodedata
 
-from PIL import Image, ImageFilter
+from PIL import Image, ImageFilter, ImageOps
 
 
 ASPECT = {"plate": "3:4", "full": "3:4", "half": "4:3", "small": "1:1", "icon": "1:1"}
@@ -59,6 +59,24 @@ def upscale(data: bytes, long_side: int = 3000) -> tuple[bytes, str]:
         im = im.filter(ImageFilter.UnsharpMask(radius=2, percent=60, threshold=2))
     out = io.BytesIO()
     im.save(out, "JPEG", quality=90, optimize=True)
+    return out.getvalue(), "image/jpeg"
+
+
+INK_SAVER = 0.55  # share of the original ink kept: shadows print as dark grey, never as solid black
+
+
+def ink_saver(data: bytes) -> tuple[bytes, str]:
+    """A picture for the black-and-white edition, made locally (no AI): grey, its contrast stretched, then every tone
+    lifted toward white so a home printer spends about half the toner; transparency becomes paper white."""
+    im = Image.open(io.BytesIO(data))
+    if im.mode in ("RGBA", "LA", "P"):
+        im = im.convert("RGBA")
+        paper = Image.new("RGBA", im.size, "white")
+        im = Image.alpha_composite(paper, im)
+    grey = ImageOps.autocontrast(im.convert("L"), cutoff=1)
+    grey = grey.point(lambda v: 255 - round((255 - v) * INK_SAVER))
+    out = io.BytesIO()
+    grey.save(out, "JPEG", quality=88, optimize=True)
     return out.getvalue(), "image/jpeg"
 
 

@@ -284,6 +284,11 @@
   .plate .pf { position: absolute; left: 9mm; right: 9mm; bottom: 9mm; background: #fff; border-radius: 7mm; padding: 3.5mm 6mm;
                font: 600 {{ 9 if geo.w < 180 else 10.5 }}pt/1.35 {{ body|safe }}; box-shadow: 0 1.5mm 4mm rgba(0,0,0,.18); }
   .plate .pf b { font-family: {{ head|safe }}; color: var(--accent); margin-right: 1.5mm; }
+  {% if tome.mono %}
+  /* Black and white for a home printer: the coloured boxes become light greys, their titles dark grey. */
+  .callout.tip, .callout.warning, .callout.fun_fact { background: #f4f4f4; }
+  .callout.tip .t, .callout.warning .t, .callout.fun_fact .t { color: #262626; }
+  {% endif %}
 </style>
 </head>
 <body{% if th.kids %} class="kids"{% endif %}>

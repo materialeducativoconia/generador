@@ -602,12 +602,13 @@ function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: P
   const [edition, setEdition] = useState<Edition>('digital')
   const [paper, setPaper] = useState<Paper>('A4')
   const [answers, setAnswers] = useState(true)
+  const [ink, setInk] = useState<'color' | 'saver'>('color')
   // A PDF made before the last pictures arrived would miss them: start a fresh one instead.
   const [exportId, setExportId] = useState<string | null>(latest && latest.status !== 'failed' && !latest.stale ? latest.id : null)
   const illustrating = images.active > 0
   const current = useExport(exportId)
   const create = useMutation({
-    mutationFn: () => api.post<{ export: Export }>(`/api/series/${seriesId}/exports`, { paper, include_answer_key: answers, edition, format }),
+    mutationFn: () => api.post<{ export: Export }>(`/api/series/${seriesId}/exports`, { paper, include_answer_key: answers, edition, format, ink }),
     onSuccess: (data) => setExportId(data.export.id),
   })
   const download = useMutation({
@@ -633,6 +634,8 @@ function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: P
             ? `Ilustrando ${images.done} de ${images.total} imágenes… el archivo estará listo al terminar.`
             : format === 'docx'
               ? 'Documento de Word editable: textos y ejercicios para cambiar a tu gusto; fichas y dibujos como imágenes.'
+              : ink === 'saver'
+              ? 'Blanco y negro para imprimir en casa o en la escuela: ilustraciones en grises claros y sin fondos de color, gasta mucha menos tinta.'
               : edition === 'print'
               ? 'Interior y portada con lomo por separado, a medida de KDP y otras imprentas.'
               : `Portada, índice, secciones${images.total ? ', ilustraciones' : ''}${answers ? ' y solucionario' : ''}, listo para imprimir.`}
@@ -655,6 +658,13 @@ function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: P
             </button>
           ))}
         </div>}
+        <div className="segmented" role="radiogroup" aria-label="Tinta">
+          {(['color', 'saver'] as const).map((k) => (
+            <button key={k} role="radio" aria-checked={ink === k} className={ink === k ? 'on' : ''} onClick={change(() => setInk(k))}>
+              {k === 'color' ? 'Color' : 'Blanco y negro'}
+            </button>
+          ))}
+        </div>
         <div className="segmented" role="radiogroup" aria-label="Tamaño de papel">
           {PAPERS[edition].map((p) => (
             <button key={p.value} role="radio" aria-checked={paper === p.value} className={paper === p.value ? 'on' : ''}

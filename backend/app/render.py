@@ -57,6 +57,7 @@ class Tome:
     collection: str | None = None  # the collection's name and the tome's level in it, printed on the cover
     level: int | None = None
     watermark: bool = False  # Prueba and Docente plans: classroom use only
+    mono: bool = False  # the black-and-white edition: grey pictures and theme, light fills
     school: str | None = None  # printed after the author: "Elaborado por Ana Ruiz · Colegio Montessori"
     logo: tuple[bytes, str] | None = None  # the organization's logo (Creador and up), beside the signature
 

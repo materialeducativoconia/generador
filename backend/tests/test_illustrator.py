@@ -78,3 +78,20 @@ async def test_vision_review_reads_a_verdict_wrapped_in_prose_or_fences():
     review = await vision.review(png(), kind="illustration", subject="x")
 
     assert review.ok is True
+
+
+def test_ink_saver_prints_a_light_grey_picture():
+    import io
+
+    from PIL import Image
+
+    from app.illustrator import ink_saver
+
+    buf = io.BytesIO()
+    im = Image.new("RGB", (40, 20), "#000000")
+    im.paste(Image.new("RGB", (20, 20), "#e11d48"), (20, 0))
+    im.save(buf, "PNG")
+    data, media = ink_saver(buf.getvalue())
+    out = Image.open(io.BytesIO(data))
+    assert media == "image/jpeg" and out.mode == "L"
+    assert out.getpixel((5, 10)) > 100  # black becomes a mid grey: about half the toner
