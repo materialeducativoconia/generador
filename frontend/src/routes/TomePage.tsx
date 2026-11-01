@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { saveWithGoogle } from '../auth/google'
 import { AppShell, StatusPill } from '../components/AppShell'
-import { BookCover } from '../components/BookCover'
+import { BookCover, CoverViewer } from '../components/BookCover'
 import { errorText } from '../components/ErrorNote'
 import { PageThumb } from '../components/Sheet'
 import { ART_LABEL, COVER_LABEL, FRAME_LABEL, GENRE_LABEL, THEME_LABEL } from '../lib/labels'
@@ -88,6 +88,7 @@ function PreviewPages({ series: s, progress }: { series: Series; progress?: Prog
             ) : (
               <div className="thumb placeholder generating" aria-hidden="true"><span /><span /><span /><span /></div>
             )}
+            <span className="watermark" aria-hidden="true" />
             <span className="preview-mark" aria-hidden="true">Vista previa</span>
           </li>
         ))}
@@ -115,9 +116,15 @@ function CoverPanel({ series: s }: { series: Series }) {
     onSettled: () => Promise.all([qc.invalidateQueries({ queryKey: ['series', s.id] }), qc.invalidateQueries({ queryKey: ['series'], exact: true })]),
   })
   const busy = s.cover_status === 'queued' || s.cover_status === 'running' || repaint.isPending
+  const [big, setBig] = useState(false)
+  const cover = { title: s.title ?? s.topic, genre: s.genre, audience: s.audience.label, cover_url: s.cover_url, cover_status: s.cover_status,
+                  cover_palette: s.cover_palette ?? s.design?.palette ?? null, design: s.design, marked: s.preview }
   return (
     <div className="cover-panel">
-      <BookCover size="hero" title={s.title ?? s.topic} genre={s.genre} audience={s.audience.label} cover_url={s.cover_url} cover_status={s.cover_status} cover_palette={s.cover_palette ?? s.design?.palette ?? null} />
+      <button className="cover-open" onClick={() => setBig(true)} disabled={!s.cover_url} aria-label="Ver la portada en grande">
+        <BookCover size="hero" {...cover} />
+      </button>
+      {big && <CoverViewer {...cover} onClose={() => setBig(false)} />}
       <button className="ghost small" onClick={() => repaint.mutate()} disabled={busy}>
         {busy ? 'Pintando…' : s.cover_url ? 'Otra portada' : s.cover_status === 'failed' ? 'Reintentar portada' : 'Crear portada'}
       </button>

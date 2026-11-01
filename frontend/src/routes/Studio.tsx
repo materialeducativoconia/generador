@@ -289,7 +289,7 @@ function BookItem({ tome: s, index, level, collections }: { tome: SeriesSummary;
   return (
     <li style={{ '--i': index } as React.CSSProperties} className="book-item">
       <Link to={`/app/tomos/${s.id}`} className="book-card" aria-label={`Abrir ${title}`}>
-        <BookCover title={title} genre={s.genre} cover_url={s.cover_url} cover_status={s.cover_status} cover_palette={s.cover_palette ?? s.design?.palette ?? null} />
+        <BookCover title={title} genre={s.genre} design={s.design} cover_url={s.cover_url} cover_status={s.cover_status} cover_palette={s.cover_palette ?? s.design?.palette ?? null} />
         <span className="card-f">
           {level && <span className="level-tag">Nivel {level}</span>}
           <StatusPill status={s.status} />
