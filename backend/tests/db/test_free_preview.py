@@ -1,14 +1,12 @@
-"""The free preview: a landing visitor gets the outline, the cover and a sample of section 1 at our cost; the rest
-of the tome and the downloads need a plan, and signing in with Google carries the preview over."""
+"""The free preview: a landing visitor gets the outline, the cover and their small tome (up to 4 pages) written at
+our cost; downloads and anything bigger need a plan, and signing in with Google carries the preview over."""
 
 import json
 
-from app.llm import UpstreamError
 from app.plans import FREE_PREVIEWS_PER_IP
-from app.research import Photo
 from tests.db.conftest import subscribe
 from tests.db.test_covers import FakeStorage
-from tests.db.test_illustrations import ART, LINE_ART, FakeImages, FakeVision
+from tests.db.test_illustrations import ART, FakeImages, FakeVision
 from tests.db.test_illustrations import SECTION as PICTURED_SECTION
 from tests.db.test_jobs import OUTLINE, SECTION, engine, run_next  # noqa: F401  (engine is a fixture)
 from tests.db.test_me import bearer
@@ -25,8 +23,7 @@ def visitor(key, user, ip="203.0.113.7"):
     return {**bearer(key, user), "X-Forwarded-For": f"{ip}, 10.0.0.1"}
 
 
-async def test_a_visitor_gets_outline_and_cover_free_and_nothing_more(raw_db, google_user, client, key,
-                                                                               engine):
+async def test_a_visitor_gets_the_whole_small_tome_free_and_nothing_more(raw_db, google_user, client, key, engine):
     anon = await google_user(anonymous=True)
     h = visitor(key, anon, ip="203.0.113.10")
     me = (await client.get("/api/me", headers=h)).json()
@@ -42,8 +39,9 @@ async def test_a_visitor_gets_outline_and_cover_free_and_nothing_more(raw_db, go
 
     await run_next(engine, ScriptedLLM(json.dumps(OUTLINE)))
     assert await raw_db.fetchval("select status from public.series where id = $1", sid) == "outline_ready"
-    assert await raw_db.fetchval("select count(*) from public.generation_jobs where series_id = $1"
-                                 " and kind = 'lesson'", sid) == 0  # only the cover: the pages show blurred
+    jobs = await raw_db.fetch("select payload from public.generation_jobs where series_id = $1 and kind = 'lesson'", sid)
+    sections = await raw_db.fetchval("select count(*) from public.lessons where series_id = $1", sid)
+    assert len(jobs) == sections and all(json.loads(j["payload"]) == {"preview": True} for j in jobs)
 
     again = await client.post("/api/series", json=NEW_TOME, headers=h)
     assert again.status_code == 402  # one free preview; after that, credits
@@ -83,29 +81,7 @@ async def test_signing_in_with_google_carries_the_preview_over(raw_db, google_us
     assert (await client.post("/api/series", json=NEW_TOME, headers=bearer(key, teacher))).status_code == 402
 
 
-class BusyIllustrator(FakeImages):
-    """The free Illustrator, out of its daily allowance for cows."""
-
-    async def generate(self, prompt, **kw):
-        if "cow" in prompt:
-            raise UpstreamError("upstream_unavailable", "Workers AI respondió 429.")
-        return await super().generate(prompt, **kw)
-
-
-class FakeFinder:
-    """Openverse stand-in: it knows cows, nothing else."""
-
-    def __init__(self):
-        self.queries = []
-
-    async def find(self, subject, kind, accept=None):
-        self.queries.append((subject, kind))
-        if "cow" not in subject or (accept and not await accept(LINE_ART)):
-            return None
-        return Photo(LINE_ART, "image/png", "Ana", "CC BY 4.0", "https://flickr.test/cow")
-
-
-async def test_the_preview_pictures_cost_nothing(raw_db, google_user, client, key, engine):
+async def test_the_preview_is_illustrated_like_the_real_tome_at_our_cost(raw_db, google_user, client, key, engine):
     await raw_db.execute("delete from public.assets where style_key = 'free'")  # an earlier run fills the library
     anon = await google_user(anonymous=True)
     h = visitor(key, anon, ip="203.0.113.61")
@@ -121,23 +97,55 @@ async def test_the_preview_pictures_cost_nothing(raw_db, google_user, client, ke
     cover = json.loads(await raw_db.fetchval("select cover from public.series where id = $1", sid))
     assert cover["free"] is True and cover["spent_usd"] == 0 and len(free.calls) == 1
 
-    # A sample of the first pages (no longer shown to visitors) still gets its pictures for free.
-    await raw_db.execute("insert into public.generation_jobs (user_id, series_id, lesson_id, kind, status, payload)"
-                         " select $1, $2, id, 'lesson', 'queued', '{\"sample_pages\": 2}' from public.lessons"
-                         " where series_id = $2 and position = 1", anon, sid)
-    await run_next(engine, ScriptedLLM(json.dumps(PICTURED_SECTION)))
-    finder = FakeFinder()  # the fallback when the free Illustrator cannot paint
-    job = await run_next(engine, ScriptedLLM(json.dumps(ART)), images=paid, free_images=BusyIllustrator(),
-                         finder=finder, storage=storage, vision=FakeVision())  # the Reviewer confirms the cow
-    assert job["kind"] == "illustration" and paid.calls == []  # not one premium picture for the preview
-    assets = await raw_db.fetch("select model, style_key, cost_usd, attribution from public.assets"
-                                " where series_id = $1 order by model", sid)
-    assert [(a["model"], a["style_key"], a["cost_usd"]) for a in assets] == [("fake-image", "free", 0.04),
-                                                                             ("openverse", "free", 0)]
-    assert json.loads(assets[1]["attribution"])["license"] == "CC BY 4.0"  # the Finder's picture is credited
+    # The pages: written at our cost, then illustrated by the premium Illustrator, as the bought tome will be.
+    job = await run_next(engine, ScriptedLLM(json.dumps(PICTURED_SECTION)))
+    assert job["kind"] == "lesson" and job["payload"] == {"preview": True}
+    job = await run_next(engine, ScriptedLLM(json.dumps(ART)), images=paid, storage=storage, vision=FakeVision())
+    assert job["kind"] == "illustration" and job["payload"] == {} and paid.calls
+    assert await raw_db.fetchval("select count(*) from public.credit_ledger l join public.memberships m using (org_id)"
+                                 " where m.user_id = $1", anon) == 0  # on us
 
     # Bought: the full tome brings the premium cover, paid with credits.
     await subscribe(raw_db, anon, "docente", 40)
     assert (await client.post(f"/api/series/{sid}/lessons/generate", json={}, headers=h)).status_code == 202
     assert await raw_db.fetchval("select count(*) from public.generation_jobs where series_id = $1 and kind = 'cover'"
                                  " and status = 'queued' and payload = '{}'", sid) == 1
+
+
+async def test_a_bought_preview_keeps_its_pages_and_charges_only_what_is_new(raw_db, google_user, client, key, engine):
+    anon = await google_user(anonymous=True)
+    h = visitor(key, anon, ip="203.0.113.80")
+    sid = (await client.post("/api/series", json={**PREVIEW, "section_count": 2, "page_count": 2},
+                             headers=h)).json()["series"]["id"]
+    await run_next(engine, ScriptedLLM(json.dumps({**OUTLINE, "sections": OUTLINE["sections"][:2]})))
+    await raw_db.execute("update public.generation_jobs set status = 'succeeded' where series_id = $1", sid)
+    await raw_db.execute("update public.lessons set status = 'generated', content_json = $2::jsonb where series_id = $1",
+                         sid, json.dumps(SECTION))
+    await subscribe(raw_db, anon, "docente", 40)
+    detail = (await client.get(f"/api/series/{sid}", headers=h)).json()
+    lessons = [{k: l[k] for k in ("id", "title", "objectives", "key_points", "pages")} for l in detail["lessons"]]
+    lessons.append({"title": "Una sección nueva", "objectives": ["Aprender más"], "key_points": ["más"], "pages": 3})
+
+    edited = await client.patch(f"/api/series/{sid}/outline", headers=h,
+                                json={"version": detail["version"], "lessons": lessons})
+    assert edited.status_code == 200, edited.text
+    assert (await client.post(f"/api/series/{sid}/lessons/generate", json={}, headers=h)).status_code == 202
+
+    charged = await raw_db.fetch("select reason, delta from public.credit_ledger l join public.memberships m using (org_id)"
+                                 " where m.user_id = $1 and delta < 0", anon)
+    assert [(c["reason"], c["delta"]) for c in charged] == [("Sección", -3)]  # the new section only, not the 2 written
+
+
+async def test_a_redone_outline_is_not_another_free_tome(raw_db, google_user, client, key, engine):
+    anon = await google_user(anonymous=True)
+    h = visitor(key, anon, ip="203.0.113.90")
+    sid = (await client.post("/api/series", json=PREVIEW, headers=h)).json()["series"]["id"]
+    await run_next(engine, ScriptedLLM(json.dumps(OUTLINE)))
+    await raw_db.execute("delete from public.generation_jobs where series_id = $1 and kind <> 'outline'", sid)
+    await subscribe(raw_db, anon, "docente", 40)  # a visitor cannot redo it at all (it costs credits); a buyer can
+
+    assert (await client.post(f"/api/series/{sid}/outline/regenerate", json={}, headers=h)).status_code == 202
+    await run_next(engine, ScriptedLLM(json.dumps(OUTLINE)))
+
+    assert await raw_db.fetchval("select count(*) from public.generation_jobs where series_id = $1 and kind = 'lesson'",
+                                 sid) == 0

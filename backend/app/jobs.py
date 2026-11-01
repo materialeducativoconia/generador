@@ -174,7 +174,20 @@ async def _outline(deps: Deps, job: dict) -> None:
         # The free preview's cover comes from the free Illustrator; the paid one is painted when the tome is bought.
         cover_job = await enqueue_cover(conn, job["user_id"], job["series_id"], free=bool(series["preview"]))
         await credits.move_charge(conn, job["id"], cover_job, "Portada")  # paid when the tome was created
+        # The free preview is the real tome (up to 4 pages), written and illustrated at our cost; only the first outline
+        # (the job that carries the request): a redone outline is not another free tome.
+        if series["preview"] and job["payload"].get("brief"):
+            await _queue_preview(conn, job)
         await _succeed(conn, job)
+
+
+async def _queue_preview(conn, job: dict) -> None:
+    """Every section of a visitor's preview; the pages stay theirs when they buy a plan, so no credit pays twice."""
+    await conn.execute(text(
+        """insert into public.generation_jobs (user_id, series_id, lesson_id, kind, status, payload)
+           select :u, :s, id, 'lesson', 'queued', '{"preview": true}' from public.lessons where series_id = :s"""),
+        {"u": job["user_id"], "s": job["series_id"]})
+    await conn.execute(text("update public.lessons set status = 'queued' where series_id = :s"), {"s": job["series_id"]})
 
 
 async def _research(deps: Deps, job: dict, brief: Brief) -> dict:
@@ -462,9 +475,12 @@ EXTENSION = {"image/png": "png", "image/svg+xml": "svg", "image/jpeg": "jpg"}
 
 async def _queue_artwork(conn, job: dict, sample: bool = False) -> None:
     """Once every section is written, one job illustrates the whole tome (style needs the full picture).
-    The free preview's sample is illustrated right away: a colouring book without drawings shows nothing."""
-    ready = (await conn.execute(text("select status = 'ready' from public.series where id = :s"),
-                                {"s": job["series_id"]})).scalar_one()
+    The free preview's sample is illustrated right away: a colouring book without drawings shows nothing. A preview
+    is illustrated once all its sections are written (the series stays outline_ready, so it never turns ready)."""
+    ready = (await conn.execute(text(
+        """select s.status = 'ready' or (s.preview and not exists (
+                  select 1 from public.lessons l where l.series_id = s.id and l.status in ('pending', 'queued', 'generating')))
+             from public.series s where s.id = :s"""), {"s": job["series_id"]})).scalar_one()
     if not ready and not sample:
         return
     await conn.execute(text(

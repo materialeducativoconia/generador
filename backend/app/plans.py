@@ -37,8 +37,8 @@ PAID = ("docente", "creador", "editorial")
 TRIAL_CREDITS = 0  # replaced by the free preview; organizations from before keep what they were given
 # The free preview, paid by us to convert: outline, design, illustrated cover and the first pages of section 1.
 FREE_PREVIEW_PAGES = 4  # a visitor's preview: up to 4 pages and 4 sections
-FREE_PREVIEWS_PER_IP = 5  # a day; a school network shares one IP, and a preview costs about a cent
-FREE_PREVIEWS_PER_DAY = 300  # for everyone: a few dollars of text a day; pictures come from the free Illustrator
+FREE_PREVIEWS_PER_IP = 3  # a day; a school network shares one IP
+FREE_PREVIEWS_PER_DAY = 100  # for everyone: a preview is the real tome, text and premium pictures, ~$0.10–0.30
 # Extra credits, one-off: pricier per credit than a plan, so moving up a plan is the better deal. Valid 12 months.
 PACKS: dict[str, tuple[int, int]] = {"pack_100": (100, 8), "pack_300": (300, 21), "pack_1000": (1000, 60)}
 PACK_MONTHS = 12

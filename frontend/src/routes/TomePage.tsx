@@ -36,7 +36,7 @@ export function TomePage() {
       </header>
 
       <Pipeline status={status} progress={progress.data} />
-      {s.preview && <BlurredPages series={s} />}
+      {s.preview && status === 'outline_ready' && <PreviewPages series={s} progress={progress.data} />}
 
       {status === 'outlining' && <Planning />}
       {status === 'outline_failed' && <OutlineFailed series={s} />}
@@ -55,22 +55,58 @@ export function TomePage() {
   )
 }
 
-/** The free preview shows only the cover; the pages the visitor chose stay blurred until the tome is bought. */
-function BlurredPages({ series: s }: { series: Series }) {
-  const pages = s.page_target ?? s.lessons.reduce((n, l) => n + (l.pages ?? 1), 0)
-  const titles = s.lessons.flatMap((l) => Array.from({ length: l.pages ?? 1 }, () => l.title))
-  if (!s.design || pages < 1) return null
+/** The free preview is the visitor's real tome, page by page, as small locked thumbnails: no opening, zooming,
+ *  copying or printing until a plan is chosen. */
+function PreviewPages({ series: s, progress }: { series: Series; progress?: Progress }) {
+  const status = new Map(progress?.lessons.map((l) => [l.id, l.status]))
+  const painting = (progress?.images.active ?? 0) > 0
+  if (!s.design) return null
+  type Page = { key: string; lesson: LessonSummary; blocks: Block[] | null; first: boolean }
+  const pages = s.lessons.flatMap((l): Page[] => {
+    const blocks = l.content_json?.blocks
+    const st = status.get(l.id) ?? l.status
+    if (st === 'pending' || st === 'failed') return []  // not part of the free preview (a redone outline, a new section)
+    if (!blocks || !['generated', 'edited', 'approved'].includes(st)) {
+      return Array.from({ length: l.pages ?? 1 }, (_, i) => ({ key: `${l.id}:${i}`, lesson: l, blocks: null, first: i === 0 }))
+    }
+    return splitPages(blocks).map((page, i) => ({ key: `${l.id}:${i}`, lesson: l, blocks: page, first: i === 0 }))
+  })
+  if (!pages.length) return null
+  const writing = pages.some((p) => !p.blocks)
   return (
-    <section className="blurred-pages" aria-label="Páginas del tomo">
-      {titles.slice(0, pages).map((title, i) => (
-        <PageThumb key={i} design={s.design!} position={i + 1} title={title} blocks={FILLER} />
-      ))}
+    <section className="preview-pages" aria-label="Vista previa de tu tomo" onContextMenu={(e) => e.preventDefault()} onDragStart={(e) => e.preventDefault()}>
+      <header>
+        <h2 className="section-h">{writing ? 'Escribiendo e ilustrando tu tomo…' : 'Así quedó tu tomo'}</h2>
+        <p className="muted small">Vista previa protegida. Con un plan lo ves en grande, lo editas, lo descargas e imprimes.</p>
+      </header>
+      <ul>
+        {pages.map((p) => (
+          <li key={p.key} className="preview-page">
+            {p.blocks ? (
+              <PageThumb design={s.design} position={p.lesson.position} title={p.lesson.title} blocks={p.blocks} bare={!p.first}
+                         assets={s.assets} credits={s.credits} diagrams={p.lesson.diagrams} painting={painting} />
+            ) : (
+              <div className="thumb placeholder generating" aria-hidden="true"><span /><span /><span /><span /></div>
+            )}
+            <span className="preview-mark" aria-hidden="true">Vista previa</span>
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }
 
-const FILLER: Block[] = Array.from({ length: 6 }, (_, i) => ({ id: `f${i}`, type: 'paragraph' as const,
-  text: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore.' }))
+/** A section's blocks page by page: a page break starts a new page, and a picture book's plate is a page of its own. */
+function splitPages(blocks: Block[]): Block[][] {
+  const pages: Block[][] = [[]]
+  for (const b of blocks) {
+    const plate = b.type === 'image' && b.size === 'plate'
+    if (b.type === 'page_break' || (plate && pages.at(-1)!.length)) pages.push([])
+    if (b.type !== 'page_break') pages.at(-1)!.push(b)
+    if (plate) pages.push([])
+  }
+  return pages.filter((p) => p.length)
+}
 
 function CoverPanel({ series: s }: { series: Series }) {
   const qc = useQueryClient()
@@ -469,6 +505,7 @@ function OutlineEditor({ series }: { series: Series }) {
         </button>
       )}
 
+      {series.preview && <p className="muted small">Las páginas de tu vista previa ya están hechas y no gastan créditos: solo se cobran las secciones nuevas o las que cambies de páginas o contenido.</p>}
       <div className="action-bar">
         <div className="redo">
           <input value={redo} onChange={(e) => setRedo(e.target.value)} placeholder="¿Rehacer? Ej.: menos teoría, más ejercicios" maxLength={2000} />

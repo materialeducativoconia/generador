@@ -15,22 +15,24 @@ type Props = {
   painting?: boolean
   children?: ReactNode
   className?: string
+  bare?: boolean  // a following page of the section: no opener
 }
 
 /** A printed page in the tome's theme: same opener, fonts and palette as the PDF. */
-export function Sheet({ design, position, title, blocks, assets = {}, credits = {}, diagrams = {}, painting = false, children, className = '' }: Props) {
+export function Sheet({ design, position, title, blocks, assets = {}, credits = {}, diagrams = {}, painting = false, children, className = '', bare = false }: Props) {
   useThemeFonts(design)
   const { theme, ornament, style } = themeVars(design)
   const label = theme.opener === 'blob' ? String(position) : theme.opener === 'numeral' ? String(position).padStart(2, '0') : `Sección ${position}`
   return (
     <article className={`sheet opener-${theme.opener}${theme.kids ? ' kids' : ''} ${className}`} style={style}>
-      <header className="op">
+      {/* A picture book's plate opens its section itself, as in the PDF. */}
+      {!bare && !(blocks?.[0]?.type === 'image' && blocks[0].size === 'plate') && <header className="op">
         {theme.kids && <><i className="d1" /><i className="d2" /><i className="d3" /></>}
         {/* Static markup from lib/themes, never model output. */}
         {ornament && <svg className="orn" viewBox="0 0 24 24" aria-hidden="true" dangerouslySetInnerHTML={{ __html: ornament }} />}
         <span className="num">{label}</span>
         <h1 className="sheet-title">{title}</h1>
-      </header>
+      </header>}
       <AssetsContext.Provider value={{ urls: assets, credits, diagrams, painting }}>{blocks ? <Blocks blocks={blocks} /> : children}</AssetsContext.Provider>
     </article>
   )

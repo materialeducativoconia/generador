@@ -295,7 +295,13 @@ async def edit_outline(series_id: uuid.UUID, body: OutlineEdit, request: Request
             if lesson.id:
                 updated = await conn.execute(text(
                     """update public.lessons set position = :p, title = :t, objectives = cast(:o as jsonb),
-                              key_points = cast(:k as jsonb), pages = :pg where id = :id and series_id = :s"""
+                              key_points = cast(:k as jsonb), pages = :pg,
+                              -- written pages (the preview's) are kept unless what they cover changes
+                              status = case when status <> 'pending' and (pages is distinct from :pg
+                                                 or objectives is distinct from cast(:o as jsonb)
+                                                 or key_points is distinct from cast(:k as jsonb))
+                                            then 'pending' else status end
+                        where id = :id and series_id = :s"""
                 ), {**params, "id": lesson.id})
                 if updated.rowcount == 0:
                     raise ApiError(422, "validation_error", "Una sección no pertenece a este tomo.")
@@ -451,9 +457,13 @@ async def generate_lessons(series_id: uuid.UUID, body: Generate, request: Reques
                 "select id, pages from public.lessons where series_id = :s and (status in ('pending','failed') or sample)"
                 " order by position"), {"s": series_id})).all()
         targets = [r.id for r in rows]
-        if not targets:
+        if series["preview"] and (await credits.account(conn, user_id)).plan_key not in PAID:
+            raise ApiError(402, "plan_required", "Elige un plan para generar tu tomo completo, editarlo y descargarlo.",
+                           {"feature": "preview"})
+        if not targets and not series["preview"]:  # a bought preview may already be complete: it just turns ready
             raise ApiError(409, "invalid_state", "No hay secciones pendientes de generar.")
-        await _check_quota(conn, user_id, len(targets))
+        if targets:
+            await _check_quota(conn, user_id, len(targets))
         jobs = []
         for lesson_id, pages in rows:
             job_id = uuid7()
@@ -472,6 +482,7 @@ async def generate_lessons(series_id: uuid.UUID, body: Generate, request: Reques
             """update public.series set status = 'generating', version = version + 1,
                       outline_approved_at = coalesce(outline_approved_at, now()) where id = :s"""
         ), {"s": series_id})
+        await conn.execute(text("select public.refresh_series_status(:s)"), {"s": series_id})  # nothing left: ready
         return {"series": {"id": str(series_id), "status": "generating"}, "jobs": jobs}
 
 

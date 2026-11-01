@@ -791,8 +791,19 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .landing-composer .error { padding: 0 14px 12px; margin: 0; }
 .landing-go { margin-left: auto; padding: 8px 16px; font-size: 14px; }
 .turnstile { padding: 0 14px 12px; }
-.blurred-pages { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
-.blurred-pages .thumb { filter: blur(5px); user-select: none; pointer-events: none; }
+/* The free preview: the real pages, small and locked (no opening, selecting, dragging or printing). */
+.preview-pages { margin: 0 0 24px; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.preview-pages header { margin-bottom: 12px; }
+.preview-pages header p { margin: 2px 0 0; }
+.preview-pages ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; }
+.preview-page { position: relative; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 2px rgb(12 10 9 / 0.06), 0 6px 16px -10px rgb(12 10 9 / 0.3);
+                animation: enter 320ms var(--ease-out) both; }
+.preview-page .thumb { pointer-events: none; }
+.preview-page img { -webkit-user-drag: none; }
+.preview-mark { position: absolute; inset: auto 0 0; padding: 4px 0; text-align: center; font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
+                text-transform: uppercase; color: #fff; background: rgb(12 10 9 / 0.55); backdrop-filter: blur(4px); pointer-events: none; }
+.preview-page .placeholder.generating { aspect-ratio: 210 / 297; }
+@media print { body:has(.preview-pages) * { visibility: hidden !important; } }
 
 /* The landing's carousel of example covers: two copies of the row, the track slides one copy's width. */
 .showcase { width: 100vw; margin: 28px calc(50% - 50vw) 8px; overflow: hidden; height: 0; opacity: 0; transition: opacity 400ms ease;
