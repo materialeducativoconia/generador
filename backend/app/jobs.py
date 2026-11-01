@@ -26,7 +26,7 @@ from app.free_images import FREE_STYLE
 from app.llm import LLM, UpstreamAuthError, UpstreamError
 from app.artwork import ImageRequest, plan_sheets, sheet_prompt, slice_sheet
 from app.illustrator import (ASPECT, cover_jpeg, line_art_coverage, normalize_subject, prepare_image, reference_image,
-                             vectorize)
+                             upscale, vectorize)
 from app.references import find_covers
 from app.styles import contact_sheet, read_spec, sample_pages, theme_from_spec
 from app.vision import Review
@@ -47,6 +47,7 @@ class Deps:
     edit: bool = True  # the Editor proofreads each section after the Writer
     finder: Any = None  # app.free_images.Finder (openly licensed pictures); the free preview's first stop
     free_images: Any = None  # app.free_images.WorkersAI; None leaves the preview with what the Finder found
+    preview_paint: bool = True  # a preview picture the shared library lacks: painted at 1K (True) or left for later
 
 
 class JobFailed(Exception):
@@ -492,7 +493,45 @@ async def _queue_artwork(conn, job: dict, sample: bool = False) -> None:
               and not exists (select 1 from public.generation_jobs where series_id = :s and kind = 'illustration'
                                  and status in ('queued', 'running'))"""),
         {"u": job["user_id"], "s": job["series_id"], "pictured": list(PICTURED),
-         "p": json.dumps({"free": True} if sample else {})})
+         "p": json.dumps({"free": True} if sample else {"preview": True} if await _is_preview(conn, job["series_id"]) else {})})
+
+
+async def _is_preview(conn, series_id) -> bool:
+    """A visitor's preview not bought yet (approving it needs a plan)."""
+    return bool((await conn.execute(text(
+        "select preview and outline_approved_at is null from public.series where id = :s"), {"s": series_id})).scalar_one())
+
+
+async def _upscale_drafts(deps: Deps, series) -> None:
+    """A bought preview: its 1K pictures go to print size (free, local) and, without a brand, join the library."""
+    async with deps.engine.connect() as conn:
+        drafts = (await conn.execute(text(
+            "select id, storage_key, media_type from public.assets where series_id = :s and draft"),
+            {"s": series["id"]})).mappings().all()
+    shareable = not ((_json(series["design"]) or {}).get("brand") or {}).get("mascot")
+    for d in drafts:
+        if d["media_type"] == "image/svg+xml":  # line art is vector: any size already
+            data, media_type, key = None, d["media_type"], d["storage_key"]
+        else:
+            data, media_type = await asyncio.to_thread(upscale, await deps.storage.download(d["storage_key"], bucket="images"))
+            key = f"{d['id']}-print.jpg"
+            await deps.storage.upload(key, data, media_type, bucket="images")
+        async with deps.engine.begin() as conn:
+            await conn.execute(text(
+                """update public.assets set draft = false, storage_key = :k, media_type = :mt, library = :lib,
+                          topic_norm = :t where id = :id"""),
+                {"id": d["id"], "k": key, "mt": media_type, "lib": shareable,
+                 "t": normalize_subject(series["title"] or series["topic"])})
+
+
+async def _from_library(conn, r: "ImageRequest", topic: str):
+    """The shared library's closest premium picture of the same kind and shape, or None."""
+    return (await conn.execute(text(
+        """select id from public.assets
+            where library and kind = :k and aspect = :a and extensions.similarity(subject_norm, :sn) > 0.3
+            order by extensions.similarity(subject_norm, :sn) + 0.5 * extensions.similarity(coalesce(topic_norm, ''), :tn)
+                     desc, use_count desc limit 1"""),
+        {"k": r.kind, "a": ASPECT.get(r.size, "3:4"), "sn": normalize_subject(r.subject), "tn": topic})).scalar_one_or_none()
 
 
 async def _illustration(deps: Deps, job: dict) -> None:
@@ -502,6 +541,9 @@ async def _illustration(deps: Deps, job: dict) -> None:
         lessons = (await conn.execute(text(
             "select id::text, position, content_json from public.lessons where series_id = :s order by position"
         ), {"s": job["series_id"]})).mappings().all()
+    preview = bool(job["payload"].get("preview"))  # a visitor's preview: the shared library first, then 1K drafts
+    if not preview:
+        await _upscale_drafts(deps, series)
     requests = _picture_requests(lessons)
     free = bool(job["payload"].get("free"))  # the free preview's sample: library, web and free Illustrator only
     if free:
@@ -533,7 +575,17 @@ async def _illustration(deps: Deps, job: dict) -> None:
                 for r in group:
                     await _attach_image(conn, r.lesson_id, r.block_id, asset_id, r.word)
                 del unique[(kind, norm)]
-    if not unique:
+    if preview:  # what paying users painted serves visitors at no cost
+        topic = normalize_subject(series["title"] or series["topic"])
+        async with deps.engine.begin() as conn:
+            for (kind, norm), group in list(unique.items()):
+                if group[0].kind != "icon" and (asset_id := await _from_library(conn, group[0], topic)):
+                    await conn.execute(text("update public.assets set use_count = use_count + :n where id = :id"),
+                                       {"n": len(group), "id": asset_id})
+                    for r in group:
+                        await _attach_image(conn, r.lesson_id, r.block_id, asset_id, r.word)
+                    del unique[(kind, norm)]
+    if not unique or (preview and not deps.preview_paint):
         async with deps.engine.begin() as conn:
             await _succeed(conn, job)
         return
@@ -545,6 +597,9 @@ async def _illustration(deps: Deps, job: dict) -> None:
 
     plan = ArtPlan.model_validate(_json(series["art"])) if series["art"] else None
     todo = [group[0] for group in unique.values()]
+    # Bought art without a brand mascot joins the shared library; a preview's 1K drafts join once upscaled.
+    library = not preview and not ((_json(series["design"]) or {}).get("brand") or {}).get("mascot")
+    topic_norm = normalize_subject(series["title"] or series["topic"])
     if plan is None and any(r.kind != "icon" for r in todo):  # worksheet pictures need no art direction
         cover_concept = (_json(series["cover"]) or {}).get("concept")
         try:
@@ -590,7 +645,7 @@ async def _illustration(deps: Deps, job: dict) -> None:
             image = await deps.images.generate(sheet_prompt(sheet, plan, design, note),
                                                references=[] if sheet.family == "icon" else references,
                                                aspect_ratio=sheet.aspect,
-                                               resolution=sheet.resolution)
+                                               resolution="1K" if preview else sheet.resolution)
             panels = [prepare_image(p, sheet.requests[0].kind) for p in
                       slice_sheet(image.data, sheet.cols, sheet.rows)[:len(sheet.requests)]]
             reviews = await _review_sheet(deps, image.data, panels, sheet)
@@ -598,7 +653,8 @@ async def _illustration(deps: Deps, job: dict) -> None:
             for r, (data, media_type), review in zip(sheet.requests, panels, reviews):
                 if review.ok or last_round:
                     await _store_image(deps, job, (key, shared), r, unique[(r.kind, normalize_subject(r.subject))], data,
-                                       media_type, image, len(sheet.requests), review, round_ + 1, plan)
+                                       media_type, image, len(sheet.requests), review, round_ + 1, plan,
+                                       draft=preview, library=library, topic=topic_norm)
                 else:
                     failed.append(r)
                     feedback[r.ref] = review.issues or "did not match the request"
@@ -705,7 +761,7 @@ async def _review_sheet(deps: Deps, sheet_image: bytes, panels: list[tuple[bytes
 
 
 async def _store_image(deps, job, keys, request, group, data, media_type, image, share, review, attempts, plan,
-                       attribution=None, style_key=None, source=None):
+                       attribution=None, style_key=None, source=None, draft=False, library=False, topic=None):
     prompt = plan.prompts.get(request.ref) or request.subject
     generic = not any(c.name.lower() in f"{prompt} {request.subject}".lower() for c in plan.characters)
     key = style_key or (ICON_LIBRARY if request.kind == "icon" else keys[1] if request.kind == "line_art" and generic
@@ -720,12 +776,15 @@ async def _store_image(deps, job, keys, request, group, data, media_type, image,
     async with deps.engine.begin() as conn:
         await conn.execute(text(
             """insert into public.assets (id, kind, subject, subject_norm, style_key, storage_key, media_type, model,
-                                          cost_usd, review, created_by, use_count, attribution, series_id)
+                                          cost_usd, review, created_by, use_count, attribution, series_id,
+                                          draft, library, aspect, topic_norm)
                values (:id, :k, :subj, :n, :st, :key, :mt, :model, :cost, cast(:review as jsonb), :u, :uses,
-                       cast(:attr as jsonb), :s)"""
+                       cast(:attr as jsonb), :s, :draft, :lib, :aspect, :topic)"""
         ), {"id": asset_id, "k": request.kind, "subj": request.subject, "n": normalize_subject(request.subject),
             "st": key, "key": storage_key, "mt": media_type, "model": image.model if image else source or "wikimedia-commons",
             "u": job["user_id"], "s": job["series_id"], "uses": len(group),
+            "draft": draft, "lib": library and request.kind in ("illustration", "line_art"),
+            "aspect": ASPECT.get(request.size, "3:4"), "topic": topic,
             "cost": ((image.cost_usd or 0) / share) if image else 0,
             "attr": json.dumps(attribution) if attribution else None,
             "review": json.dumps({"ok": review.ok, "has_text": review.has_text, "issues": review.issues,

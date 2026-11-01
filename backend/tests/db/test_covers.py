@@ -31,6 +31,9 @@ class FakeStorage:
     def public_url(self, key, bucket="covers"):
         return f"https://storage.test/{bucket}/{key}"
 
+    async def download(self, key, bucket="covers"):
+        return self.uploads[(bucket, key)][0]
+
 
 async def fake_references(queries, **kwargs):
     return [Reference("Piano for Kids", "https://openlibrary.org/works/OL1W",

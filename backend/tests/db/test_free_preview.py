@@ -82,6 +82,7 @@ async def test_signing_in_with_google_carries_the_preview_over(raw_db, google_us
 
 
 async def test_the_preview_is_illustrated_like_the_real_tome_at_our_cost(raw_db, google_user, client, key, engine):
+    await raw_db.execute("update public.assets set library = false")  # other tests' art: this one paints its own
     await raw_db.execute("delete from public.assets where style_key = 'free'")  # an earlier run fills the library
     anon = await google_user(anonymous=True)
     h = visitor(key, anon, ip="203.0.113.61")
@@ -101,7 +102,10 @@ async def test_the_preview_is_illustrated_like_the_real_tome_at_our_cost(raw_db,
     job = await run_next(engine, ScriptedLLM(json.dumps(PICTURED_SECTION)))
     assert job["kind"] == "lesson" and job["payload"] == {"preview": True}
     job = await run_next(engine, ScriptedLLM(json.dumps(ART)), images=paid, storage=storage, vision=FakeVision())
-    assert job["kind"] == "illustration" and job["payload"] == {} and paid.calls
+    assert job["kind"] == "illustration" and job["payload"] == {"preview": True}
+    assert paid.calls and {c["resolution"] for c in paid.calls} == {"1K"}  # drafts: thumbnails need no more
+    assert await raw_db.fetchval("select bool_and(draft) and not bool_or(library) from public.assets"
+                                 " where series_id = $1", sid)
     assert await raw_db.fetchval("select count(*) from public.credit_ledger l join public.memberships m using (org_id)"
                                  " where m.user_id = $1", anon) == 0  # on us
 
@@ -110,6 +114,16 @@ async def test_the_preview_is_illustrated_like_the_real_tome_at_our_cost(raw_db,
     assert (await client.post(f"/api/series/{sid}/lessons/generate", json={}, headers=h)).status_code == 202
     assert await raw_db.fetchval("select count(*) from public.generation_jobs where series_id = $1 and kind = 'cover'"
                                  " and status = 'queued' and payload = '{}'", sid) == 1
+
+    # ...and the preview's 1K pictures go to print size for free and join the shared library.
+    await raw_db.execute("update public.generation_jobs set status = 'cancelled' where series_id = $1 and kind <> 'illustration'", sid)
+    job = await run_next(engine, ScriptedLLM(), images=paid, storage=storage, vision=FakeVision())
+    assert job["kind"] == "illustration" and job["payload"] == {}
+    rows = await raw_db.fetch("select draft, library, storage_key, media_type from public.assets where series_id = $1", sid)
+    assert rows and all(not r["draft"] and r["library"] for r in rows)
+    for r in rows:
+        if r["media_type"] == "image/jpeg":
+            assert r["storage_key"].endswith("-print.jpg") and ("images", r["storage_key"]) in storage.uploads
 
 
 async def test_a_bought_preview_keeps_its_pages_and_charges_only_what_is_new(raw_db, google_user, client, key, engine):
@@ -149,3 +163,51 @@ async def test_a_redone_outline_is_not_another_free_tome(raw_db, google_user, cl
 
     assert await raw_db.fetchval("select count(*) from public.generation_jobs where series_id = $1 and kind = 'lesson'",
                                  sid) == 0
+
+
+
+async def test_a_preview_takes_matching_art_from_the_shared_library_for_free(raw_db, google_user, client, key, engine):
+    await raw_db.execute("update public.assets set library = false")
+    painter = await google_user()
+    await raw_db.execute(
+        """insert into public.assets (kind, subject, subject_norm, style_key, storage_key, media_type, created_by,
+                                      library, aspect, topic_norm)
+           values ('illustration', 'un granero rojo', 'granero rojo', 'tome:x', 'x.jpg', 'image/jpeg', $1, true, '4:3',
+                   'granja')""", painter)
+    anon = await google_user(anonymous=True)
+    sid = (await client.post("/api/series", json={**PREVIEW, "section_count": 1, "page_count": 1},
+                             headers=visitor(key, anon, ip="203.0.113.95"))).json()["series"]["id"]
+    await run_next(engine, ScriptedLLM(json.dumps({**OUTLINE, "sections": OUTLINE["sections"][:1]})))
+    only_barn = {**PICTURED_SECTION, "blocks": [b for b in PICTURED_SECTION["blocks"] if b["id"] != "b2"]}
+    await run_next(engine, ScriptedLLM(json.dumps(only_barn)))
+
+    paid = FakeImages()
+    job = await run_next(engine, ScriptedLLM(), images=paid, storage=FakeStorage(), vision=FakeVision())
+
+    assert job["kind"] == "illustration" and paid.calls == []  # not one picture painted
+    content = json.loads(await raw_db.fetchval("select content_json from public.lessons where series_id = $1", sid))
+    barn = next(b for b in content["blocks"] if b["id"] == "b3")
+    assert await raw_db.fetchval("select subject from public.assets where id = $1::uuid", barn["asset_id"]) == "un granero rojo"
+
+
+async def test_the_next_visitor_with_the_same_request_gets_the_finished_preview_at_no_cost(raw_db, google_user, client,
+                                                                                         key, engine):
+    first = await google_user(anonymous=True)
+    request = {**PREVIEW, "request": "Libro ilustrado del ciclo del agua para preescolar"}
+    donor = (await client.post("/api/series", json=request, headers=visitor(key, first, ip="203.0.113.97"))).json()
+    sid = donor["series"]["id"]
+    await raw_db.execute("update public.series set status = 'outline_ready', title = 'El agua', cover_key = 'c.png',"
+                         " cover = '{\"free\": true}', design = $2::jsonb where id = $1", sid, json.dumps(DESIGN))
+    await raw_db.execute("insert into public.lessons (series_id, position, title, objectives, key_points, content_json, status, pages)"
+                         " values ($1, 1, 'Lluvia', '[]', '[]', $2::jsonb, 'generated', 1)", sid, json.dumps(SECTION))
+
+    second = await google_user(anonymous=True)
+    served = await client.post("/api/series", json={**request, "request": "  libro ILUSTRADO del ciclo del agua para preescolar"},
+                               headers=visitor(key, second, ip="203.0.113.98"))
+
+    assert served.status_code == 202 and served.json()["job"] is None
+    copy = await raw_db.fetchrow("select status, title, cloned_from, user_id from public.series where id = $1::uuid",
+                                 served.json()["series"]["id"])
+    assert copy["status"] == "outline_ready" and copy["title"] == "El agua" and str(copy["cloned_from"]) == sid
+    assert await raw_db.fetchval("select count(*) from public.lessons where series_id = $1 and status = 'generated'",
+                                 served.json()["series"]["id"]) == 1

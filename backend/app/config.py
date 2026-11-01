@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""  # sk_live_… / sk_test_…; empty disables billing
     stripe_webhook_secret: str = ""  # whsec_…, from scripts/stripe_setup.py
     app_url: str = "http://localhost:5173"  # where Stripe sends the user back
+    preview_paint: bool = True  # a preview picture the shared library lacks is painted at 1K; False: placeholder, $0
     run_worker: bool = False  # run the job loop inside the API process (Render free plan has no workers)
 
     @property

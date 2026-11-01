@@ -14,6 +14,7 @@ from app import credits
 from app.api.deps import current_user_id
 from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Block, Design, OutlineSection, block_assets
 from app.diagrams import render_diagram
+from app.illustrator import normalize_subject
 from app.errors import ApiError
 from app.plans import COVER, FREE_PREVIEW_PAGES, FREE_PREVIEWS_PER_DAY, FREE_PREVIEWS_PER_IP, OUTLINE, PAID, tome_credits
 from app.jobs import enqueue_cover
@@ -101,15 +102,23 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
                            f"{FREE_PREVIEW_PAGES} secciones. Elige un plan para tomos más grandes.",
                            {"plan": acc.plan_key, "max_pages": FREE_PREVIEW_PAGES})
         series_id, job_id = uuid7(), uuid7()
+        # Identical plain requests share a preview: the first visitor's (or a buyer's) tome serves the next ones.
+        plain = not (body.extra_instructions or body.style_id or body.identity_id or body.collection_id)
+        key = "|".join([normalize_subject(body.request), body.audience, body.format, str(body.page_count),
+                        str(body.section_count)]) if plain else None
+        if free and key and (donor := await _preview_donor(conn, key)):
+            await _clone_preview(conn, donor, series_id, user_id, body.request, ip)
+            return await _created(conn, series_id, None)
         await conn.execute(text(
             """insert into public.series (id, user_id, topic, audience, language, lesson_count,
-                                          extra_instructions, status, page_target, style_id, preview, preview_ip)
+                                          extra_instructions, status, page_target, style_id, preview, preview_ip,
+                                          preview_key)
                values (:id, :u, :topic, cast(:audience as jsonb), :lang, :n, :extra, 'outlining', :pages,
                        (select id from public.styles where id = :st and user_id = :u and status = 'ready'),
-                       :free, :ip)"""
+                       :free, :ip, :key)"""
         ), {"id": series_id, "u": user_id, "topic": body.request, "audience": json.dumps({"label": body.audience}),
             "lang": body.language, "n": body.section_count, "extra": body.extra_instructions,
-            "st": body.style_id, "pages": body.page_count, "free": free, "ip": ip if free else None})
+            "st": body.style_id, "pages": body.page_count, "free": free, "ip": ip if free else None, "key": key})
         await conn.execute(text(
             """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, idempotency_key)
                values (:id, :u, :s, 'outline', 'queued', cast(:payload as jsonb), :k)"""
@@ -483,6 +492,13 @@ async def generate_lessons(series_id: uuid.UUID, body: Generate, request: Reques
                       outline_approved_at = coalesce(outline_approved_at, now()) where id = :s"""
         ), {"s": series_id})
         await conn.execute(text("select public.refresh_series_status(:s)"), {"s": series_id})  # nothing left: ready
+        # The preview's 1K pictures go to print size now (the illustration job upscales them first).
+        await conn.execute(text(
+            """insert into public.generation_jobs (user_id, series_id, kind, status, payload, max_attempts)
+               select :u, :s, 'illustration', 'queued', '{}', 3
+                where exists (select 1 from public.assets where series_id = :s and draft)
+                  and not exists (select 1 from public.generation_jobs where series_id = :s and kind = 'illustration'
+                                     and status in ('queued', 'running'))"""), {"u": user_id, "s": series_id})
         return {"series": {"id": str(series_id), "status": "generating"}, "jobs": jobs}
 
 
@@ -613,13 +629,46 @@ async def _series_detail(conn, series_id, user_id, request: Request):
     return _with_cover(out, request)
 
 
+async def _preview_donor(conn, key: str):
+    """A finished tome for the same plain request, safe to show anyone: no brand, identity or collection, every
+    section as the agents wrote it (never a user's edits) and every picture painted."""
+    return (await conn.execute(text(
+        """select s.id from public.series s
+            where s.preview_key = :k and s.cover_key is not null and s.design is not null
+              and s.identity_id is null and s.collection_id is null
+              and coalesce(s.design -> 'brand', 'null'::jsonb) = 'null'::jsonb
+              and exists (select 1 from public.lessons l where l.series_id = s.id)
+              and not exists (select 1 from public.lessons l where l.series_id = s.id
+                                 and (l.status <> 'generated' or l.content_json is null))
+              and not exists (select 1 from public.lessons l, jsonb_array_elements(l.content_json -> 'blocks') b
+                               where l.series_id = s.id and b ->> 'type' = 'image' and b ->> 'asset_id' is null)
+            order by s.preview, s.created_at desc limit 1"""), {"k": key})).scalar_one_or_none()
+
+
+async def _clone_preview(conn, donor, series_id, user_id, request_text: str, ip) -> None:
+    """The visitor's own copy of a finished tome: same outline, pages, pictures and cover, at no cost to anyone."""
+    await conn.execute(text(
+        """insert into public.series (id, user_id, title, topic, audience, language, lesson_count, status, page_target,
+                                      preview, preview_ip, genre, plan, cover_key, cover, design, art, research,
+                                      preview_key, cloned_from)
+           select :id, :u, title, :topic, audience, language, lesson_count, 'outline_ready', page_target, true, :ip,
+                  genre, plan, cover_key, cover, design, art, research, preview_key, id
+             from public.series where id = :d"""),
+        {"id": series_id, "u": user_id, "topic": request_text, "ip": ip, "d": donor})
+    await conn.execute(text(
+        """insert into public.lessons (series_id, position, title, objectives, key_points, content_json, status,
+                                       review, letters, pages)
+           select :id, position, title, objectives, key_points, content_json, 'generated', review, letters, pages
+             from public.lessons where series_id = :d"""), {"id": series_id, "d": donor})
+
+
 async def _created(conn, series_id, job_id):
     series = (await conn.execute(text(
         "select id, title, status, lesson_count, version, created_at from public.series where id = :s"
     ), {"s": series_id})).mappings().one()
     job = (await conn.execute(text("select id, kind, status from public.generation_jobs where id = :j"),
-                              {"j": job_id})).mappings().one()
-    return JSONResponse({"series": _jsonable(series), "job": _jsonable(job)}, status_code=202)
+                              {"j": job_id})).mappings().one_or_none()  # none: a preview served from the cache
+    return JSONResponse({"series": _jsonable(series), "job": _jsonable(job) if job else None}, status_code=202)
 
 
 def _json_value(value):

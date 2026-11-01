@@ -46,6 +46,7 @@ async def run(stop: asyncio.Event | None = None) -> None:
         if settings.cloudflare_account_id and settings.cloudflare_ai_token else None,
         search=ProgramSearch(settings.openrouter_api_key, settings.openrouter_search_model)
         if settings.openrouter_api_key else None,
+        preview_paint=settings.preview_paint,
     )
     worker_id = f"{socket.gethostname()}:{id(deps)}"
     # More jobs in flight than LLM slots: PDF exports and waits on the limiter shouldn't block the queue.

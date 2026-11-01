@@ -49,6 +49,19 @@ def prepare_image(data: bytes, kind: str) -> tuple[bytes, str]:
     return out.getvalue(), "image/jpeg"
 
 
+def upscale(data: bytes, long_side: int = 3000) -> tuple[bytes, str]:
+    """A preview's 1K picture brought to print size when the tome is bought: Lanczos and a light unsharp mask, free
+    and local (a picture already that big is only re-encoded)."""
+    im = Image.open(io.BytesIO(data)).convert("RGB")
+    scale = long_side / max(im.size)
+    if scale > 1:
+        im = im.resize((round(im.width * scale), round(im.height * scale)), Image.Resampling.LANCZOS)
+        im = im.filter(ImageFilter.UnsharpMask(radius=2, percent=60, threshold=2))
+    out = io.BytesIO()
+    im.save(out, "JPEG", quality=90, optimize=True)
+    return out.getvalue(), "image/jpeg"
+
+
 def line_art_coverage(data: bytes) -> float:
     """Share of black pixels: ~0 is a blank page, very high means filled shapes, not colourable lines."""
     grey = Image.open(io.BytesIO(data)).convert("L")
