@@ -237,6 +237,9 @@ function DeleteTome({ id, title }: { id: string; title: string }) {
  * Researcher lay it out by grade. Each one opens the studio with its request ready to send. */
 function LevelsPanel({ series: s, levels }: { series: Series; levels: Level[] }) {
   const navigate = useNavigate()
+  const { data: me } = useMe()
+  // Building a series by levels is for paid plans: a visitor sees what it would add, locked.
+  const locked = !me || me.anonymous || me.plan.key === 'prueba'
   const sources = s.research?.program?.sources ?? []
   // A level joins this tome's collection; a tome without one starts it, named after itself.
   const open = useMutation({
@@ -259,9 +262,9 @@ function LevelsPanel({ series: s, levels }: { series: Series; levels: Level[] })
             : lv.grade}
         </p>
       )}
-      <button className="ghost small" onClick={() => open.mutate(lv)} disabled={open.isPending}>
-        Crear este nivel
-      </button>
+      {locked
+        ? <Link className="ghost small" to={`/app/plan?tomo=${s.id}`}>Con un plan</Link>
+        : <button className="ghost small" onClick={() => open.mutate(lv)} disabled={open.isPending}>Crear este nivel</button>}
     </li>
   )
   const before = levels.filter((lv) => lv.relation === 'anterior')
@@ -269,7 +272,8 @@ function LevelsPanel({ series: s, levels }: { series: Series; levels: Level[] })
   return (
     <section className="panel levels">
       <h2 className="section-h">Niveles sugeridos para la serie</h2>
-      <p className="muted small">Según los programas de estudio encontrados, este tema se trabaja así antes y después de este tomo.</p>
+      <p className="muted small">Según los programas de estudio encontrados, este tema se trabaja así antes y después de este tomo.
+        {locked && ' Crear la serie completa por niveles está incluido en los planes de pago.'}</p>
       <ol className="level-list">
         {before.map(card)}
         <li className="level current">
@@ -489,8 +493,8 @@ function OutlineEditor({ series }: { series: Series }) {
             <span className="num">{i + 1}</span>
             <div className="outline-body">
               <input className="outline-title" value={d.title} onChange={(e) => update(i, { title: e.target.value })} aria-label={`Título de la sección ${i + 1}`} />
-              <textarea value={d.objectives} onChange={(e) => update(i, { objectives: e.target.value })} rows={2} placeholder="Objetivos (uno por línea)" aria-label="Objetivos" />
-              <input className="small" value={d.key_points} onChange={(e) => update(i, { key_points: e.target.value })} placeholder="Puntos clave, separados por comas" aria-label="Puntos clave" />
+              <textarea value={d.objectives} onChange={(e) => update(i, { objectives: e.target.value })} rows={4} placeholder="Objetivos (uno por línea)" aria-label="Objetivos" />
+              <textarea rows={3} value={d.key_points} onChange={(e) => update(i, { key_points: e.target.value })} placeholder="Puntos clave, separados por comas" aria-label="Puntos clave" />
               {d.pages != null && (
                 <label className="pages small">
                   <input type="number" min={1} max={60} value={d.pages} onChange={(e) => update(i, { pages: Math.max(1, Math.min(60, Number(e.target.value) || 1)) })} aria-label="Páginas de la sección" />

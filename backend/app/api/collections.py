@@ -12,7 +12,9 @@ from uuid6 import uuid7
 from app.api.deps import current_user_id
 from app.api.series import _own_series, _parse, apply_design
 from app.content import Design
+from app import credits
 from app.errors import ApiError
+from app.plans import PAID
 
 log = logging.getLogger("api")
 router = APIRouter()
@@ -49,9 +51,18 @@ async def list_collections(request: Request, user_id: UserId):
                              "series_ids": [str(i) for i in r["series_ids"]]} for r in rows]}
 
 
+async def require_paid(conn, user_id: uuid.UUID) -> None:
+    """Collections and series by levels are a paid feature, never part of the free preview."""
+    acc = await credits.account(conn, user_id)
+    if acc.plan_key not in PAID:
+        raise ApiError(402, "plan_required", "Las colecciones y las series por niveles están incluidas en los planes de pago.",
+                       {"feature": "collections", "plan": acc.plan_key})
+
+
 @router.post("/api/collections", status_code=201)
 async def create_collection(body: NewCollection, request: Request, user_id: UserId):
     async with request.app.state.engine.begin() as conn:
+        await require_paid(conn, user_id)
         collection_id = uuid7()
         await conn.execute(text(
             "insert into public.collections (id, user_id, name, description) values (:id, :u, :n, :d)"),

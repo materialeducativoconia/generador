@@ -85,6 +85,9 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
                 return await _created(conn, existing.series_id, existing.id)
         await _require_active(conn, user_id)
         acc = await credits.account(conn, user_id)
+        if body.collection_id and acc.plan_key not in PAID:
+            raise ApiError(402, "plan_required", "Las series por niveles están incluidas en los planes de pago.",
+                           {"feature": "collections", "plan": acc.plan_key})
         if body.page_count > acc.plan.max_pages:
             raise ApiError(403, "plan_required", f"Tu plan {acc.plan.label} admite tomos de hasta "
                            f"{acc.plan.max_pages} páginas.", {"feature": "max_pages", "plan": acc.plan_key})

@@ -60,3 +60,11 @@ async def create_tome_status(client, key, user, cid):
                                                         "section_count": 1, "page_count": 3},
                                  headers=bearer(key, user))
     return response.status_code
+
+
+async def test_a_visitor_cannot_build_a_series_by_levels(raw_db, google_user, client, key):
+    anon = await google_user(anonymous=True)
+    h = bearer(key, anon)
+
+    made = await client.post("/api/collections", json={"name": "Niveles"}, headers=h)
+    assert made.status_code == 402 and made.json()["error"]["code"] == "plan_required"

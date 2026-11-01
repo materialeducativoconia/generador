@@ -264,7 +264,11 @@ textarea { resize: vertical; }
 .outline-list { list-style: none; padding: 0; margin: 0 0 12px; display: grid; gap: 10px; }
 .outline-item { display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: start; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
 .outline-body { display: grid; gap: 8px; min-width: 0; }
-.outline-title { font-weight: 600; font-size: 16px; }
+.outline-title { font-weight: 600; font-size: 15px; }
+/* Section fields: tall enough to read and edit a whole section, in a compact size. */
+.outline-body textarea, .outline-body input { font-size: 13.5px; line-height: 1.5; }
+.outline-body input.outline-title { font-size: 15px; }
+.outline-body textarea { min-height: 7.5em; field-sizing: content; max-height: 22em; }
 .outline-tools { display: flex; flex-direction: column; gap: 2px; }
 .num { width: 26px; height: 26px; border-radius: 8px; background: var(--surface-2); display: grid; place-items: center; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .action-bar {
