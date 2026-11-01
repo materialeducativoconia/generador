@@ -37,6 +37,15 @@ export function Plan() {
     started.current = true
     go.mutate({ path: '/api/billing/checkout', body: { plan: wanted } })
   }, [wanted, b, me, go])
+  // Arriving from the landing's button: a calm hand-off screen instead of the plan page flashing by.
+  const handingOff = !!wanted && !go.isError && (!b || !me || (b.enabled && !me.anonymous && b.plan !== wanted && b.plans.some((p) => p.key === wanted)))
+  if (handingOff) return (
+    <main className="handoff" role="status">
+      <span className="spinner" aria-hidden="true" />
+      <p>Abriendo el pago seguro…</p>
+      <small className="muted">Te llevamos a Stripe para suscribirte.</small>
+    </main>
+  )
   if (isLoading || !b) return <AppShell><div className="skeleton" /></AppShell>
   const current = b.plans.find((p) => p.key === b.plan)
   return (

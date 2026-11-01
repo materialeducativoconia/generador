@@ -837,3 +837,8 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .plan-features .off { color: var(--faint); }
 .plan-features .off svg { stroke: var(--faint); background: var(--surface); }
 #planes .plan-grid { margin-top: 20px; }
+
+/* The hand-off from the landing's plan button to Stripe's checkout */
+.handoff { min-height: 100dvh; display: grid; place-content: center; justify-items: center; gap: 6px; text-align: center; }
+.handoff .spinner { width: 22px; height: 22px; margin-bottom: 10px; color: var(--text); }
+.handoff p { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
