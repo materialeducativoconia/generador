@@ -541,10 +541,10 @@ function Lock() {
 }
 
 type Edition = 'digital' | 'print'
-type Paper = 'A4' | 'Letter' | '8x10' | '6x9'
+type Paper = 'A4' | 'Letter' | '8x10' | '6x9' | '17x21'
 const PAPERS: Record<Edition, { value: Paper; label: string }[]> = {
-  digital: [{ value: 'A4', label: 'A4' }, { value: 'Letter', label: 'Carta' }],
-  print: [{ value: 'Letter', label: '8.5×11' }, { value: '8x10', label: '8×10' }, { value: '6x9', label: '6×9' }, { value: 'A4', label: 'A4' }],
+  digital: [{ value: 'A4', label: 'A4' }, { value: 'Letter', label: 'Carta' }, { value: '17x21', label: '17×21' }],
+  print: [{ value: 'Letter', label: '8.5×11' }, { value: '8x10', label: '8×10' }, { value: '6x9', label: '6×9' }, { value: '17x21', label: '17×21' }, { value: 'A4', label: 'A4' }],
 }
 const RATING: Record<Preflight['rating'], string> = { lista: 'Lista para imprenta', aceptable: 'Aceptable', baja: 'Baja resolución' }
 

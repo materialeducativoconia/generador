@@ -128,6 +128,8 @@ async def _outline(deps: Deps, job: dict) -> None:
         await _log_attempts(deps.engine, job, "architect", exc.attempts)
         raise
     outline = result.value
+    if brief.format != "auto":  # the user's pick wins over the Architect's
+        outline.genre = brief.format
     review, review_attempts = None, []
     if brief.program:  # Program reviewer: does the outline follow the reference syllabus?
         try:
@@ -168,7 +170,7 @@ async def _outline(deps: Deps, job: dict) -> None:
                       status = 'outline_ready', version = version + 1 where id = :s"""
         ), {"s": job["series_id"], "t": outline.title, "g": outline.genre, "n": len(outline.sections),
             "plan": json.dumps({"genre": outline.genre, "style_notes": outline.style_notes,
-                                "known_letters": outline.known_letters})})
+                                "known_letters": outline.known_letters, "brand_characters": brief.brand_characters})})
         # The free preview's cover comes from the free Illustrator; the paid one is painted when the tome is bought.
         cover_job = await enqueue_cover(conn, job["user_id"], job["series_id"], free=bool(series["preview"]))
         await credits.move_charge(conn, job["id"], cover_job, "Portada")  # paid when the tome was created
@@ -910,11 +912,12 @@ def _brief(series, stored: dict | None) -> Brief:
         return Brief(request=stored["request"], audience=stored["audience"], language=stored.get("language", "es"),
                      section_count=stored.get("section_count"), extra_instructions=stored.get("extra_instructions"),
                      page_count=stored.get("page_count"), facts=facts,
-                     program=_program(_json(series["research"])), voice=voice)
+                     program=_program(_json(series["research"])), voice=voice,
+                     format=stored.get("format", "auto"), brand_characters=stored.get("brand_characters", False))
     brief = Brief(request=series["topic"], audience=(_json(series["audience"]) or {}).get("label", ""),
                  language=series["language"], section_count=series["lesson_count"],
                  extra_instructions=series["extra_instructions"], page_count=series["page_target"], facts=facts,
-                 voice=voice)
+                 voice=voice, brand_characters=(_json(series["plan"]) or {}).get("brand_characters", False))
     brief.program = _program(_json(series["research"]))
     return brief
 

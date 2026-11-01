@@ -38,7 +38,18 @@ async def test_create_tome_queues_the_architect(raw_db, google_user, client, key
     job = await raw_db.fetchrow("select status, payload from public.generation_jobs where id = $1",
                                 uuid.UUID(body["job"]["id"]))
     assert job["status"] == "queued"
-    assert json.loads(job["payload"])["brief"]["request"] == NEW_TOME["request"]
+    brief = json.loads(job["payload"])["brief"]
+    assert brief["request"] == NEW_TOME["request"] and brief["format"] == "auto"
+    assert brief["brand_characters"] is False  # Editorial sells what it makes: no film or brand characters
+
+
+async def test_film_characters_are_allowed_for_personal_use_only(raw_db, google_user, client, key):
+    teacher = await google_user(plan="docente")
+    body = await create_tome(client, key, teacher, format="coloring_book")
+
+    brief = json.loads(await raw_db.fetchval("select payload from public.generation_jobs where id = $1",
+                                             uuid.UUID(body["job"]["id"])))["brief"]
+    assert brief["brand_characters"] is True and brief["format"] == "coloring_book"
 
 
 async def test_create_tome_is_idempotent(raw_db, google_user, client, key):

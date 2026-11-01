@@ -44,6 +44,7 @@ class NewTome(BaseModel):
     identity_id: uuid.UUID | None = None  # one of the user's identities; a collection's identity wins
     collection_id: uuid.UUID | None = None  # the collection the new tome joins, e.g. from a suggested level
     place: Literal["start", "end"] = "end"  # a lower level goes first in its collection, a higher one last
+    format: Literal["auto", "picture_book", "coloring_book", "worksheets", "tutorial", "lesson_series"] = "auto"
 
 
     @model_validator(mode="after")
@@ -113,8 +114,9 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
             """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, idempotency_key)
                values (:id, :u, :s, 'outline', 'queued', cast(:payload as jsonb), :k)"""
         ), {"id": job_id, "u": user_id, "s": series_id, "k": idempotency_key,
-            "payload": json.dumps({"brief": body.model_dump(exclude={"style_id", "identity_id", "collection_id",
-                                                                    "place"})})})
+            "payload": json.dumps({"brief": {**body.model_dump(exclude={"style_id", "identity_id", "collection_id",
+                                                                       "place"}),
+                                             "brand_characters": not acc.plan.commercial}})})
         if not free:  # the free preview is on us
             await credits.charge(conn, user_id, OUTLINE, "Esquema", job_id)
             await credits.charge(conn, user_id, COVER, "Portada", job_id)  # moves to the cover job when queued
@@ -415,6 +417,11 @@ async def design_preview(series_id: uuid.UUID, request: Request, user_id: UserId
                   {"id": "k", "type": "syllable_cards", "cut": False, "instruction": f"Lee las sílabas de la {letter}.",
                    "syllables": [letter + v for v in "aeiou"] + [letter.upper() + v for v in "aeiou"]},
                   {"id": "d", "type": "dictation", "lines": 3, "show_words": False}]
+    elif series["genre"] == "picture_book":
+        blocks = [{"id": "l", "type": "image", "kind": "illustration", "size": "plate", "subject": title,
+                   "question": f"¿Qué sabes de {title.lower()}?",
+                   "answer": "Así se verán tus láminas: la ilustración a toda la página y encima la pregunta y su respuesta.",
+                   "notes": ["Datos curiosos como este", "pegados sobre la escena"], "find": "algo escondido en el dibujo."}]
     elif series["genre"] == "coloring_book":
         blocks = [{"id": "h", "type": "heading", "level": 2, "text": title},
                   {"id": "i", "type": "image", "kind": "line_art", "subject": title, "size": "half"}]

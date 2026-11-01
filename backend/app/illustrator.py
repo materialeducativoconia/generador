@@ -13,7 +13,7 @@ import unicodedata
 from PIL import Image, ImageFilter
 
 
-ASPECT = {"full": "3:4", "half": "4:3", "small": "1:1", "icon": "1:1"}
+ASPECT = {"plate": "3:4", "full": "3:4", "half": "4:3", "small": "1:1", "icon": "1:1"}
 STOPWORDS = {"un", "una", "unos", "unas", "el", "la", "los", "las", "lo", "de", "del", "al", "a", "y", "e", "o",
              "en", "con", "para", "por", "su", "sus"}
 THEME_STYLE = {

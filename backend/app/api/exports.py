@@ -23,7 +23,7 @@ UserId = Annotated[uuid.UUID, Depends(current_user_id)]
 
 
 class ExportOptions(BaseModel):
-    paper: Literal["A4", "Letter", "8x10", "6x9"] = "A4"
+    paper: Literal["A4", "Letter", "8x10", "6x9", "17x21"] = "A4"
     include_answer_key: bool = True
     edition: Literal["digital", "print"] = "digital"  # print: KDP-ready interior plus a separate cover wrap
     format: Literal["pdf", "docx"] = "pdf"  # docx: editable Word file, digital edition only

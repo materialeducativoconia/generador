@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-Genre = Literal["coloring_book", "worksheets", "tutorial", "lesson_series"]
+Genre = Literal["picture_book", "coloring_book", "worksheets", "tutorial", "lesson_series"]
 Note = Annotated[str, Field(pattern=r"^[A-G]#?[1-7]$")]  # scientific pitch, e.g. C4, F#3
 Text = Annotated[str, Field(min_length=1, max_length=4000)]
 Short = Annotated[str, Field(min_length=1, max_length=300)]
@@ -110,8 +110,14 @@ class Image(_Block):
     kind: Literal["line_art", "illustration", "photo", "diagram"]
     subject: Short  # what to draw, e.g. "una ardilla con una bellota"
     caption: Short | None = None
-    size: Literal["full", "half", "small"] = "half"
+    size: Literal["full", "half", "small", "plate"] = "half"
     asset_id: str | None = None
+    # A plate (picture book) is the whole page: the picture to the edges, the question, a short answer, up to four
+    # stickers with facts and an "Observa y encuentra" prompt laid over it.
+    question: Short | None = None
+    answer: Annotated[str, Field(max_length=500)] | None = None
+    notes: list[Annotated[str, Field(min_length=1, max_length=140)]] = Field(default_factory=list, max_length=4)
+    find: Short | None = None
 
 
 # Diagrams drawn exactly by code (app.diagrams): free, instant, real text, never a garbled picture.

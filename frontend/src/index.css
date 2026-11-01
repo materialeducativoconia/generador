@@ -391,6 +391,25 @@ a.sec-row { transition: background-color 160ms ease; }
 .sheet .img-ph.painting { border-style: solid; border-color: transparent;
   background: linear-gradient(90deg, #f5f3f0 0%, #ebe8e4 50%, #f5f3f0 100%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
 .sheet .fig { margin: 18px auto; text-align: center; }
+/* A picture book plate: the picture is the page, the question and the facts lie over it like stickers (PDF: tome.html.j2). */
+.sheet .plate { position: relative; margin: 18px 0; aspect-ratio: 170 / 210; border-radius: 14px; overflow: hidden; background: var(--t-tint, #f3f1ee); }
+.sheet .plate > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.sheet .plate-ph { position: absolute; inset: 30% 12% auto; text-align: center; color: #78716c; font-weight: 600; }
+.sheet .plate.painting .plate-ph { animation: pulse 1.6s ease-in-out infinite; }
+.sheet .plate .pq { position: absolute; left: 4%; right: 4%; top: 3.5%; background: #fff; border-radius: 18px; padding: 14px 18px;
+                    box-shadow: 0 6px 18px rgb(0 0 0 / 0.16); }
+.sheet .plate .pq strong { display: block; font: var(--t-head-w, 700) 26px/1.1 var(--t-head, inherit); color: var(--t-ink, #1c1917); }
+.sheet .plate .pq p { margin: 8px 0 0; font-size: 15px; line-height: 1.4; }
+.sheet .plate .pn { position: absolute; max-width: 44%; background: var(--t-accent, #4f46e5); color: #fff; border-radius: 14px; padding: 8px 12px;
+                    font-size: 13px; font-weight: 600; line-height: 1.3; box-shadow: 0 4px 10px rgb(0 0 0 / 0.2); }
+.sheet .plate .pn.n1 { left: 3%; top: 44%; rotate: -2deg; }
+.sheet .plate .pn.n2 { right: 3%; top: 58%; rotate: 2deg; background: var(--t-pop1, #0d9488); }
+.sheet .plate .pn.n3 { left: 3%; bottom: 15%; rotate: 1.5deg; background: var(--t-pop2, #db2777); }
+.sheet .plate .pn.n4 { right: 3%; top: 36%; rotate: -1.5deg; }
+.sheet .plate .pf { position: absolute; left: 4%; right: 4%; bottom: 3.5%; background: #fff; border-radius: 18px; padding: 10px 16px;
+                    font-size: 13.5px; font-weight: 600; box-shadow: 0 6px 18px rgb(0 0 0 / 0.16); }
+.sheet .plate .pf b { color: var(--t-accent, #4f46e5); }
+
 .sheet .fig img { display: block; margin: 0 auto; max-width: 100%; object-fit: contain; }
 .sheet .fig.full img { max-height: 760px; } .sheet .fig.half img { max-height: 360px; } .sheet .fig.small img { max-height: 200px; }
 .sheet .fig .credit { display: block; margin-top: 4px; font: 500 11px 'Geist', sans-serif; color: #8a8580; }

@@ -29,7 +29,7 @@ TEMPLATES = Path(__file__).parent / "templates"
 
 WHITE_NOTES = ["C", "D", "E", "F", "G", "A", "B"]
 NOTE_NAMES_ES = {"C": "Do", "D": "Re", "E": "Mi", "F": "Fa", "G": "Sol", "A": "La", "B": "Si"}
-GENRE_LABEL = {"coloring_book": "Libro para colorear", "worksheets": "Cuadernillo de actividades",
+GENRE_LABEL = {"picture_book": "Libro ilustrado", "coloring_book": "Libro para colorear", "worksheets": "Cuadernillo de actividades",
                "tutorial": "Método paso a paso", "lesson_series": "Secuencia didáctica"}
 
 
@@ -296,7 +296,7 @@ def render_checked(tome: Tome, *, paper: str, include_answer_key: bool,
     left behind (the page before it is half empty). Reports nearly empty pages it cannot fix."""
     geo = page_geometry(paper, print_edition=print_edition)
     sizes = {f"{s.position}:{b.id}": (b.size, b.subject) for s in tome.sections for b in s.content.blocks
-             if b.type == "image"}
+             if b.type == "image" and b.size != "plate"}
     fit: dict[str, float] = {}
     for _ in range(3):  # each pass can only move pictures back; two repairs are plenty
         document = _document(render_html(tome, paper=paper, include_answer_key=include_answer_key,

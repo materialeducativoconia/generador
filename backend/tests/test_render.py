@@ -82,3 +82,21 @@ def test_signature_prints_author_school_and_logo():
 
     assert "Elaborado por Marta Pérez · Colegio Montessori" in html
     assert 'class="logo" src="data:image/png;base64,' in html
+
+
+def test_a_picture_book_plate_fills_its_own_page_with_the_question_over_the_picture():
+    from tests.test_covers import PNG
+
+    plate = {"id": "b1", "type": "image", "kind": "illustration", "size": "plate", "subject": "un astronauta",
+             "asset_id": "a1", "question": "¿Por qué flotan?", "answer": "Porque caen sin parar.",
+             "notes": ["El traje pesa 130 kilos."], "find": "un cohete."}
+    t = tome(plate, {"id": "b2", "type": "page_break"}, {"id": "b3", "type": "paragraph", "text": "Repaso"},
+             genre="picture_book")
+    t.images = {"a1": (PNG, "image/png")}
+
+    html = render_html(t, paper="17x21", include_answer_key=False)
+    _, pages = render_pdf(t, paper="17x21", include_answer_key=False)
+
+    assert 'class="op"' not in html  # the first plate opens the section instead of a header
+    assert "¿Por qué flotan?" in html and 'class="pn n1"' in html and "Observa y encuentra" in html
+    assert pages == 3  # cover, the plate, the review page: no blank page after the plate

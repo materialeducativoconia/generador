@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { AUDIENCES } from '../lib/labels'
+import { AUDIENCES, FORMATS } from '../lib/labels'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
 import { errorText } from '../components/ErrorNote'
@@ -41,6 +41,7 @@ export function Studio() {
   const sized = sections !== null && pages !== null
   const [quoting, setQuoting] = useState(false)  // the cost window, shown before anything is created
   const [style, setStyle] = useState('auto')
+  const [format, setFormat] = useState('auto')
   const ready = (useStyles().data?.styles ?? []).filter((s) => s.status === 'ready')
   const identities = usableIdentities(useIdentities().data?.identities)
   const [identity, setIdentity] = useState('')
@@ -55,6 +56,7 @@ export function Studio() {
         { request: request.trim(), audience, language: 'es',
           section_count: sections,
           page_count: pages,
+          format,
           style_id: style === 'auto' ? null : style,
           identity_id: identity || null,
           collection_id: collection?.id ?? null,
@@ -106,6 +108,12 @@ export function Studio() {
               <span className="sr-only">Público</span>
               <select value={audience} onChange={(e) => setAudience(e.target.value)}>
                 {audiences.map((a) => <option key={a}>{a}</option>)}
+              </select>
+            </label>
+            <label className="select-pill">
+              <span className="sr-only">Formato</span>
+              <select value={format} onChange={(e) => setFormat(e.target.value)}>
+                {FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
               </select>
             </label>
             <label className={`select-pill${pages === null ? ' needed' : ''}`}>

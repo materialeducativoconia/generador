@@ -32,6 +32,8 @@ class Brief:
     facts: list[str] | None = None  # the Researcher's fact sheet, with sources
     program: list[str] | None = None  # the reference syllabus (official program or proven method), with sources
     voice: str | None = None  # the identity's editorial voice: every tome of its collection sounds alike
+    format: str = "auto"  # the user's pick (a genre) or "auto": the Architect decides, a picture book by default
+    brand_characters: bool = False  # film or brand characters allowed: personal use only (plans that cannot sell)
 
     def describe(self) -> str:
         lines = [f"Pedido del usuario: {self.request}", f"Público: {self.audience}", f"Idioma: {self.language}"]
@@ -43,6 +45,16 @@ class Brief:
                          "solucionario); repártelas entre las secciones en el campo pages de cada una")
         if self.extra_instructions:
             lines.append(f"Instrucciones extra: {self.extra_instructions}")
+        if self.format != "auto":
+            lines.append(f"Formato elegido por el usuario (genre): {self.format}")
+        if self.brand_characters:
+            lines.append("Personajes: si el usuario pide personajes de películas, series, videojuegos o marcas, úsalos "
+                         "(uso personal, no se vende)")
+        else:
+            lines.append("Personajes: nunca uses personajes, nombres ni logotipos de películas, series, videojuegos o "
+                         "marcas (el material se puede vender); si el usuario los pide, crea personajes originales del "
+                         "mismo tipo y espíritu (p. ej. «un dinosaurio gigante de hielo» en lugar de uno con nombre "
+                         "propio) y nunca menciones el nombre protegido")
         if self.voice:
             lines.append(f"Voz de la línea editorial (escribe así): {self.voice}")
         if self.program:
@@ -82,7 +94,10 @@ Recibes el pedido de un usuario (puede ser cualquier cosa: un libro de colorear 
 de fichas de lectoescritura, un método de piano para principiantes, una serie de lecciones de ciencias…) y
 diseñas el TOMO completo.
 
-1. Elige el género:
+1. Elige el género (si el usuario eligió un formato, úsalo):
+   - "picture_book": libro ilustrado de conocimientos para niños, como los de Larousse, SM o DK: cada página es
+     una lámina ilustrada a sangre con una pregunta y su respuesta corta. Es el formato por defecto: elígelo
+     siempre que el pedido no sea claramente uno de los otros.
    - "coloring_book": libro de colorear; cada sección es una página con un dibujo de línea a página completa.
    - "worksheets": cuadernillo de fichas de actividades (repasar, colorear, unir, recortar, completar).
    - "tutorial": método o guía paso a paso para aprender una habilidad (instrumento, oficio, software…).
@@ -104,7 +119,7 @@ contenidos y su orden (adaptados a la extensión pedida) y no añade temas ajeno
    la m). Para cualquier otro tomo deja ambas listas vacías.
 
 Responde SOLO con un objeto json con esta forma:
-{"title": "…", "genre": "coloring_book|worksheets|tutorial|lesson_series", "style_notes": "tono y estilo visual",
+{"title": "…", "genre": "picture_book|coloring_book|worksheets|tutorial|lesson_series", "style_notes": "tono y estilo visual",
  "known_letters": [], "sections": [{"title": "…", "objectives": ["…"], "key_points": ["…"], "letters": [], "pages": 2}]}"""
 
 WRITER_SYSTEM = """Eres el Redactor de un generador de material educativo imprimible. Escribes UNA sección del tomo
@@ -136,6 +151,11 @@ Catálogo de bloques (usa solo estos "type"):
   vacía para dibujar las agujas; show_time false si la hora es la respuesta
 - image {kind: line_art|illustration|photo|diagram, subject, caption?, size: full|half|small}
   ← describe qué dibujar; un ilustrador lo hará después. Para colorear usa line_art.
+- image lámina {kind: illustration, size: "plate", subject, question, answer, notes: [..], find?}  ← una página
+  entera: la ilustración a sangre y encima la pregunta (question, corta, con ¿?), la respuesta (answer, 2 o 3
+  frases sencillas, máximo 45 palabras), de 2 a 4 notes (datos curiosos de máximo 15 palabras, cada uno sobre
+  algo que se ve en la escena) y find (reto «Observa y encuentra»: algo que el niño debe buscar en la escena).
+  subject describe una escena rica y detallada que muestra la respuesta, con el sujeto principal al centro.
 
 Diagramas: los bloques staff, timeline, cycle, bar_chart, number_line, fraction, clock, keyboard, tracing y
 letter_grid los dibuja el código: son exactos, con texto real y gratis. Úsalos siempre que sirvan y nunca pidas
@@ -176,6 +196,11 @@ Para contar, sumar, restar, multiplicar o repartir con dibujos usa SIEMPRE count
 una image con una cantidad de objetos ni escribas tú el resultado (lo calcula el código y va al solucionario).
 
 Reglas según el género:
+- picture_book: cada página es una image size "plate" (sin heading ni page_break entre láminas); cada lámina
+  responde una pregunta que un niño curioso haría sobre el tema de la sección, de lo más simple a lo más
+  asombroso. Si la sección tiene 3 páginas o más, la última es un «¡Pon a prueba lo que sabes!»: un heading,
+  de 3 a 5 exercise (multiple_choice o true_false, con answer) y un draw_frames, precedido de un page_break.
+  Para niños de preescolar las respuestas son de 1 o 2 frases muy cortas.
 - coloring_book: un heading con el título y un image line_art size "full" por página; texto mínimo.
 - worksheets: cada ficha empieza con heading "Ficha N"; instrucciones cortas para niños; usa tracing,
   letter_grid, image line_art, writing_lines y exercise; separa fichas con page_break.
@@ -525,7 +550,14 @@ Recibes la lista de imágenes del tomo (ref, tipo, tamaño y qué mostrar). Resp
  "prompts": {"<ref>": "en inglés, una o dos frases: la escena concreta, usando los personajes por su nombre"}}
 
 Reglas:
-- 0 a 4 personajes; si la portada tiene un protagonista, úsalo como personaje principal.
+- 0 a 4 personajes; si la portada tiene un protagonista, úsalo como personaje principal. En un libro ilustrado
+  (láminas, tamaño plate) crea siempre un personaje guía (niño o niña explorador, mascota o animal simpático
+  ligado al tema) y ponlo en cada lámina, mirando o señalando lo importante.
+- Láminas (tamaño plate): escena a página completa, rica en detalles para buscar; sujeto principal al centro;
+  la franja superior (una quinta parte) y los bordes laterales tranquilos y sin detalles importantes, porque
+  ahí van la pregunta y las notas.
+- Respeta la regla de personajes del pedido: si no se permiten personajes de películas o marcas, descríbelos
+  como personajes originales sin nombre propio ni rasgos de marca.
 - Un prompt por cada ref recibida. Nada de texto, letras ni números dentro de las imágenes: si el pedido
   menciona palabras, etiquetas o flechas con nombres, muéstralo solo con dibujos.
 - Mantén lo didáctico del pedido (qué debe aprender el niño al verla).

@@ -83,3 +83,16 @@ async def test_writer_prompt_keeps_the_stable_prefix_first_for_context_caching()
     a, b = llm_a.calls[0], llm_b.calls[0]
     assert a[:-1] == b[:-1]  # system + series/outline identical across sections
     assert "Lección 2" in b[-1]["content"]
+
+
+def test_brand_characters_only_for_personal_use():
+    personal = Brief(request="Libro de colorear de Elsa", audience="Preescolar", brand_characters=True).describe()
+    for_sale = Brief(request="Libro de colorear de Elsa", audience="Preescolar").describe()
+
+    assert "uso personal" in personal and "nunca uses personajes" not in personal
+    assert "nunca uses personajes" in for_sale
+
+
+def test_the_users_format_reaches_the_architect():
+    assert "(genre): coloring_book" in Brief(request="x", audience="y", format="coloring_book").describe()
+    assert "(genre)" not in Brief(request="x", audience="y").describe()

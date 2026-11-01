@@ -3,11 +3,22 @@ import type { Design } from './types'
 export const AUDIENCES = ['Preescolar (3–5 años)', 'Primaria baja (6–8)', 'Primaria alta (9–12)', 'Secundaria', 'Adultos principiantes']
 
 export const GENRE_LABEL: Record<string, string> = {
+  picture_book: 'Libro ilustrado',
   coloring_book: 'Libro para colorear',
   worksheets: 'Cuadernillo de fichas',
   tutorial: 'Método paso a paso',
   lesson_series: 'Secuencia didáctica',
 }
+
+/** The composer's format choice; "auto" lets the Architect decide from the request (a picture book by default). */
+export const FORMATS: { value: string; label: string }[] = [
+  { value: 'auto', label: 'Formato automático' },
+  { value: 'picture_book', label: 'Libro ilustrado' },
+  { value: 'coloring_book', label: 'Libro para colorear' },
+  { value: 'worksheets', label: 'Cuadernillo de fichas' },
+  { value: 'tutorial', label: 'Método paso a paso' },
+  { value: 'lesson_series', label: 'Secuencia didáctica' },
+]
 
 export const THEME_LABEL: Record<Design['theme'], string> = {
   juego: 'Juego', cuaderno: 'Cuaderno', editorial: 'Editorial', metodo: 'Método', ciencia: 'Ciencia', clasico: 'Clásico',

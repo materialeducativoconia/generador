@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { ensureVisitorSession } from '../auth/google'
 import { api } from '../lib/apiClient'
-import { AUDIENCES } from '../lib/labels'
+import { AUDIENCES, FORMATS } from '../lib/labels'
 import { errorText } from './ErrorNote'
 import { FREE_PREVIEW_PAGES } from '../lib/pricing'
 
@@ -18,6 +18,7 @@ export function LandingComposer({ onStart }: { onStart: (busy: boolean) => void 
   const [audience, setAudience] = useState(AUDIENCES.includes(params.get('publico') ?? '') ? params.get('publico')! : AUDIENCES[0])
   const [pages, setPages] = useState<number | null>(null)
   const [sections, setSections] = useState<number | null>(null)
+  const [format, setFormat] = useState('auto')
   const [captcha, setCaptcha] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
@@ -32,7 +33,7 @@ export function LandingComposer({ onStart }: { onStart: (busy: boolean) => void 
     try {
       await ensureVisitorSession(captcha)
       const created = await api.post<{ series: { id: string } }>('/api/series', {
-        request: request.trim(), audience, language: 'es', section_count: sections, page_count: pages,
+        request: request.trim(), audience, language: 'es', section_count: sections, page_count: pages, format,
       })
       navigate(`/app/tomos/${created.series.id}`)
     } catch (err) {
@@ -49,6 +50,9 @@ export function LandingComposer({ onStart }: { onStart: (busy: boolean) => void 
       <div className="composer-bar">
         <label className="select-pill"><span className="sr-only">Público</span>
           <select value={audience} onChange={(e) => setAudience(e.target.value)}>{AUDIENCES.map((a) => <option key={a}>{a}</option>)}</select>
+        </label>
+        <label className="select-pill"><span className="sr-only">Formato</span>
+          <select value={format} onChange={(e) => setFormat(e.target.value)}>{FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}</select>
         </label>
         <label className={`select-pill${pages === null ? ' needed' : ''}`}><span className="sr-only">Páginas de contenido</span>
           <select value={pages ?? ''} required onChange={(e) => {

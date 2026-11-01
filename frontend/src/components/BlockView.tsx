@@ -19,6 +19,19 @@ export function Inline({ text }: { text: string }) {
 function ImageBlock({ block }: { block: Extract<Block, { type: 'image' }> }) {
   const { urls, credits, painting } = useContext(AssetsContext)
   const url = block.asset_id ? urls[block.asset_id] : undefined
+  if (block.size === 'plate') {
+    return (
+      <figure className={`plate${url ? '' : ' empty'}${painting && !url ? ' painting' : ''}`}>
+        {url ? <img src={url} alt={block.subject} loading="lazy" /> : <span className="plate-ph">{painting ? 'Ilustrando…' : block.subject}</span>}
+        <div className="pq">
+          <strong><Inline text={block.question ?? block.subject} /></strong>
+          {block.answer && <p><Inline text={block.answer} /></p>}
+        </div>
+        {block.notes?.map((n, i) => <span key={i} className={`pn n${i + 1}`}><Inline text={n} /></span>)}
+        {block.find && <div className="pf"><b>Observa y encuentra:</b> <Inline text={block.find} /></div>}
+      </figure>
+    )
+  }
   if (url) {
     return (
       <figure className={`fig ${block.size} ${block.kind}`}>

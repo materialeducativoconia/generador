@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from PIL import Image
 
-PAPERS = {"A4": (210.0, 297.0), "Letter": (215.9, 279.4), "8x10": (203.2, 254.0), "6x9": (152.4, 228.6)}
+PAPERS = {"A4": (210.0, 297.0), "Letter": (215.9, 279.4), "8x10": (203.2, 254.0), "6x9": (152.4, 228.6), "17x21": (170.0, 210.0)}
 BLEED_MM = 3.175
 MIN_PAGES = 24
 SPINE_TEXT_PAGES = 79
@@ -38,6 +38,10 @@ class PageGeometry:
     @property
     def full(self) -> float:
         return round(self.content_h - 78, 1)  # still fits under a section header and a paragraph
+
+    @property
+    def plate(self) -> float:
+        return self.h  # a picture book's plate runs to the edges
 
     @property
     def half(self) -> float:

@@ -260,6 +260,30 @@
   .kids .toc a:nth-child(3n+3) .n { background: {{ c.pop1 }}; } .kids .toc a:nth-child(3n+1) .n { background: {{ c.pop2 }}; }
   .kids .toc h2 { color: var(--accent); font-size: 26pt; }
   {% endif %}
+
+  /* Picture book plates: the whole page is the picture, the question and the facts lie over it like stickers. */
+  @page plate { margin: 0; padding: 0; border: none; background: none;
+                @top-left { content: none } @top-right { content: none } @bottom-center { content: none }
+                @bottom-right { content: none } @bottom-left { content: none } }
+  .plate { page: plate; break-before: page; break-after: page; position: relative; width: {{ geo.w }}mm; height: {{ geo.h }}mm;
+           overflow: hidden; background: var(--tint); }
+  .plate > img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; }
+  .plate .ph { position: absolute; left: 14mm; right: 14mm; top: 70mm; text-align: center; color: var(--muted);
+               font: 600 11pt {{ head|safe }}; }
+  .plate .pq { position: absolute; left: 9mm; right: 9mm; top: 9mm; background: #fff; border-radius: 7mm; padding: 5mm 7mm 5.5mm;
+               box-shadow: 0 1.5mm 4mm rgba(0,0,0,.18); }
+  .plate .pq .k { font: 800 7.5pt {{ head|safe }}; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 1.5mm; }
+  .plate .pq h3 { font: {{ th.head_weight }} {{ 19 if geo.w < 180 else 24 }}pt/1.08 {{ head|safe }}; margin: 0; color: var(--ink); }
+  .plate .pq p { margin: 2.5mm 0 0; font-size: {{ 10.5 if geo.w < 180 else 12 }}pt; line-height: 1.4; }
+  .plate .pn { position: absolute; max-width: 44%; background: var(--accent); color: #fff; border-radius: 5mm; padding: 3mm 4mm;
+               font: 600 {{ 8.5 if geo.w < 180 else 10 }}pt/1.3 {{ body|safe }}; box-shadow: 0 1.2mm 3mm rgba(0,0,0,.22); }
+  .plate .pn.n1 { left: 7mm; top: 44%; transform: rotate(-2deg); }
+  .plate .pn.n2 { right: 7mm; top: 58%; transform: rotate(2deg); background: {{ c.pop1 }}; }
+  .plate .pn.n3 { left: 7mm; bottom: 31mm; transform: rotate(1.5deg); background: {{ c.pop2 }}; }
+  .plate .pn.n4 { right: 7mm; top: 36%; transform: rotate(-1.5deg); }
+  .plate .pf { position: absolute; left: 9mm; right: 9mm; bottom: 9mm; background: #fff; border-radius: 7mm; padding: 3.5mm 6mm;
+               font: 600 {{ 9 if geo.w < 180 else 10.5 }}pt/1.35 {{ body|safe }}; box-shadow: 0 1.5mm 4mm rgba(0,0,0,.18); }
+  .plate .pf b { font-family: {{ head|safe }}; color: var(--accent); margin-right: 1.5mm; }
 </style>
 </head>
 <body{% if th.kids %} class="kids"{% endif %}>
@@ -305,7 +329,9 @@
 {% endif %}
 
 {% for s in tome.sections %}
+{% set plated = s.content.blocks and s.content.blocks[0].type == "image" and s.content.blocks[0].size == "plate" %}
 <section class="sec opener-{{ th.opener }}{% if th.kids %} kids{% endif %}" id="s{{ s.position }}">
+  {% if not plated %}
   <header class="op">
     {% if th.kids %}<i class="d1"></i><i class="d2"></i><i class="d3"></i>{% endif %}
     {% set orn_fill = "#FFFFFF" if th.kids else c.accent %}
@@ -313,6 +339,7 @@
     <span class="num">{{ s.position if th.opener == "blob" else ("%02d"|format(s.position) if th.opener == "numeral" else "Sección " ~ s.position) }}</span>
     <h2 class="title" data-title="{{ s.title }}">{{ s.title }}</h2>
   </header>
+  {% endif %}
   {% set ex = namespace(n=0, broke=false) %}
   {% for b in s.content.blocks %}
     {% if b.type == "heading" %}
@@ -363,6 +390,15 @@
       <div class="grid" style="grid-template-columns: repeat({{ b.cols }}, 1fr); --cell: {{ (150 / b.cols)|round(1) }}mm">
         {% for c, _ in letter_grid_cells(b) %}<span>{{ c }}</span>{% endfor %}
       </div>
+    {% elif b.type == "image" and b.size == "plate" %}
+      <div class="plate" data-block="{{ s.position ~ ':' ~ b.id }}">
+        {% if tome.image_uri(b.asset_id) %}<img src="{{ tome.image_uri(b.asset_id) }}" alt="{{ b.subject }}">
+        {% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
+        <div class="pq">{% if loop.first %}<div class="k">{{ s.position }} · {{ s.title }}</div>{% endif %}
+          <h3>{{ (b.question or b.caption or s.title)|inline }}</h3>{% if b.answer %}<p>{{ b.answer|inline }}</p>{% endif %}</div>
+        {% for n in b.notes %}<div class="pn n{{ loop.index }}">{{ n|inline }}</div>{% endfor %}
+        {% if b.find %}<div class="pf"><b>Observa y encuentra:</b>{{ b.find|inline }}</div>{% endif %}
+      </div>
     {% elif b.type == "image" and tome.image_uri(b.asset_id) %}
       {% set key = s.position ~ ":" ~ b.id %}
       <div class="figure {{ b.size }} {{ b.kind }}" data-block="{{ key }}"{% if loop.first or loop.previtem.type == "page_break" %} data-free="1"{% endif %}><img src="{{ tome.image_uri(b.asset_id) }}" alt="{{ b.subject }}"{% if key in fit %} style="height: {{ fit[key] }}mm"{% endif %}></div>
@@ -375,7 +411,7 @@
       <div class="lines">{% if b.label %}<div class="label">{{ b.label }}</div>{% endif %}{% for _ in range(b.lines) %}<div class="blank-line"></div>{% endfor %}</div>
     {% elif b.type == "page_break" %}
       {% set ex.broke = true %}
-      <div class="page-break"></div>
+      {% if not (loop.previtem and loop.previtem.type == "image" and loop.previtem.size == "plate") %}<div class="page-break"></div>{% endif %}
     {% endif %}
   {% endfor %}
 </section>

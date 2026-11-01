@@ -61,7 +61,7 @@ def _dpi(w: float, h: float, size: str) -> float:
         geo = page_geometry(paper, print_edition=False)
         if size == "icon":
             return 25.4 / min(ICON_MM / w, ICON_MM / h)
-        box_w = geo.content_w * (0.6 if size == "small" else 1)
+        box_w = geo.w if size == "plate" else geo.content_w * (0.6 if size == "small" else 1)
         return 25.4 / min(box_w / w, getattr(geo, size) / h)
 
     return min(on(paper) for paper in PAPERS)
