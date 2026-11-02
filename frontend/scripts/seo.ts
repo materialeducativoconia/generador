@@ -2,12 +2,14 @@
 // plus the home page's meta tags. vercel.json rewrites /material-educativo/<slug> to these files before the SPA fallback.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { PUBLIC_PLANS } from '../src/lib/pricing.ts'
+import { showcaseFrom } from '../src/lib/showcase.ts'
 import { TOPICS, topicHref, type Topic } from '../src/lib/topics.ts'
 
 const SITE = (process.env.SITE_URL
   ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : 'http://localhost:5173'))
   .replace(/\/$/, '')
 const NAME = 'Jelyx Docs'
+const COVERS = `${(process.env.VITE_SUPABASE_URL ?? 'https://uryxcesvtrkwrtjmszcc.supabase.co').replace(/\/$/, '')}/storage/v1/object/public/covers/showcase`
 const DIST = new URL('../dist/', import.meta.url)
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
@@ -43,13 +45,34 @@ const HEADER = `<header class="top"><a class="brand" href="/">${LOGO}<span>${NAM
 const FOOTER = `<footer><p><a href="/">${NAME}</a> · <a href="/material-educativo">Material educativo por tema</a> · <a href="/#planes">Planes</a></p>
 <p class="muted">Vista previa sin registro ni tarjeta.</p></footer>`
 
-const plans = () => `<section id="planes"><h2>Planes</h2><div class="grid3">${PUBLIC_PLANS.map((p) => `
+/** The example covers drifting by, as on the home page: pure CSS, two copies of the row. */
+const carousel = (first?: string) => {
+  const row = showcaseFrom(first)
+  const imgs = (hidden: boolean) => row.map(([slug, title]) =>
+    `<img src="${COVERS}/${slug}.webp" alt="${hidden ? '' : esc(`Portada de ejemplo: ${title}`)}"${hidden ? ' aria-hidden="true"' : ''} width="200" height="283" loading="lazy" decoding="async">`).join('')
+  return `<section class="showcase" aria-label="Portadas de ejemplo"><div class="track">${imgs(false)}${imgs(true)}</div></section>`
+}
+
+const VALUES = `<section><p class="eyebrow">Por qué Jelyx</p><h2>Material de editorial, sin pasar el fin de semana armándolo.</h2><div class="values">
+<article><h3>Minutos, no fines de semana</h3><p>Del tema al libro terminado en una sola sesión: Jelyx investiga, escribe, ilustra y maqueta; tú decides.</p></article>
+<article><h3>Se ve como libro de editorial</h3><p>Portada pintada para tu tema, ilustraciones en cada página y una tipografía cuidada. Nada de plantillas genéricas.</p></article>
+<article><h3>Tuyo para usar o vender</h3><p>Imprímelo para tu grupo o, desde el plan Creador, véndelo en Amazon KDP o Teachers Pay Teachers sin marca de agua.</p></article></div></section>`
+
+const STEPS = `<section><p class="eyebrow">Cómo funciona</p><h2>De la idea al libro impreso en tres pasos.</h2><ol class="steps">
+<li><strong>Cuéntanos qué necesitas</strong><span>El tema, el nivel y el formato que prefieras.</span></li>
+<li><strong>Mira tu tomo, gratis</strong><span>Tu portada y tus páginas ilustradas en un par de minutos, sin registrarte.</span></li>
+<li><strong>Hazlo tuyo y descárgalo</strong><span>Ajusta el texto sin gastar créditos y descarga en PDF o Word.</span></li></ol></section>`
+
+const CTA = (href: string) => `<section class="cta"><h2>Tu próximo libro está a un párrafo de distancia.</h2><p>Escribe el tema y míralo terminado antes de pagar.</p>
+<a class="btn light" href="${esc(href)}">Crear mi vista previa gratis</a></section>`
+
+const plans = () => `<section id="planes"><p class="eyebrow">Planes</p><h2>Empieza hoy. Cancela cuando quieras.</h2><div class="grid3">${PUBLIC_PLANS.map((p) => `
 <article class="card"><h3>${p.label}</h3><p class="muted">${p.for}</p><p class="price">$${p.price} <span class="muted">USD/mes</span></p>
 <ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join('')}</ul></article>`).join('')}</div>
 <p class="muted center">1 crédito ≈ 1 página. Si una generación falla, te devolvemos los créditos.</p></section>`
 
 function topicPage(t: Topic) {
-  const related = TOPICS.filter((o) => o.slug !== t.slug).slice(0, 6)
+  const related = TOPICS.filter((o) => o.slug !== t.slug).slice(0, 5)
   const ld = [
     { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: t.faq.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) },
     { '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [
@@ -61,16 +84,21 @@ function topicPage(t: Topic) {
 ${HEADER}<main>
 <nav class="crumbs" aria-label="Ruta"><a href="/material-educativo">Material educativo</a> › ${esc(t.name)}</nav>
 <section class="hero"><p class="eyebrow">${esc(t.name)} · ${esc(t.audience)}</p><h1>${esc(t.title)}</h1><p class="lede">${esc(t.intro)}</p>
-<a class="btn" href="${esc(studio(t))}">Ver mi vista previa</a><p class="muted small">Portada ilustrada e índice, sin registrarte.</p></section>
-<section class="two"><div class="card"><h2>Ejemplo de índice</h2><p class="muted small">«${esc(t.request)}»</p><ol>${t.outline.map((o) => `<li>${esc(o)}</li>`).join('')}</ol></div>
-<div class="card"><h2>Qué incluye</h2><ul>${t.includes.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
-<p class="muted small">Tú describes el tema y el nivel; un equipo de agentes planifica, investiga, escribe, ilustra y maqueta. Revisas y editas el texto gratis antes de descargar en PDF${' '}o Word.</p></div></section>
-<section><h2>Cómo funciona</h2><ol class="steps"><li><strong>Describe</strong> el tema, el nivel y el formato.</li><li><strong>Revisa el esquema</strong> y ajusta las secciones.</li><li><strong>Descarga</strong> en PDF listo para imprimir o en Word editable.</li></ol></section>
-<section><h2>Preguntas frecuentes</h2>${t.faq.map(([q, a]) => `<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</section>
+<a class="btn" href="${esc(studio(t))}">Crear el mío gratis</a><p class="muted small trust">✓ Ves tu tomo real antes de pagar · ✓ Sin tarjeta · ✓ PDF y Word</p></section>
+${carousel(t.cover)}
+<section class="two"><div class="card"><p class="eyebrow">Ejemplo de índice</p><h2>Así se arma tu tomo</h2><p class="muted small">«${esc(t.request)}»</p><ol>${t.outline.map((o) => `<li>${esc(o)}</li>`).join('')}</ol></div>
+<div class="card"><p class="eyebrow">Qué incluye</p><h2>Listo para imprimir, de verdad</h2><ul class="checks">${t.includes.map((i) => `<li>${esc(i)}</li>`).join('')}<li>Portada ilustrada única para tu tema</li><li>A color, en blanco y negro o para imprenta</li></ul>
+<a class="btn small" href="${esc(studio(t))}">Ver mi vista previa</a></div></section>
+${VALUES}
+${STEPS}
+<section><p class="eyebrow">Preguntas frecuentes</p><h2>Lo que suelen preguntarnos.</h2>${t.faq.map(([q, a]) => `<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</section>
 ${plans()}
-<section><h2>Más temas</h2><ul class="topics">${related.map((o) => `<li><a href="${topicHref(o)}">${esc(o.title)}</a></li>`).join('')}</ul></section>
+<section><p class="eyebrow">Más ideas</p><h2>Otros temas para crear hoy</h2>${topicGrid(related)}</section>
+${CTA(studio(t))}
 </main>${FOOTER}</body></html>`
 }
+
+const topicGrid = (list: Topic[]) => `<ul class="covers">${list.map((t) => `<li><a href="${topicHref(t)}"><img src="${COVERS}/${t.cover}.webp" alt="" width="180" height="240" loading="lazy" decoding="async"><span class="eyebrow">${esc(t.name)}</span><strong>${esc(t.title)}</strong></a></li>`).join('')}</ul>`
 
 function hubPage() {
   const title = `Material educativo para imprimir por tema | ${NAME}`
@@ -79,9 +107,13 @@ function hubPage() {
     hasPart: TOPICS.map((t) => ({ '@type': 'WebPage', name: t.title, url: SITE + topicHref(t) })) }
   return `<!doctype html><html lang="es"><head>${head(title, description, '/material-educativo', json(ld))}</head><body>
 ${HEADER}<main><section class="hero"><p class="eyebrow">Material educativo</p><h1>Material educativo para imprimir, de cualquier tema</h1>
-<p class="lede">${esc(description)} Elige un tema para ver un ejemplo y crearlo en minutos.</p></section>
-<div class="grid3">${TOPICS.map((t) => `<a class="card topic" href="${topicHref(t)}"><span class="eyebrow">${esc(t.name)}</span><strong>${esc(t.title)}</strong><span class="muted small">${esc(t.description)}</span></a>`).join('')}</div>
-${plans()}</main>${FOOTER}</body></html>`
+<p class="lede">Libros ilustrados, cuadernillos y libros para colorear con calidad de editorial, hechos para tu tema y tu grupo en minutos. Elige un tema y mira el tuyo gratis.</p>
+<a class="btn" href="/#crear">Crear mi vista previa gratis</a></section>
+${carousel()}
+<section><p class="eyebrow">Temas</p><h2>¿Por dónde empezar?</h2>${topicGrid(TOPICS)}</section>
+${VALUES}
+${plans()}
+${CTA('/#crear')}</main>${FOOTER}</body></html>`
 }
 
 function homeHead() {
@@ -99,7 +131,6 @@ function homeHead() {
 }
 
 const CSS = `:root{--bg:#fff;--text:#0c0a09;--muted:#6b6864;--surface:#f7f7f6;--border:#e7e5e2;--accent:#5b4cf0;--accent-soft:#eeecfe}
-@media (prefers-color-scheme:dark){:root{--bg:#0b0b0a;--text:#f4f3f1;--muted:#a19e99;--surface:#151514;--border:#272725;--accent:#8b80ff;--accent-soft:#221f3d}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 Geist,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 a{color:inherit}main{max-width:980px;margin:0 auto;padding:0 16px 64px}
 .top{display:flex;justify-content:space-between;align-items:center;gap:12px;max-width:980px;margin:0 auto;padding:16px}
@@ -120,6 +151,26 @@ h2{font-size:22px;letter-spacing:-.02em;margin:0 0 12px}h3{margin:0}section{marg
 .steps li{background:var(--surface);border-radius:14px;padding:16px}
 details{border-bottom:1px solid var(--border);padding:12px 0}summary{cursor:pointer;font-weight:500}details p{margin:8px 0 0;color:var(--muted)}
 .topics{columns:2 260px;padding-left:20px}.topics li{margin:6px 0}.crumbs{font-size:13px;color:var(--muted);padding-top:16px}
+h2{font-size:clamp(24px,3.6vw,34px);line-height:1.1;letter-spacing:-.03em;font-weight:600;text-wrap:balance}.card h2{font-size:20px}
+.trust{margin-top:12px}.btn.light{background:#fff;color:#0c0a09;font-weight:600}.btn{transition:transform .16s cubic-bezier(.23,1,.32,1)}.btn:active{transform:scale(.97)}
+.showcase{width:100vw;margin:8px calc(50% - 50vw) 0;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
+.showcase .track{display:flex;gap:20px;width:max-content;padding:12px 0 24px;animation:drift 60s linear infinite}.showcase:hover .track{animation-play-state:paused}
+.showcase img{width:180px;height:auto;aspect-ratio:210/297;object-fit:cover;border-radius:5px 11px 11px 5px;background:var(--surface);box-shadow:inset 6px 0 8px -6px rgb(0 0 0/.25),0 1px 2px rgb(12 10 9/.08),0 16px 30px -16px rgb(12 10 9/.45)}
+@keyframes drift{from{transform:translateX(calc(-50% - 10px))}to{transform:translateX(0)}}
+@media (prefers-reduced-motion:reduce){.showcase{overflow-x:auto}.showcase .track{animation:none}}
+@media (max-width:640px){.showcase img{width:130px}.showcase .track{gap:14px}}
+.values{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:20px;overflow:hidden}
+.values article{background:var(--bg);padding:24px}.values h3{font-size:17px;letter-spacing:-.02em}.values p{margin:6px 0 0;color:var(--muted);font-size:15px}
+.steps li{display:grid;gap:4px}.steps span{color:var(--muted);font-size:14px}
+.checks{list-style:none;padding:0!important}.checks li{padding-left:24px;position:relative}.checks li::before{content:'✓';position:absolute;left:0;color:#0f7b4f;font-weight:700}
+.card .btn{margin-top:16px}
+.covers{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:20px 16px}
+.covers a{display:grid;gap:4px;text-decoration:none}.covers img{width:100%;height:auto;aspect-ratio:3/4;object-fit:cover;border-radius:4px 10px 10px 4px;margin-bottom:6px;background:var(--surface);box-shadow:0 1px 2px rgb(12 10 9/.08),0 14px 26px -16px rgb(12 10 9/.4);transition:transform .22s cubic-bezier(.23,1,.32,1)}
+@media (hover:hover){.covers a:hover img{transform:translateY(-4px) rotate(-.5deg)}}.covers strong{font-size:14px;line-height:1.3}.covers .eyebrow{margin:0;font-size:11px}
+@media (max-width:640px){.covers{grid-template-columns:repeat(2,1fr)}}
+.cta{position:relative;overflow:hidden;isolation:isolate;text-align:center;padding:64px 24px;border-radius:28px;background:#0c0a09;color:#fff}
+.cta::before{content:'';position:absolute;inset:auto -10% -60% -10%;height:120%;z-index:-1;background:linear-gradient(120deg,#7c6cff,#ff8a6b 52%,#3dd6b5);filter:blur(80px);opacity:.55}
+.cta h2{max-width:22ch;margin:0 auto 10px}.cta p{color:rgb(255 255 255/.72);margin:0 0 24px}
 footer{border-top:1px solid var(--border);padding:24px 16px;text-align:center;font-size:14px}`
 
 const pages: string[] = ['/', '/material-educativo']

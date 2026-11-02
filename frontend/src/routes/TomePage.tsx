@@ -35,10 +35,9 @@ export function TomePage() {
         {s.title && <CoverPanel series={s} />}
       </header>
 
-      <Pipeline status={status} progress={progress.data} />
+      <TomeProgress status={status} progress={progress.data} preview={s.preview} />
       {s.preview && status === 'outline_ready' && <PreviewPages series={s} progress={progress.data} />}
 
-      {status === 'outlining' && <Planning />}
       {status === 'outline_failed' && <OutlineFailed series={s} />}
       {s.research?.levels?.length ? <LevelsPanel series={s} levels={s.research.levels} /> : null}
       {s.research?.program && <ProgramPanel program={s.research.program} />}
@@ -133,40 +132,74 @@ function CoverPanel({ series: s }: { series: Series }) {
   )
 }
 
-const STEPS = [
-  { key: 'architect', label: 'Arquitecto', hint: 'Planifica el tomo' },
-  { key: 'review', label: 'Tu revisión', hint: 'Apruebas el esquema' },
-  { key: 'writer', label: 'Redactor', hint: 'Escribe cada sección' },
-  { key: 'layout', label: 'Maquetador', hint: 'Arma el PDF' },
-]
+const STAGES = ['Diseño', 'Tu revisión', 'Escritura e ilustración', 'Listo']
+const THINKING = ['Leyendo tu idea…', 'Buscando fuentes confiables…', 'Organizando las secciones…', 'Eligiendo el estilo visual…', 'Preparando tu portada…']
 
-function Pipeline({ status, progress }: { status: string; progress?: Progress }) {
-  const active = { outlining: 0, outline_failed: 0, outline_ready: 1, generating: 2, needs_attention: 2, ready: 3 }[status] ?? 0
-  const done = progress ? progress.counts.generated + progress.counts.edited + progress.counts.approved : 0
-  return (
-    <ol className="pipeline">
-      {STEPS.map((step, i) => (
-        <li key={step.key} className={i < active ? 'done' : i === active ? 'active' : ''}>
-          <span className="pl-dot" />
-          <span className="pl-l">{step.label}</span>
-          <span className="pl-h">
-            {step.key === 'writer' && i === active && progress ? `${done} de ${progress.counts.total}` : step.hint}
-          </span>
-        </li>
-      ))}
-    </ol>
-  )
+/** One line that changes every few seconds while the agents work, so the wait reads as progress. */
+function useTicker(lines: string[], on: boolean, ms = 2800) {
+  const [i, setI] = useState(0)
+  useEffect(() => {
+    if (!on || lines.length < 2) return
+    const t = window.setInterval(() => setI((n) => (n + 1) % lines.length), ms)
+    return () => window.clearInterval(t)
+  }, [on, lines.length, ms])
+  return lines[i % Math.max(1, lines.length)] ?? ''
 }
 
-function Planning() {
+/** The tome's progress as one card: where it is, what is happening right now and how much is done. */
+function TomeProgress({ status, progress, preview }: { status: string; progress?: Progress; preview: boolean }) {
+  const stage = { outlining: 0, outline_failed: 0, outline_ready: 1, generating: 2, needs_attention: 2, ready: 3 }[status] ?? 0
+  const c = progress?.counts
+  const img = progress?.images
+  const sections = c ? c.generated + c.edited + c.approved : 0
+  const units = (c?.total ?? 0) + (img?.total ?? 0)
+  const doneUnits = sections + (img?.done ?? 0)
+  const share = units ? doneUnits / units : 0
+  const writing = progress?.lessons.find((l) => l.status === 'generating')
+  const working = status === 'outlining' || status === 'generating'
+  const live = useTicker(status === 'outlining' ? THINKING
+    : writing ? [`Escribiendo «${writing.title}»`, ...(img?.active ? ['Pintando las ilustraciones…'] : []), 'Revisando cada página…']
+    : img?.active ? ['Pintando las ilustraciones…', 'Cuidando cada detalle…'] : ['Preparando las páginas…'], working)
+  const [title, sub] = {
+    outlining: ['Diseñando tu tomo', live],
+    outline_failed: ['No pudimos diseñar el tomo', 'Prueba de nuevo o cambia un poco la idea.'],
+    outline_ready: preview ? ['Tu vista previa', 'Mira tus páginas y, con un plan, genera el tomo completo.']
+                           : ['Revisa tu índice', 'Ajusta secciones y páginas; cuando estés listo, genera el tomo.'],
+    generating: ['Escribiendo e ilustrando', live],
+    needs_attention: ['Algunas secciones necesitan otro intento', 'Reinténtalas abajo; no se cobran dos veces.'],
+    ready: ['Tu tomo está listo', 'Descárgalo en PDF o Word cuando quieras.'],
+  }[status] ?? ['Tu tomo', '']
+  const fill = (i: number) => (i < stage || status === 'ready' ? 1 : i === stage && stage === 2 ? share : 0)
   return (
-    <div className="panel planning">
-      <div className="shimmer-lines" aria-hidden="true"><span /><span /><span /><span /></div>
-      <p className="muted">
-        El investigador busca fuentes si el tema lo necesita y el arquitecto diseña el tomo: género, secciones y objetivos.
-        Suele tardar entre 15 y 60 segundos.
-      </p>
-    </div>
+    <section className={`run ${status}`} aria-live="polite">
+      <div className="run-top">
+        <div className="run-text">
+          <p className="run-k">Paso {stage + 1} de {STAGES.length} · {STAGES[stage]}</p>
+          <h2 className="run-t">{title}</h2>
+          <p className="run-s" key={sub}>{sub}</p>
+        </div>
+        <div className="run-fig" aria-hidden={status !== 'generating'}>
+          {status === 'ready' ? <span className="run-done"><svg viewBox="0 0 16 16" width="22" height="22"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg></span>
+            : stage === 2 && units ? <span className="run-pct">{Math.round(share * 100)}<small>%</small></span>
+            : working ? <span className="run-orb" /> : null}
+        </div>
+      </div>
+      <ol className="run-track">
+        {STAGES.map((label, i) => (
+          <li key={label} className={i < stage || status === 'ready' ? 'done' : i === stage ? 'active' : ''}>
+            <span className={`run-bar${i === stage && working && stage === 0 ? ' busy' : ''}`}><i style={{ transform: `scaleX(${fill(i)})` }} /></span>
+            <span className="run-l">{label}</span>
+          </li>
+        ))}
+      </ol>
+      {stage === 2 && c && (
+        <dl className="run-stats">
+          <div><dt>Secciones</dt><dd>{sections}<span>/{c.total}</span></dd></div>
+          {img && img.total > 0 && <div><dt>Ilustraciones</dt><dd>{img.done}<span>/{img.total}</span></dd></div>}
+          {c.failed > 0 && <div className="bad"><dt>Por reintentar</dt><dd>{c.failed}</dd></div>}
+        </dl>
+      )}
+    </section>
   )
 }
 
@@ -182,6 +215,8 @@ function QualityCard({ seriesId, progress }: { seriesId: string; progress: Progr
   const e = progress.latest_export
   const stamp = `${progress.counts.generated}:${progress.images.done}:${progress.images.failed}:${e?.id ?? ''}:${e?.status ?? ''}`
   const q = useQuality(seriesId, stamp).data
+  const role = useMe().data?.platform_role
+  const staff = role === 'admin' || role === 'staff'  // what a tome cost us is ours to see, not the customer's
   if (!q) return null
   const v = VERDICT[q.verdict]
   const t = q.text
@@ -190,8 +225,8 @@ function QualityCard({ seriesId, progress }: { seriesId: string; progress: Progr
     ['Datos', q.facts?.needed ? `${q.facts.facts} datos verificados en ${q.facts.sources} fuentes` : 'No requiere fuentes'],
     ['Ilustraciones', q.art.total ? `${q.art.done} de ${q.art.total}${q.art.failed ? ` · ${q.art.failed} fallidas` : ''}` : 'Sin ilustraciones'],
     ...(q.pages.target ? [['Páginas', q.pages.actual ? `${q.pages.actual} de ${q.pages.target} pedidas` : `${q.pages.target} pedidas · genera el PDF para contarlas`] as [string, string]] : []),
-    ['Costo IA', `${usd(q.cost.total_usd)} · texto ${usd(q.cost.text_usd)}${q.cost.search_usd ? `, búsqueda ${usd(q.cost.search_usd)}` : ''}, portada ${usd(q.cost.cover_usd)}, ilustraciones ${usd(q.cost.images_usd + q.cost.review_usd)}`],
-    ...(q.cost.minutes === null ? [] : [['Tiempo', `${String(q.cost.minutes).replace('.', ',')} min de escritura e ilustración`] as [string, string]]),
+    ...(!staff ? [] : [['Costo IA', `${usd(q.cost.total_usd)} · texto ${usd(q.cost.text_usd)}${q.cost.search_usd ? `, búsqueda ${usd(q.cost.search_usd)}` : ''}, portada ${usd(q.cost.cover_usd)}, ilustraciones ${usd(q.cost.images_usd + q.cost.review_usd)}`] as [string, string]]),
+    ...(q.cost.minutes === null || !staff ? [] : [['Tiempo', `${String(q.cost.minutes).replace('.', ',')} min de escritura e ilustración`] as [string, string]]),
     ['Impresión', q.print ? `${{ lista: 'Lista', aceptable: 'Aceptable', baja: 'Baja resolución' }[q.print.rating]}${q.print.layout?.fixed.length ? ` · maqueta ajustada en ${q.print.layout.fixed.length} imágenes` : ''}` : 'Genera el PDF para revisarla'],
   ]
   return (
