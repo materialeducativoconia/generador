@@ -49,6 +49,15 @@ Responde solo con json:
  "suits": "para qué tomos sirve este estilo, en una frase en español"}}"""
 
 
+LAYOUT_PROMPT = """Eres la inspectora de diseño de una editorial de libros infantiles. Sobre esta ilustración se
+pondrán tarjetas de texto, y ninguna debe tapar algo importante. Divide la imagen en una cuadrícula de 3 columnas
+(A izquierda, B centro, C derecha) y 4 filas de igual alto (1 arriba, 2, 3, 4 abajo). Marca como ocupada cada
+celda donde haya una cara (de persona o animal), un personaje o animal entero, o el objeto principal de la escena;
+deja libres las de cielo, pasto, agua, pared o fondo tranquilo. Responde solo con json:
+{"busy": ["A2", "B2", ...], "faces": ["B2", ...]}"""
+CELLS = {f"{c}{r}" for c in "ABC" for r in "1234"}
+
+
 @dataclass
 class Review:
     ok: bool
@@ -79,6 +88,12 @@ class OpenRouterVision:
     async def analyze_style(self, sheet: bytes, pages: int) -> tuple[dict, float | None]:
         """Curator and Style analyst in one call over a numbered contact sheet of reference pages."""
         return await self._ask(sheet, STYLE_PROMPT.format(n=pages), max_tokens=1200)
+
+    async def busy_cells(self, image: bytes) -> tuple[list[str], float | None]:
+        """The Design inspector: the grid cells a text card must not cover (faces, characters, the subject)."""
+        verdict, cost = await self._ask(image, LAYOUT_PROMPT, max_tokens=300)
+        cells = {str(c).upper() for c in (verdict.get("busy") or []) + (verdict.get("faces") or [])}
+        return sorted(cells & CELLS), cost
 
     async def _ask(self, image: bytes, prompt: str, max_tokens: int = 800) -> tuple[dict, float | None]:
         url = f"data:{_sniff(image)};base64,{base64.b64encode(image).decode()}"

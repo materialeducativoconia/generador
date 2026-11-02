@@ -308,7 +308,8 @@
   .plate .pi.above { bottom: 24mm; }
   .plate .pi svg { max-width: 100%; max-height: {{ (geo.h * 0.24)|round(1) }}mm; height: auto; }
   .plate .pi .pic { font-size: 8.5pt; color: var(--muted); margin-top: 1mm; }
-  .plate .pn.up.n3, .plate .pn.up.n4 { display: none; }
+  .plate .pq .pqf { margin: 2.5mm 0 0; padding: 0 0 0 4mm; font-size: {{ 9 if geo.w < 180 else 10 }}pt; line-height: 1.35; }
+  .plate .pq .pqf li::marker { color: var(--accent); }
   .plate .pf b { font-family: {{ head|safe }}; color: var(--accent); margin-right: 1.5mm; }
   {% if tome.mono %}
   /* Black and white for a home printer: the coloured boxes become light greys, their titles dark grey. */
@@ -435,8 +436,10 @@
         {% if tome.image_uri(b.asset_id) %}<img src="{{ tome.image_uri(b.asset_id) }}" alt="{{ b.subject }}">
         {% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
         <div class="pq">{% if loop.first %}<div class="k">{{ s.position }} · {{ s.title }}</div>{% endif %}
-          <h3>{{ (b.question or b.caption or s.title)|inline }}</h3>{% if b.answer %}<p>{{ b.answer|inline }}</p>{% endif %}</div>
-        {% for n in b.notes %}<div class="pn n{{ loop.index }}{% if b.inset %} up{% endif %}">{{ n|inline }}</div>{% endfor %}
+          {% set placed, carded = plate_notes(b, tome.busy.get(b.asset_id)) %}
+          <h3>{{ (b.question or b.caption or s.title)|inline }}</h3>{% if b.answer %}<p>{{ b.answer|inline }}</p>{% endif %}
+          {% if carded %}<ul class="pqf">{% for n in carded %}<li>{{ n|inline }}</li>{% endfor %}</ul>{% endif %}</div>
+        {% for spot, n in placed %}<div class="pn {{ spot }}">{{ n|inline }}</div>{% endfor %}
         {% if b.inset %}<div class="pi{% if b.find %} above{% endif %}">{{ render_diagram(b.inset, c, th.head) }}{% if b.inset.caption %}<div class="pic">{{ b.inset.caption|inline }}</div>{% endif %}</div>{% endif %}
         {% if b.find %}<div class="pf"><b>Observa y encuentra:</b>{{ b.find|inline }}</div>{% endif %}
       </div>

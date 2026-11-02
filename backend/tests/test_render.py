@@ -124,3 +124,16 @@ def test_a_long_plate_scene_is_clipped_not_rejected():
 
     b = Image.model_validate({"id": "b1", "type": "image", "kind": "illustration", "size": "plate", "subject": "x" * 900})
     assert len(b.subject) == 700
+
+
+def test_fact_cards_avoid_the_cells_the_design_inspector_marked():
+    from types import SimpleNamespace
+
+    from app.render import plate_notes
+
+    plate = SimpleNamespace(notes=["uno", "dos", "tres"], inset=None)
+    assert plate_notes(plate, None) == ([("n1", "uno"), ("n2", "dos"), ("n3", "tres")], [])
+    # a face on the left at the top and the subject on the right below: two cards move, one goes to the question
+    assert plate_notes(plate, ["A2", "C3", "B2"]) == ([("n2", "uno"), ("n3", "dos")], ["tres"])
+    assert plate_notes(SimpleNamespace(notes=["uno", "dos", "tres"], inset=object()), []) == (
+        [("n1", "uno"), ("n2", "dos")], ["tres"])

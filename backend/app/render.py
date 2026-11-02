@@ -58,6 +58,7 @@ class Tome:
     level: int | None = None
     watermark: bool = False  # Prueba and Docente plans: classroom use only
     mono: bool = False  # the black-and-white edition: grey pictures and theme, light fills
+    busy: dict[str, list[str]] = field(default_factory=dict)  # asset id -> grid cells the Design inspector marked
     school: str | None = None  # printed after the author: "Elaborado por Ana Ruiz · Colegio Montessori"
     logo: tuple[bytes, str] | None = None  # the organization's logo (Creador and up), beside the signature
 
@@ -234,7 +235,22 @@ def age_badge(audience: str) -> str:
     return m.group(1) if m else audience
 
 
-_env.globals.update(poster_title=poster_title, poster_subtitle=poster_subtitle, age_badge=age_badge)
+# A plate's fact cards and the grid cells (columns A-C, rows 1-4) each spot covers; the question sits in row 1.
+NOTE_SPOTS = {"n1": ("A2",), "n2": ("C2",), "n3": ("A3",), "n4": ("C3",)}
+
+
+def plate_notes(block, busy: list[str] | None) -> tuple[list[tuple[str, str]], list[str]]:
+    """Where each fact goes: (spot, text) on a calm part of the picture, the rest in the question card. Without the
+    inspector's map the spots keep their order; an inset diagram takes the lower spots."""
+    spots = ["n1", "n2"] if block.inset else list(NOTE_SPOTS)
+    if busy is not None:
+        spots = [s for s in spots if not set(NOTE_SPOTS[s]) & set(busy)]
+    placed = list(zip(spots, block.notes))
+    return placed, list(block.notes[len(placed):])
+
+
+_env.globals.update(poster_title=poster_title, poster_subtitle=poster_subtitle, age_badge=age_badge,
+                    plate_notes=plate_notes)
 
 
 def _look(tome: Tome) -> dict:

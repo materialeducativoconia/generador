@@ -40,6 +40,11 @@ async def run_export(deps, job: dict) -> None:
         assets = (await conn.execute(text(
             "select id::text, storage_key, media_type, attribution, kind from public.assets where id = any(cast(:ids as uuid[]))"
         ), {"ids": asset_ids})).all() if asset_ids else []
+        noted = {b.get("asset_id") for lesson in lessons for b in (_json(lesson["content_json"]) or {}).get("blocks", [])
+                 if b.get("type") == "image" and b.get("size") == "plate" and b.get("notes") and b.get("asset_id")}
+        busy = {r.id: r.busy for r in (await conn.execute(text(
+            """select id::text, review->'busy' as busy from public.assets
+                where id = any(cast(:ids as uuid[])) and review ? 'busy'"""), {"ids": list(noted)})).all()} if noted else {}
 
     options = _json(export["options"])
     saver = options.get("ink") == "saver"  # the black-and-white edition: same tome, no AI, little ink
@@ -63,6 +68,8 @@ async def run_export(deps, job: dict) -> None:
         images[asset_id] = (data, media_type)
 
     await asyncio.gather(*(fetch(*row) for row in assets))
+    busy = {k: _json(v) for k, v in busy.items()}
+    await _inspect(deps, [a for a in noted if a not in busy and a in images], images, busy)
     cover_image, media_type = None, "image/png"
     if series["cover_key"]:
         try:
@@ -101,7 +108,7 @@ async def run_export(deps, job: dict) -> None:
         images=images, credits=credits,
         sources=(_json(series["research"]) or {}).get("sources") or [],
         collection=shelf.name if shelf else None, level=shelf.level if shelf else None,
-        watermark=job["payload"].get("watermark", False), mono=saver,
+        watermark=job["payload"].get("watermark", False), mono=saver, busy=busy,
     )
     paper, print_edition = options.get("paper", "A4"), options.get("edition") == "print"
     if options.get("format") == "docx":
@@ -131,6 +138,27 @@ async def run_export(deps, job: dict) -> None:
         await conn.execute(text(
             "update public.generation_jobs set status = 'succeeded', finished_at = now(), locked_at = null,"
             " locked_by = null where id = :j"), {"j": job["id"]})
+
+
+async def _inspect(deps, asset_ids: list[str], images: dict, busy: dict) -> None:
+    """The Design inspector looks at each plate once (kept on the asset): where its faces, characters and subject
+    are, so the fact cards are laid on calm parts of the picture. Without it the cards keep their spots."""
+    if not asset_ids or getattr(deps, "vision", None) is None:
+        return
+
+    async def one(asset_id):
+        try:
+            cells, _ = await deps.vision.busy_cells(images[asset_id][0])
+        except Exception as exc:  # a quality step: the plate still prints
+            log.warning("design inspector skipped %s: %s", asset_id, exc)
+            return
+        busy[asset_id] = cells
+        async with deps.engine.begin() as conn:
+            await conn.execute(text(
+                """update public.assets set review = coalesce(review, '{}'::jsonb) || jsonb_build_object('busy', cast(:b as jsonb))
+                    where id = cast(:id as uuid)"""), {"id": asset_id, "b": json.dumps(cells)})
+
+    await asyncio.gather(*(one(a) for a in asset_ids))
 
 
 async def _finish_docx(deps, job, export_id, tome, paper, include_answer_key) -> None:
