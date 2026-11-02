@@ -133,6 +133,7 @@ export type Level = {
 export type Series = CoverFields & {
   preview: boolean  // the free preview, made at our cost before any plan
   cast?: CastMember[]  // the recurring characters, each drawn from its model sheet
+  owner?: { email: string | null; display_name: string | null } | null  // set when the team views a user's tome
   collection_id: string | null
   design: Design | null
   assets: Record<string, string>

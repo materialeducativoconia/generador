@@ -77,3 +77,20 @@ async def test_a_plan_given_by_hand_ends_on_its_date(raw_db, google_user, client
                          " where org_id = (select org_id from public.memberships where user_id = $1)", teacher)
 
     assert (await client.get("/api/me", headers=bearer(key, teacher))).json()["plan"]["key"] == "prueba"
+
+
+async def test_the_team_reviews_any_tome_read_only_and_exports_it_as_its_owner(raw_db, google_user, client, key):
+    from tests.db.test_series_api import create_tome
+
+    owner, staff = await google_user(), await google_user()
+    await raw_db.execute("update public.profiles set platform_role = 'staff' where id = $1", staff)
+    sid = (await create_tome(client, key, owner))["series"]["id"]
+
+    listed = (await client.get("/api/admin/series", headers=bearer(key, staff))).json()["series"]
+    assert any(s["id"] == sid and s["email"] for s in listed)
+    seen = await client.get(f"/api/series/{sid}", headers=bearer(key, staff))
+    assert seen.status_code == 200 and seen.json()["owner"]["email"]
+    assert (await client.get(f"/api/series/{sid}/progress", headers=bearer(key, staff))).status_code == 200
+    # Reading is all: the team cannot change or delete it.
+    assert (await client.delete(f"/api/series/{sid}", headers=bearer(key, staff))).status_code == 404
+    assert (await client.get("/api/admin/series", headers=bearer(key, owner))).status_code == 403

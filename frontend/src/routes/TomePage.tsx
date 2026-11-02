@@ -24,7 +24,12 @@ export function TomePage() {
   const status = progress.data?.status ?? s.status
   return (
     <AppShell>
-      <Link to="/app" className="back">← Tu biblioteca</Link>
+      {s.owner ? (
+        <>
+          <Link to="/admin/tomos" className="back">← Tomos de usuarios</Link>
+          <p className="notice small review-note">Vista del equipo: tomo de <strong>{s.owner.display_name || s.owner.email || 'un visitante'}</strong>{s.owner.email && s.owner.display_name ? ` (${s.owner.email})` : ''}. Puedes revisarlo y descargarlo; los cambios solo los hace su dueño.</p>
+        </>
+      ) : <Link to="/app" className="back">← Tu biblioteca</Link>}
       <header className="tome-h with-cover">
         <div className="tome-h-text">
           <p className="eyebrow">{s.genre ? GENRE_LABEL[s.genre] : 'Nuevo tomo'} · {s.audience.label}</p>
@@ -38,7 +43,7 @@ export function TomePage() {
               ))}
             </ul>
           ) : null}
-          <DeleteTome id={s.id} title={tomeName(s)} />
+          {!s.owner && <DeleteTome id={s.id} title={tomeName(s)} />}
         </div>
         {s.title && <CoverPanel series={s} />}
       </header>
@@ -132,9 +137,9 @@ function CoverPanel({ series: s }: { series: Series }) {
         <BookCover size="hero" {...cover} />
       </button>
       {big && <CoverViewer {...cover} onClose={() => setBig(false)} />}
-      <button className="ghost small" onClick={() => repaint.mutate()} disabled={busy}>
+      {!s.owner && <button className="ghost small" onClick={() => repaint.mutate()} disabled={busy}>
         {busy ? 'Pintando…' : s.cover_url ? 'Otra portada' : s.cover_status === 'failed' ? 'Reintentar portada' : 'Crear portada'}
-      </button>
+      </button>}
       {repaint.error && <p className="error small">{errorText(repaint.error, 'No se pudo pedir otra portada.')}</p>}
     </div>
   )

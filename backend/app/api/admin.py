@@ -1,6 +1,7 @@
 """The admin panel for our own staff (profiles.platform_role staff/admin): users and their plans, and platform
 analytics. Staff can look; only admins change plans, credits or roles."""
 
+import json
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -94,6 +95,46 @@ async def users(request: Request, user_id: UserId, q: str = Query("", max_length
                                    {"app": APP, "q": q.strip(), "plan": plan, "lim": limit + 1, "off": offset})
                 ).mappings().all()
     return {"users": [_user(r) for r in rows[:limit]], "more": len(rows) > limit}
+
+
+@router.get("/api/admin/series")
+async def all_series(request: Request, user_id: UserId, q: str = Query("", max_length=200),
+                     status: str = Query("", pattern="^(|outlining|outline_ready|outline_failed|generating|needs_attention|ready)$"),
+                     genre: str = Query("", max_length=40), preview: str = Query("", pattern="^(|yes|no)$"),
+                     offset: int = Query(0, ge=0), limit: int = Query(48, ge=1, le=200)):
+    """Every tome on the platform, newest first, to review what the agents make: cover, owner, Editor score,
+    pictures and the last file (opened and downloaded with the tome's own page, read-only for the team)."""
+    async with request.app.state.engine.connect() as conn:
+        await _staff(conn, user_id)
+        rows = (await conn.execute(text(
+            """select s.id, coalesce(s.title, s.topic) as title, s.title is null as untitled, s.genre, s.status,
+                      s.preview, s.created_at, s.page_target, s.cover_key, s.cover->'palette' as palette,
+                      p.email, p.display_name,
+                      (select count(*) from public.lessons l where l.series_id = s.id) as sections,
+                      (select round(avg((l.review->>'score')::numeric), 1) from public.lessons l
+                        where l.series_id = s.id and l.review ? 'score') as score,
+                      (select json_build_object('id', e.id, 'status', e.status, 'format', coalesce(e.options->>'format', 'pdf'),
+                                                'pages', e.page_count)
+                         from public.exports e where e.series_id = s.id order by e.created_at desc limit 1) as export
+                 from public.series s left join public.profiles p on p.id = s.user_id
+                where (:q = '' or s.title ilike '%' || :q || '%' or s.topic ilike '%' || :q || '%' or p.email ilike '%' || :q || '%')
+                  and (:status = '' or s.status::text = :status) and (:genre = '' or s.genre::text = :genre)
+                  and (:preview = '' or s.preview = (:preview = 'yes'))
+                order by s.created_at desc limit :lim offset :off"""),
+            {"q": q.strip(), "status": status, "genre": genre, "preview": preview, "lim": limit + 1, "off": offset})
+        ).mappings().all()
+    storage = request.app.state.storage
+    out = []
+    for r in rows[:limit]:
+        d = dict(r)
+        key = d.pop("cover_key")
+        d["cover_url"] = storage.public_url(key) if key and storage else None
+        d["id"], d["created_at"] = str(d["id"]), d["created_at"].isoformat()
+        d["score"] = float(d["score"]) if d["score"] is not None else None
+        for k in ("palette", "export"):
+            d[k] = json.loads(d[k]) if isinstance(d[k], str) else d[k]
+        out.append(d)
+    return {"series": out, "more": len(rows) > limit}
 
 
 @router.get("/api/admin/users/{target}")

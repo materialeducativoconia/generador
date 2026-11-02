@@ -15,7 +15,7 @@ from uuid6 import uuid7
 
 from app import credits
 from app.api.deps import current_user_id
-from app.api.series import _jsonable, _own_series
+from app.api.series import _jsonable, _own_series, is_staff
 from app.errors import ApiError
 
 router = APIRouter()
@@ -39,12 +39,17 @@ class ExportOptions(BaseModel):
 @router.post("/api/series/{series_id}/exports", status_code=202)
 async def create_export(series_id: uuid.UUID, body: ExportOptions, request: Request, user_id: UserId):
     async with request.app.state.engine.begin() as conn:
-        series = await _own_series(conn, series_id, user_id, lock=True)
-        await credits.require_download(conn, user_id)
-        if body.format == "docx":
-            await credits.require(conn, user_id, "word", "Descargar en Word")
-        if body.edition == "print":
-            await credits.require(conn, user_id, "print_edition", "La edición para imprenta")
+        series = await _own_series(conn, series_id, user_id, lock=True, staff=True)
+        # The team reviewing a user's tome exports it as the user would get it (their plan's watermark and
+        # signature), without the plan checks; the file belongs to the user.
+        reviewing = series["user_id"] != user_id
+        user_id = series["user_id"]
+        if not reviewing:
+            await credits.require_download(conn, user_id)
+            if body.format == "docx":
+                await credits.require(conn, user_id, "word", "Descargar en Word")
+            if body.edition == "print":
+                await credits.require(conn, user_id, "print_edition", "La edición para imprenta")
         acc = await credits.account(conn, user_id)
         watermark = acc.plan.watermark
         signature = dict((await conn.execute(text(  # "Elaborado por": the profile's signature, the logo by plan
@@ -109,6 +114,9 @@ async def download_export(export_id: uuid.UUID, request: Request, user_id: UserI
 async def _own_export(conn, export_id, user_id):
     row = (await conn.execute(text("select * from public.exports where id = :e and user_id = :u"),
                               {"e": export_id, "u": user_id})).mappings().one_or_none()
+    if row is None and await is_staff(conn, user_id):  # the team reviewing a user's files
+        row = (await conn.execute(text("select * from public.exports where id = :e"),
+                                  {"e": export_id})).mappings().one_or_none()
     if row is None:
         raise ApiError(404, "not_found", "Este PDF no existe.")
     return row

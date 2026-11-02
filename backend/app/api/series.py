@@ -172,7 +172,7 @@ async def get_series(series_id: uuid.UUID, request: Request, user_id: UserId):
 @router.get("/api/series/{series_id}/progress")
 async def get_progress(series_id: uuid.UUID, request: Request, user_id: UserId):
     async with request.app.state.engine.connect() as conn:
-        series = await _own_series(conn, series_id, user_id)
+        series = await _own_series(conn, series_id, user_id, staff=True)
         lessons = (await conn.execute(text(
             "select id, position, title, status, last_error as error, updated_at from public.lessons"
             " where series_id = :s order by position"), {"s": series_id})).mappings().all()
@@ -204,7 +204,7 @@ async def get_progress(series_id: uuid.UUID, request: Request, user_id: UserId):
 async def get_quality(series_id: uuid.UUID, request: Request, user_id: UserId):
     """The tome's quality card: the Editor's verdicts, sources, pictures and the last PDF's print check."""
     async with request.app.state.engine.connect() as conn:
-        series = await _own_series(conn, series_id, user_id)
+        series = await _own_series(conn, series_id, user_id, staff=True)
         lessons = (await conn.execute(text(
             "select position, review from public.lessons where series_id = :s order by position"),
             {"s": series_id})).mappings().all()
@@ -581,12 +581,22 @@ async def _image_progress(conn, series_id) -> dict:
     return out
 
 
-async def _own_series(conn, series_id, user_id, lock=False):
+async def _own_series(conn, series_id, user_id, lock=False, staff=False):
+    """The user's tome. `staff`: the platform team may also read anyone's (quality review), never change it."""
     sql = "select * from public.series where id = :s and user_id = :u" + (" for update" if lock else "")
     row = (await conn.execute(text(sql), {"s": series_id, "u": user_id})).mappings().one_or_none()
+    if row is None and staff and await is_staff(conn, user_id):
+        row = (await conn.execute(text("select * from public.series where id = :s" + (" for update" if lock else "")),
+                                  {"s": series_id})).mappings().one_or_none()
     if row is None:
         raise ApiError(404, "not_found", "Este tomo no existe.")
     return row
+
+
+async def is_staff(conn, user_id) -> bool:
+    role = (await conn.execute(text("select platform_role from public.profiles where id = :u"),
+                               {"u": user_id})).scalar_one_or_none()
+    return role in ("staff", "admin")
 
 
 def _with_cover(out: dict, request: Request) -> dict:
@@ -605,7 +615,7 @@ def _with_cover(out: dict, request: Request) -> dict:
 
 
 async def _series_detail(conn, series_id, user_id, request: Request):
-    series = await _own_series(conn, series_id, user_id)
+    series = await _own_series(conn, series_id, user_id, staff=True)
     lessons = (await conn.execute(text(
         """select id, position, title, objectives, key_points, pages, status, last_error, content_version, content_json,
                   updated_at, sample
@@ -635,6 +645,11 @@ async def _series_detail(conn, series_id, user_id, request: Request):
                                                                "review", "findings")} if program else None,
                        } if research else None
     out["outline_error"] = outline_error
+    out["owner"] = None
+    if series["user_id"] != user_id:  # the team reviewing someone's tome: say whose it is
+        owner = (await conn.execute(text("select email, display_name from public.profiles where id = :u"),
+                                    {"u": series["user_id"]})).mappings().one_or_none()
+        out["owner"] = dict(owner) if owner else {"email": None, "display_name": None}
     return _with_cover(out, request)
 
 
@@ -702,7 +717,7 @@ def _jsonable(row) -> dict:
 @router.get("/api/lessons/{lesson_id}")
 async def get_lesson(lesson_id: uuid.UUID, request: Request, user_id: UserId):
     async with request.app.state.engine.connect() as conn:
-        out = _jsonable(await _own_lesson(conn, lesson_id, user_id))
+        out = _jsonable(await _own_lesson(conn, lesson_id, user_id, staff=True))
         out["assets"], out["credits"] = await _asset_urls(conn, request, [out])
         series = (await conn.execute(text("select design, cover from public.series where id = :s"),
                                      {"s": out["series_id"]})).mappings().one()
@@ -778,11 +793,13 @@ async def regenerate_lesson(lesson_id: uuid.UUID, body: Regenerate, request: Req
     return {"job": {"id": str(job_id), "kind": "lesson", "lesson_id": str(lesson_id), "status": "queued"}}
 
 
-async def _own_lesson(conn, lesson_id, user_id, lock=False):
+async def _own_lesson(conn, lesson_id, user_id, lock=False, staff=False):
     row = (await conn.execute(text(
         """select l.* from public.lessons l join public.series s on s.id = l.series_id
             where l.id = :l and s.user_id = :u""" + (" for update of l" if lock else "")
     ), {"l": lesson_id, "u": user_id})).mappings().one_or_none()
+    if row is None and staff and await is_staff(conn, user_id):
+        row = (await conn.execute(text("select * from public.lessons where id = :l"), {"l": lesson_id})).mappings().one_or_none()
     if row is None:
         raise ApiError(404, "not_found", "Esta sección no existe.")
     return row

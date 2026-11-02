@@ -7,6 +7,7 @@ import { queryClient } from './lib/queries'
 import { AuthCallback } from './routes/AuthCallback'
 import { SectionPage } from './routes/SectionPage'
 import { Studio } from './routes/Studio'
+import { AdminTomes } from './routes/AdminTomes'
 import { Characters } from './routes/Characters'
 import { Styles } from './routes/Styles'
 import { Identities } from './routes/Identities'
@@ -38,6 +39,7 @@ export default function App() {
             <Route path="/app/plan" element={authed(<Plan />)} />
             <Route path="/app/perfil" element={authed(<Profile />)} />
             <Route path="/admin" element={authed(<AdminUsers />)} />
+            <Route path="/admin/tomos" element={authed(<AdminTomes />)} />
             <Route path="/admin/analytics" element={authed(<Analytics />)} />
             <Route path="/adminpanel" element={<Navigate to="/admin" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
