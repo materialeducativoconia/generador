@@ -19,6 +19,7 @@ import { AdminUsers } from './routes/AdminUsers'
 import { FirstVisit, Onboarding } from './routes/Onboarding'
 import { TomePage } from './routes/TomePage'
 import { Welcome } from './routes/Welcome'
+import { Library, LibraryPlate } from './routes/Library'
 
 const authed = (page: ReactNode) => <RequireAuth>{page}</RequireAuth>
 
@@ -29,6 +30,8 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Welcome />} />
+            <Route path="/laminas" element={<Library />} />
+            <Route path="/laminas/:slug" element={<LibraryPlate />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/app" element={authed(<FirstVisit><Studio /></FirstVisit>)} />
             <Route path="/app/bienvenida" element={authed(<Onboarding />)} />

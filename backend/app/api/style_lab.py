@@ -122,7 +122,9 @@ async def list_samples(request: Request, user_id: UserId):
     async with request.app.state.engine.connect() as conn:
         await _staff(conn, user_id)
         rows = (await conn.execute(text(
-            """select id::text, run::text, style, subject, status, raw_key, key, error, cost_usd, chosen, created_at
+            """select id::text, run::text, style, subject, status, raw_key, key, error, cost_usd, chosen, created_at,
+                      (select slug from public.library_plates p where p.sample_id = style_samples.id and p.published
+                        limit 1) as plate
                  from public.style_samples
                 where run in (select run from public.style_samples group by run order by max(created_at) desc limit 8)
                    or chosen
@@ -135,7 +137,8 @@ async def list_samples(request: Request, user_id: UserId):
                                          "samples": []})
         run["samples"].append({"id": r["id"], "style": r["style"], "status": r["status"], "error": r["error"],
                                "cost_usd": float(r["cost_usd"]) if r["cost_usd"] is not None else None,
-                               "chosen": r["chosen"], "url": url(r["key"]), "raw_url": url(r["raw_key"])})
+                               "chosen": r["chosen"], "url": url(r["key"]), "raw_url": url(r["raw_key"]),
+                               "plate": r["plate"]})
     order = {s.key: i for i, s in enumerate(STYLES)}
     for run in runs.values():
         run["samples"].sort(key=lambda s: order.get(s["style"], 99))

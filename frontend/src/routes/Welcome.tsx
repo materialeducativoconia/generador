@@ -78,6 +78,7 @@ export function Welcome() {
   return (
     <>
     <header className="welcome-top">
+      <a href="/laminas" className="welcome-top-link">Láminas gratis</a>
       <a href="#planes" className="welcome-top-link">Planes</a>
       <button className="welcome-login" onClick={start} disabled={starting || loading}>{starting ? 'Abriendo…' : 'Entrar'}</button>
     </header>

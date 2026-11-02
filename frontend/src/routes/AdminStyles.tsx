@@ -7,7 +7,7 @@ import { api } from '../lib/apiClient'
 import { useMe } from '../lib/queries'
 import { AdminTabs } from './AdminUsers'
 
-type Sample = { id: string; style: string; status: 'painting' | 'done' | 'failed'; error: string | null; cost_usd: number | null; chosen: boolean; url: string | null; raw_url: string | null }
+type Sample = { plate: string | null; id: string; style: string; status: 'painting' | 'done' | 'failed'; error: string | null; cost_usd: number | null; chosen: boolean; url: string | null; raw_url: string | null }
 type Run = { run: string; subject: string; created_at: string; samples: Sample[] }
 type Lab = { styles: { key: string; name: string; inspired_by: string }[]; runs: Run[] }
 
@@ -33,6 +33,12 @@ export function AdminStyles() {
   const retry = useMutation({
     mutationFn: (run: string) => api.post(`/api/admin/style-lab/${run}/retry`, {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['style-lab'] }),
+  })
+  const [publishing, setPublishing] = useState<string | null>(null)
+  const [plate, setPlate] = useState({ title: '', answer: '', topic: '', audience: '' })
+  const publish = useMutation({
+    mutationFn: (sampleId: string) => api.post('/api/admin/library', { sample_id: sampleId, ...plate }),
+    onSuccess: () => { setPublishing(null); setPlate({ title: '', answer: '', topic: '', audience: '' }); void qc.invalidateQueries({ queryKey: ['style-lab'] }) },
   })
   const choose = useMutation({
     mutationFn: (s: Sample) => api.patch(`/api/admin/style-lab/${s.id}`, { chosen: !s.chosen }),
@@ -94,7 +100,19 @@ export function AdminStyles() {
                         </button>
                       )}
                       <a className="ghost small" href={s.url!} target="_blank" rel="noreferrer">Abrir</a>
+                      {s.plate ? <a className="ghost small" href={`/laminas/${s.plate}`} target="_blank" rel="noreferrer">En la biblioteca ↗</a>
+                        : admin && <button type="button" className="ghost small" onClick={() => setPublishing(publishing === s.id ? null : s.id)}>Publicar gratis</button>}
                     </span>
+                  )}
+                  {publishing === s.id && (
+                    <form className="lab-publish" onSubmit={(e) => { e.preventDefault(); publish.mutate(s.id) }}>
+                      <input required minLength={3} maxLength={160} placeholder="Pregunta: ¿Por qué brilla el Sol?" value={plate.title} onChange={(e) => setPlate({ ...plate, title: e.target.value })} />
+                      <textarea rows={3} maxLength={600} placeholder="Respuesta corta para el niño" value={plate.answer} onChange={(e) => setPlate({ ...plate, answer: e.target.value })} />
+                      <input required minLength={2} maxLength={120} placeholder="Tema: El sistema solar" value={plate.topic} onChange={(e) => setPlate({ ...plate, topic: e.target.value })} />
+                      <input maxLength={80} placeholder="Nivel (opcional): Preescolar" value={plate.audience} onChange={(e) => setPlate({ ...plate, audience: e.target.value })} />
+                      <button className="primary small" disabled={publish.isPending}>{publish.isPending ? 'Publicando…' : 'Publicar en la biblioteca'}</button>
+                      {publish.error && <p className="error small">{errorText(publish.error, 'No se pudo publicar.')}</p>}
+                    </form>
                   )}
                 </div>
               </li>

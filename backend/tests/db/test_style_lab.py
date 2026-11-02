@@ -5,6 +5,7 @@ import asyncio
 from app.house_styles import STYLES
 from tests.db.test_admin import bearer
 from tests.db.test_covers import FakeImages, FakeStorage
+from tests.test_covers import PNG as PNG_JPEG
 
 
 async def test_admins_paint_a_subject_in_every_style_and_keep_one(raw_db, google_user, client, key):
@@ -70,3 +71,38 @@ async def test_a_failed_style_is_painted_again_alone(raw_db, google_user, client
     assert retry.json()["styles"] == ["collage"]
     assert await settled() == {"collage": "done", "gouache": "done"}
     assert len(images.calls) == painted + 1
+
+
+async def test_a_lab_sample_becomes_a_free_plate_downloaded_after_signing_in(raw_db, google_user, client, key):
+    admin = await google_user(email="biblioteca@jelyx.test")
+    await raw_db.execute("update public.profiles set platform_role = 'admin' where id = $1", admin)
+    app = client._transport.app
+    storage = FakeStorage()
+    storage.uploads[("images", "style-lab/x/acuarela.jpg")] = (PNG_JPEG, "image/jpeg")
+
+    async def signed_url(k, expires_in=60, download_name=None, bucket="exports"):
+        return f"https://signed.test/{bucket}/{k}"
+
+    storage.signed_url = signed_url
+    app.state.storage = storage
+    sample = await raw_db.fetchval("""insert into public.style_samples (run, style, subject, status, key)
+        values (gen_random_uuid(), 'acuarela', 'el sol', 'done', 'style-lab/x/acuarela.jpg') returning id""")
+
+    made = await client.post("/api/admin/library", json={
+        "sample_id": str(sample), "title": "¿Por qué brilla el Sol?", "answer": "Porque es una estrella.",
+        "topic": "El sistema solar"}, headers=bearer(key, admin))
+    assert made.status_code == 201
+    slug = made.json()["plate"]["slug"]
+    assert slug.startswith("por-que-brilla-el-sol")
+
+    listed = (await client.get("/api/library?topic=El%20sistema%20solar")).json()
+    assert any(p["slug"] == slug and p["style_name"] == "Acuarela y tinta" for p in listed["plates"])
+    assert (await client.get(f"/api/library/{slug}")).json()["plate"]["title"] == "¿Por qué brilla el Sol?"
+
+    visitor = await google_user(anonymous=True)
+    assert (await client.post(f"/api/library/{slug}/download", headers=bearer(key, visitor))).status_code == 401
+    teacher = await google_user()
+    got = await client.post(f"/api/library/{slug}/download", headers=bearer(key, teacher))
+    assert got.status_code == 200 and got.json()["url"].endswith(f"library/{slug}.pdf")
+    assert storage.uploads[("exports", f"library/{slug}.pdf")][0].startswith(b"%PDF")
+    await raw_db.execute("delete from public.library_plates where slug = $1", slug)
