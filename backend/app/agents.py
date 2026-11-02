@@ -12,7 +12,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.content import (ArtPlan, BrandDirections, Character, CoverPlan, Design, EditReview, FactSheet, Fix,
                          IdentityLooks, Outline, ProgramReview, ProgramSheet, ResearchPlan, SectionContent)
-from app.literacy import allowed_letters, check_blocks, check_section, tidy
+from app.literacy import allowed_letters, check_blocks, check_picture_book, check_section, plate_up, tidy
 from app.themes import ART_STYLES, COVER_LAYOUTS, FONTS, FRAMES, THEMES
 from app.llm import LLM, Completion
 
@@ -296,10 +296,12 @@ async def writer(llm: LLM, brief: Brief, outline: Outline, position: int) -> Age
     allowed = allowed_letters(outline, position)
     letters = (f"\nLetras que enseña esta sección: {', '.join(section.letters) or '(repaso)'}\n"
                f"Letras permitidas (el niño ya las conoce): {', '.join(sorted(allowed))}") if allowed else ""
+    picture_book = outline.genre == "picture_book"
     if section.pages:
-        letters += (f"\nExtensión: esta sección debe llenar unas {section.pages} páginas impresas, ni más ni menos "
-                    "(una ficha o un dibujo full por página, separadas con page_break; en texto, unas 300 palabras "
-                    "por página)")
+        letters += (f"\nExtensión: esta sección debe llenar unas {section.pages} páginas impresas, ni más ni menos " + (
+            "(una lámina image size \"plate\" por página, con question, answer, notes y find; sin page_break entre "
+            "láminas)" if picture_book else
+            "(una ficha o un dibujo full por página, separadas con page_break; en texto, unas 300 palabras por página)"))
     # Most stable first, so DeepSeek's prefix cache covers everything but the last message.
     messages = [
         {"role": "system", "content": WRITER_SYSTEM},
@@ -310,7 +312,11 @@ async def writer(llm: LLM, brief: Brief, outline: Outline, position: int) -> Age
                                     f"Puntos clave: {'; '.join(section.key_points)}{letters}"},
     ]
     result = await _json_call(llm, messages, SectionContent, temperature=1.0, max_tokens=8000)
-    problems = check_section(result.value, allowed) + check_blocks(result.value)
+    def check(content):
+        return check_section(content, allowed) + check_blocks(content) + (
+            check_picture_book(content) if picture_book else [])
+
+    problems = check(result.value)
     if problems:  # decodable text and block misuse are checked by code: one chance to fix them
         last = result.attempts[-1]
         retry_messages = [*last.messages, {"role": "assistant", "content": last.completion.text},
@@ -322,11 +328,13 @@ async def writer(llm: LLM, brief: Brief, outline: Outline, position: int) -> Age
         except AgentFailed as exc:
             result.attempts += exc.attempts
         else:
-            left = check_section(retry.value, allowed) + check_blocks(retry.value)
+            left = check(retry.value)
             attempts = result.attempts + retry.attempts
             result = retry if len(left) < len(problems) else result
             result.attempts, problems = attempts, min(left, problems, key=len)
         result.notes = problems
+    if picture_book:
+        plate_up(result.value)
     tidy(result.value, section.title)
     return result
 
@@ -568,7 +576,8 @@ Reglas:
   (láminas, tamaño plate) crea siempre un personaje guía (niño o niña explorador, mascota o animal simpático
   ligado al tema) y ponlo en cada lámina, mirando o señalando lo importante.
 - Láminas (tamaño plate): escena a página completa, rica en detalles para buscar; sujeto principal al centro;
-  la franja superior (una quinta parte) y los bordes laterales tranquilos y sin detalles importantes, porque
+  la franja superior (una quinta parte) y las franjas laterales (un tercio de cada lado, a media altura)
+  tranquilas: los personajes y el sujeto van en el centro y abajo, porque
   ahí van la pregunta y las notas.
 - Respeta la regla de personajes del pedido: si no se permiten personajes de películas o marcas, descríbelos
   como personajes originales sin nombre propio ni rasgos de marca.

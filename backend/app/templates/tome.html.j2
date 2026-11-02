@@ -70,6 +70,22 @@
                              border-radius: 8mm; border: 2.4pt solid {{ c.accent }}; }
   .cover.framed .name { bottom: 30mm; left: 16mm; border: 1.2pt solid {{ c.line }}; }
 
+  /* poster: a picture book's cover, as children's collections do it: the art to the edges, a series badge, a big
+     outlined title, a ribbon for the subtitle and a round age sticker */
+  .cover.poster .poster-top { position: absolute; top: 12mm; left: 12mm; right: 12mm; text-align: center; }
+  .cover.poster .series { display: inline-block; font: 800 9pt {{ head|safe }}; letter-spacing: .12em; text-transform: uppercase;
+                          color: #fff; background: {{ c.ink }}; padding: 2mm 5mm; border-radius: 5mm; border: .8mm solid #fff; }
+  .cover.poster h1 { margin: 4mm 0 0; font-size: 1pt; line-height: 0; color: transparent; }
+  .cover.poster h1 .sr { font-size: 1pt; color: transparent; }
+  .cover.poster .poster-t { display: block; margin: 0 auto; }
+  .cover.poster .ribbon { display: inline-block; margin-top: 2mm; max-width: 82%; padding: 2.5mm 6mm; border-radius: 3mm;
+                          background: {{ c.accent }}; color: #fff; font: 700 12pt/1.25 {{ head|safe }}; transform: rotate(-1.5deg); border: .8mm solid #fff; }
+  .cover.poster .age { position: absolute; right: 12mm; bottom: 14mm; width: 24mm; height: 24mm; border-radius: 50%; display: flex;
+                       align-items: center; justify-content: center; text-align: center; background: {{ c.pop2 }}; color: #fff;
+                       font: 800 11pt/1.05 {{ head|safe }}; border: 1mm solid #fff; transform: rotate(8deg); padding: 2mm; }
+  .cover.poster .name { bottom: 22mm; left: 12mm; width: 80mm; }
+  .cover.poster .by { bottom: 12mm; left: 12mm; }
+
   /* the identity's imprint: its seal and name, the same on every tome of the line */
   .imprint { position: absolute; right: 16mm; bottom: 16mm; display: flex; align-items: center; gap: 2.5mm;
              font: 800 10pt {{ head|safe }}; color: var(--ink); letter-spacing: .04em; }
@@ -275,12 +291,15 @@
   .plate .pq .k { font: 800 7.5pt {{ head|safe }}; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 1.5mm; }
   .plate .pq h3 { font: {{ th.head_weight }} {{ 19 if geo.w < 180 else 24 }}pt/1.08 {{ head|safe }}; margin: 0; color: var(--ink); }
   .plate .pq p { margin: 2.5mm 0 0; font-size: {{ 10.5 if geo.w < 180 else 12 }}pt; line-height: 1.4; }
-  .plate .pn { position: absolute; max-width: 44%; background: var(--accent); color: #fff; border-radius: 5mm; padding: 3mm 4mm;
-               font: 600 {{ 8.5 if geo.w < 180 else 10 }}pt/1.3 {{ body|safe }}; box-shadow: 0 1.2mm 3mm rgba(0,0,0,.22); }
-  .plate .pn.n1 { left: 7mm; top: 44%; transform: rotate(-2deg); }
-  .plate .pn.n2 { right: 7mm; top: 58%; transform: rotate(2deg); background: {{ c.pop1 }}; }
-  .plate .pn.n3 { left: 7mm; bottom: 31mm; transform: rotate(1.5deg); background: {{ c.pop2 }}; }
-  .plate .pn.n4 { right: 7mm; top: 36%; transform: rotate(-1.5deg); }
+  /* Facts as small white cards hugging the side edges, where the Art director keeps the scene calm: the guide and
+     the subject stay visible in the middle. */
+  .plate .pn { position: absolute; max-width: 31%; background: rgba(255, 255, 255, .94); color: var(--ink); border-radius: 3.5mm;
+               padding: 2.2mm 3mm 2.4mm; border-left: 1.6mm solid var(--accent);
+               font: 600 {{ 7.8 if geo.w < 180 else 9 }}pt/1.28 {{ body|safe }}; box-shadow: 0 1mm 2.5mm rgba(0,0,0,.16); }
+  .plate .pn.n1 { left: 5mm; top: 27%; }
+  .plate .pn.n2 { right: 5mm; top: 27%; }
+  .plate .pn.n3 { left: 5mm; top: 50%; }
+  .plate .pn.n4 { right: 5mm; top: 50%; }
   .plate .pf { position: absolute; left: 9mm; right: 9mm; bottom: 9mm; background: #fff; border-radius: 7mm; padding: 3.5mm 6mm;
                font: 600 {{ 9 if geo.w < 180 else 10.5 }}pt/1.35 {{ body|safe }}; box-shadow: 0 1.5mm 4mm rgba(0,0,0,.18); }
   /* An exact diagram drawn by code over the picture, on a white card above the "find" strip. */
@@ -289,7 +308,7 @@
   .plate .pi.above { bottom: 24mm; }
   .plate .pi svg { max-width: 100%; max-height: {{ (geo.h * 0.24)|round(1) }}mm; height: auto; }
   .plate .pi .pic { font-size: 8.5pt; color: var(--muted); margin-top: 1mm; }
-  .plate .pn.up.n1 { top: 30%; } .plate .pn.up.n2 { top: 40%; } .plate .pn.up.n3, .plate .pn.up.n4 { display: none; }
+  .plate .pn.up.n3, .plate .pn.up.n4 { display: none; }
   .plate .pf b { font-family: {{ head|safe }}; color: var(--accent); margin-right: 1.5mm; }
   {% if tome.mono %}
   /* Black and white for a home printer: the coloured boxes become light greys, their titles dark grey. */
@@ -310,7 +329,16 @@
   {% if seal %}<div class="imprint">{{ seal }}<span>{{ tome.brand.name }}</span></div>{% endif %}
 </div>
 {% else %}
-{% if tome.cover_data_uri %}
+{% if tome.cover_data_uri and tome.genre == "picture_book" %}
+<div class="cover art poster">
+  <img class="cover-art" src="{{ tome.cover_data_uri }}" alt="">
+  <div class="poster-top">
+    <div class="series">{{ tome.kicker }}</div>
+    <h1>{{ poster_title(tome.title, th.head, c, geo.w - 24) }}<span class="sr">{{ tome.title }}</span></h1>
+    {% if poster_subtitle(tome.title) %}<div class="ribbon">{{ poster_subtitle(tome.title) }}</div>{% endif %}
+  </div>
+  <div class="age">{{ age_badge(tome.audience) }}</div>
+{% elif tome.cover_data_uri %}
 <div class="cover art {{ tome.design.cover_layout if tome.design else 'plate' }}">
   <img class="cover-art" src="{{ tome.cover_data_uri }}" alt="">
   <div class="cover-plate">

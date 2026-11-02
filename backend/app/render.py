@@ -199,6 +199,44 @@ def confetti(c: dict) -> tuple[str, str]:
     return tuple("data:image/svg+xml;utf8," + quote(svg) for svg in (top, bottom))
 
 
+def poster_title(title: str, family: str, c: dict, width_mm: float) -> Markup:
+    """A picture book's cover title as children's collections set it: big rounded letters, white with a thick ink
+    outline and a drop shadow, centred over the art. A subtitle after a colon goes on a ribbon (poster_subtitle).
+    SVG so the outline prints the same in every PDF reader."""
+    main = title.split(":", 1)[0].strip()
+    size = 20.0 if len(main) <= 12 else 17.0 if len(main) <= 20 else 13.0 if len(main) <= 32 else 10.5  # mm
+    per_line = max(6, int(width_mm / (size * 0.56)))
+    lines = textwrap.wrap(main, per_line)[:3]
+    lead = size * 1.02
+    h = lead * len(lines) + size * 0.35
+    out = []
+    for i, line in enumerate(lines):
+        y = size * 0.92 + i * lead
+        t = html.escape(line)
+        common = f'x="{width_mm / 2:.1f}" text-anchor="middle" font-family="{family}" font-size="{size:.1f}" font-weight="800"'
+        out.append(f'<text {common} y="{y + size * 0.09:.1f}" fill="{c["ink"]}" stroke="{c["ink"]}" '
+                   f'stroke-width="{size * 0.22:.2f}" stroke-linejoin="round">{t}</text>')
+        out.append(f'<text {common} y="{y:.1f}" fill="#FFFFFF" stroke="{c["ink"]}" stroke-width="{size * 0.16:.2f}" '
+                   f'stroke-linejoin="round">{t}</text>')
+        out.append(f'<text {common} y="{y:.1f}" fill="#FFFFFF">{t}</text>')
+    return Markup(f'<svg class="poster-t" viewBox="0 0 {width_mm:.1f} {h:.1f}" width="{width_mm:.1f}mm" '
+                  f'height="{h:.1f}mm" xmlns="http://www.w3.org/2000/svg">{"".join(out)}</svg>')
+
+
+def poster_subtitle(title: str) -> str | None:
+    rest = title.split(":", 1)[1].strip() if ":" in title else ""
+    return rest[:1].upper() + rest[1:] if rest else None
+
+
+def age_badge(audience: str) -> str:
+    """"Preescolar (3–5 años)" -> "3–5 años" for the round sticker."""
+    m = re.search(r"\(([^)]+)\)", audience)
+    return m.group(1) if m else audience
+
+
+_env.globals.update(poster_title=poster_title, poster_subtitle=poster_subtitle, age_badge=age_badge)
+
+
 def _look(tome: Tome) -> dict:
     """Theme, colours and fonts shared by the interior and the cover wrap."""
     th, colors = theme_colors(tome.design, tome.palette)

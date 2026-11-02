@@ -131,3 +131,22 @@ def tidy(content: SectionContent, section_title: str) -> None:
     blocks = [b for i, b in enumerate(blocks) if b.type != "page_break" or (i + 1 < len(blocks)
               and blocks[i + 1].type != "page_break")]
     content.blocks = blocks or content.blocks
+
+
+def check_picture_book(content: SectionContent) -> list[str]:
+    """A picture book's pages are plates: the picture to the edges with its question and answer over it."""
+    problems = []
+    for b in content.blocks:
+        if b.type == "image" and b.kind == "illustration" and b.size != "plate":
+            problems.append(f"{b.id}: en un libro ilustrado cada página es una lámina: size \"plate\" con question y answer")
+        elif b.type == "image" and b.size == "plate" and not (b.question and b.answer):
+            problems.append(f"{b.id}: la lámina necesita question (la pregunta, con ¿?) y answer (2 o 3 frases)")
+    return problems
+
+
+def plate_up(content: SectionContent) -> None:
+    """Last resort when the Writer still drew loose pictures in a picture book: they print as plates anyway."""
+    for b in content.blocks:
+        if b.type == "image" and b.kind == "illustration" and b.size != "plate":
+            b.size = "plate"
+            b.question = b.question or (re.sub(r"^\s*Lámina\s*\d+\s*[—–-]\s*", "", b.caption or "") or None)

@@ -18,7 +18,7 @@ export function BookCover({ title, genre, audience, cover_url, cover_status, cov
   useThemeFonts(design)
   const [bg, ink, accent] = cover_palette ?? ['#EEF2FF', '#1C1917', '#4F46E5']
   const painting = cover_status === 'queued' || cover_status === 'running'
-  const layout = design?.cover_layout ?? 'plate'
+  const layout = genre === 'picture_book' ? 'poster' : design?.cover_layout ?? 'plate'  // as the PDF sets it
   const head = design ? (themeVars(design).style as Record<string, string>)['--t-head'] : undefined
   return (
     <div
@@ -32,9 +32,11 @@ export function BookCover({ title, genre, audience, cover_url, cover_status, cov
       )}
       <div className="book-plate">
         <span className="book-k">{genre ? GENRE_LABEL[genre] : 'Nuevo tomo'}</span>
-        <span className="book-t">{title}</span>
-        {audience && size !== 'card' && <span className="book-a">{audience}</span>}
+        <span className="book-t">{layout === 'poster' ? title.split(':')[0] : title}</span>
+        {layout === 'poster' && title.includes(':') && size !== 'card' && <span className="book-sub">{title.split(':').slice(1).join(':').trim()}</span>}
+        {audience && size !== 'card' && layout !== 'poster' && <span className="book-a">{audience}</span>}
       </div>
+      {layout === 'poster' && audience && size !== 'card' && <span className="book-age">{audience.match(/\(([^)]+)\)/)?.[1] ?? audience}</span>}
       {marked && <span className="watermark" aria-hidden="true" />}
       {painting && <span className="book-badge">Pintando portada…</span>}
     </div>

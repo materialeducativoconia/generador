@@ -96,3 +96,21 @@ def test_brand_characters_only_for_personal_use():
 def test_the_users_format_reaches_the_architect():
     assert "(genre): coloring_book" in Brief(request="x", audience="y", format="coloring_book").describe()
     assert "(genre)" not in Brief(request="x", audience="y").describe()
+
+
+async def test_a_picture_book_section_always_prints_as_plates():
+    from app.content import Outline
+
+    outline = Outline.model_validate({**OUTLINE, "genre": "picture_book",
+                                      "sections": [{"title": "Aves", "objectives": ["Conocer"], "key_points": ["Kakapo"],
+                                                    "pages": 1}]})
+    loose = {"blocks": [{"id": "b1", "type": "image", "kind": "illustration", "size": "full",
+                         "subject": "un kakapo en el bosque", "caption": "Lámina 1 — Kakapo", "notes": ["Es verde."]}]}
+    llm = ScriptedLLM(json.dumps(loose), json.dumps(loose))
+
+    result = await writer(llm, BRIEF, outline, position=1)
+
+    assert "plate" in llm.calls[0][-1]["content"]  # the page budget asks for plates, not full pictures
+    assert "lámina" in llm.calls[1][-1]["content"]  # one chance to fix it
+    plate = result.value.blocks[0]
+    assert plate.size == "plate" and plate.question == "Kakapo"
