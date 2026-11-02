@@ -9,6 +9,7 @@ import { useSeriesList } from '../lib/queries'
 import { PUBLIC_PLAN_INFO } from '../lib/pricing'
 import { PlanCards } from '../components/PlanCards'
 import { TOPICS, topicHref } from '../lib/topics'
+import { HOUSE_STYLES, sampleOf } from '../lib/houseStyles'
 
 const ERRORS: Record<string, string> = {
   cancelled: 'No se completó el inicio de sesión.',
@@ -22,7 +23,7 @@ function ReturningVisitor() {
 
 export function Welcome() {
   const { session, loading } = useAuth()
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const [starting, setStarting] = useState(false)
   const [previewing, setPreviewing] = useState(false)  // the visitor's anonymous session must not bounce them to /app
   const [error, setError] = useState<string | null>(() => ERRORS[params.get('error') ?? ''] ?? null)
@@ -49,6 +50,18 @@ export function Welcome() {
       setError(ERRORS.failed)
       setJoining(null)
     }
+  }
+
+  /** A style card: a free style fills the request box's picker; a plan style goes to the plans. */
+  function pickStyle(key: string) {
+    if (!HOUSE_STYLES.find((s) => s.key === key)?.free) {
+      document.getElementById('planes')?.scrollIntoView({ behavior: 'smooth' })
+      return
+    }
+    setParams((p) => { p.set('estilo', key); return p }, { replace: true, preventScrollReset: true })
+    const box = document.querySelector<HTMLTextAreaElement>('#crear textarea')
+    box?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    box?.focus({ preventScroll: true })
   }
 
   async function start() {
@@ -93,10 +106,13 @@ export function Welcome() {
         <h2 className="l-h">El mismo tema, el estilo que tu clase merece.</h2>
         <p className="l-lede">Ilustraciones con el acabado de los libros de las mejores editoriales, no de una imagen genérica. Así se ve el mismo tema en seis estilos.</p>
         <ul className="l-styles">
-          {STYLE_SAMPLES.map(([file, name, desc]) => (
-            <li key={file}>
-              <img src={`/estilos/${file}.webp`} alt={`El sistema solar en estilo ${name}`} loading="lazy" width={717} height={960} />
-              <strong>{name}</strong><span>{desc}</span>
+          {HOUSE_STYLES.map((s) => (
+            <li key={s.key}>
+              <button type="button" onClick={() => pickStyle(s.key)}>
+                <img src={sampleOf(s.key)} alt={`El sistema solar en estilo ${s.name}`} loading="lazy" width={717} height={960} />
+                <strong>{s.name}</strong><span>{s.desc}</span>
+                <span className="l-style-use">{s.free ? 'Probar gratis en este estilo →' : 'Con un plan →'}</span>
+              </button>
             </li>
           ))}
         </ul>
@@ -213,15 +229,6 @@ const VALUES: [string, string][] = [
   ['Minutos, no fines de semana', 'Del tema al libro terminado en una sola sesión. Tú decides; Jelyx investiga, escribe, ilustra y maqueta.'],
   ['Se ve como libro de editorial', 'Portada pintada para tu tema, ilustraciones en cada página, tipografía y colores cuidados. Nada de plantillas genéricas.'],
   ['Tuyo para usar o vender', 'Imprímelo para tu grupo o, desde el plan Creador, véndelo en Amazon KDP, Teachers Pay Teachers o tu tienda, sin marca de agua.'],
-]
-
-const STYLE_SAMPLES: [string, string, string][] = [
-  ['enciclopedia', 'Enciclopedia', 'Acuarela naturalista sobre página blanca, como una enciclopedia infantil.'],
-  ['didactico', 'Didáctico claro', 'Contornos limpios y colores planos, como en los libros de texto.'],
-  ['gouache', 'Gouache moderno', 'Formas gráficas y pocas tintas, con textura de impresión.'],
-  ['acuarela', 'Acuarela y tinta', 'Trazo suelto y aguadas suaves sobre papel.'],
-  ['collage', 'Collage de papel', 'Papeles pintados y recortados a mano, con sus bordes y texturas.'],
-  ['crayon', 'Lápiz y crayón', 'Lápices de color sobre papel con grano, cálido y cercano.'],
 ]
 
 const FEATURES: [string, string][] = [

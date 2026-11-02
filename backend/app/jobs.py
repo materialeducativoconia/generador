@@ -25,6 +25,8 @@ from app import credits
 from app.free_images import FREE_STYLE
 from app.llm import LLM, UpstreamAuthError, UpstreamError
 from app.artwork import ImageRequest, plan_sheets, sheet_prompt, slice_sheet
+from app.house_styles import BY_KEY, STYLE_NOTE, finish, style_references
+from app.house_styles import apply as apply_house_style
 from app.illustrator import (ASPECT, cover_jpeg, line_art_coverage, normalize_subject, prepare_image, reference_image,
                              upscale, vectorize)
 from app.references import find_covers
@@ -342,6 +344,15 @@ async def enqueue_cover(conn, user_id, series_id, free: bool = False) -> uuid.UU
 
 async def _design(deps: Deps, job: dict, series, brief: Brief, title: str, genre: str,
                   sections: list[str]) -> tuple[Design, list[Attempt]]:
+    """The tome's look, wearing the illustration style the user picked when creating it."""
+    design, attempts = await _base_design(deps, job, series, brief, title, genre, sections)
+    if series.get("house_style") in BY_KEY:
+        design = apply_house_style(design, series["house_style"])
+    return design, attempts
+
+
+async def _base_design(deps: Deps, job: dict, series, brief: Brief, title: str, genre: str,
+                       sections: list[str]) -> tuple[Design, list[Attempt]]:
     """The tome's look: its identity, the style the user pinned, or the Designer's pick among their library and
     the themes."""
     async with deps.engine.connect() as conn:
@@ -408,15 +419,19 @@ async def _cover(deps: Deps, job: dict) -> None:
         await _free_cover(deps, job, plan)
         return
     sheets = await cast_sheets(deps, cast)
-    references = await deps.references(plan.search_queries, limit=4 - len(sheets))
+    house = await style_references(deps.engine, deps.storage, design.house_style)
+    references = await deps.references(plan.search_queries, limit=max(0, 4 - len(sheets) - len(house)))
     who = (f"\nThe first attached image(s) are the model sheets of this book's characters ({cast_line(cast)}): draw "
            "them on the cover exactly as on their sheets (face, hair, outfit, colours, proportions). The other "
            "images are only references for quality.") if sheets else ""
+    if house:
+        who += f"\nThe image after the character sheets is a style reference. {STYLE_NOTE}"
     image = await deps.images.generate(
         f"{plan.illustration_prompt}\n\n{COVER_RULES.format(palette=', '.join(plan.palette))}{who}",
-        references=sheets + [r.data for r in references], aspect_ratio="3:4", resolution="4K")  # 300+ dpi
+        references=sheets + house + [r.data for r in references], aspect_ratio="3:4", resolution="4K")  # 300+ dpi
     key = f"{job['user_id']}/{job['series_id']}/{job['id']}.jpg"
-    await deps.storage.upload(key, await asyncio.to_thread(cover_jpeg, image.data), "image/jpeg", bucket="covers")
+    await deps.storage.upload(key, await asyncio.to_thread(_cover_file, image.data, design), "image/jpeg",
+                              bucket="covers")
     prior = _json(series["cover"]) or {}  # "Otra portada" adds up: the tome paid for every cover it painted
     spent = (prior.get("spent_usd") or prior.get("cost_usd") or 0) + (image.cost_usd or 0) + cast_usd
     cover = {"concept": plan.concept, "palette": plan.palette, "model": image.model, "cost_usd": image.cost_usd,
@@ -428,6 +443,19 @@ async def _cover(deps: Deps, job: dict) -> None:
             "update public.series set cover_key = :k, cover = cast(:c as jsonb) where id = :s"
         ), {"s": job["series_id"], "k": key, "c": json.dumps(cover)})
         await _succeed(conn, job)
+
+
+def _cover_file(data: bytes, design: Design) -> bytes:
+    """The cover as stored: the house style's finish (paper grain, its palette) when the tome has one."""
+    if design.house_style in BY_KEY:
+        return finish(data, BY_KEY[design.house_style], quality=92)
+    return cover_jpeg(data)
+
+
+def _finished(panel: tuple[bytes, str], kind: str, design: Design | None) -> tuple[bytes, str]:
+    if kind == "illustration" and design and design.house_style in BY_KEY:
+        return finish(panel[0], BY_KEY[design.house_style]), "image/jpeg"
+    return panel
 
 
 async def _free_cover(deps: Deps, job: dict, plan) -> None:
@@ -650,6 +678,7 @@ async def _illustration(deps: Deps, job: dict) -> None:
 
     character_sheets = await cast_sheets(deps, _json(series["cast"]) or [])  # the guide the same on every page
     references += character_sheets
+    house = await style_references(deps.engine, deps.storage, design.house_style if design else None)
 
     feedback: dict[str, str] = {}
     for round_ in range(2):  # paint, then repaint only what failed, all together
@@ -658,11 +687,16 @@ async def _illustration(deps: Deps, job: dict) -> None:
         async def paint(sheet):
             note = "; ".join(f"{r.ref}: {feedback[r.ref]}" for r in sheet.requests if r.ref in feedback) or None
             # Worksheet pictures are shared by every tome, so they never borrow this tome's cover style.
-            image = await deps.images.generate(sheet_prompt(sheet, plan, design, note, sheets=len(character_sheets)),
-                                               references=[] if sheet.family == "icon" else references,
+            colour = sheet.family not in ("icon", "line")
+            prompt = sheet_prompt(sheet, plan, design, note, sheets=len(character_sheets))
+            if colour and house:
+                prompt += f" The last attached image is a style reference. {STYLE_NOTE}"
+            image = await deps.images.generate(prompt,
+                                               references=[] if sheet.family == "icon" else
+                                               references + (house if colour else []),
                                                aspect_ratio=sheet.aspect,
                                                resolution="1K" if preview else sheet.resolution)
-            panels = [prepare_image(p, sheet.requests[0].kind) for p in
+            panels = [_finished(prepare_image(p, sheet.requests[0].kind), sheet.requests[0].kind, design) for p in
                       slice_sheet(image.data, sheet.cols, sheet.rows)[:len(sheet.requests)]]
             reviews = await _review_sheet(deps, image.data, panels, sheet)
             last_round = round_ == 1

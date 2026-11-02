@@ -5,6 +5,8 @@ import { api } from '../lib/apiClient'
 import { AUDIENCES, FORMATS } from '../lib/labels'
 import { errorText } from './ErrorNote'
 import { FREE_PREVIEW_PAGES } from '../lib/pricing'
+import { HOUSE_STYLES } from '../lib/houseStyles'
+import { StylePicker } from './StylePicker'
 
 const PAGES = Array.from({ length: FREE_PREVIEW_PAGES }, (_, i) => i + 1)  // the preview's longest tome
 const SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined
@@ -19,6 +21,12 @@ export function LandingComposer({ onStart }: { onStart: (busy: boolean) => void 
   const [pages, setPages] = useState<number | null>(null)
   const [sections, setSections] = useState<number | null>(null)
   const [format, setFormat] = useState('auto')
+  // The landing's style cards pick a free style with ?estilo=; the others need a plan.
+  const picked = params.get('estilo')
+  const [houseStyle, setHouseStyle] = useState<string | null>(null)
+  useEffect(() => {
+    if (HOUSE_STYLES.some((s) => s.key === picked && s.free)) setHouseStyle(picked)
+  }, [picked])
   const [captcha, setCaptcha] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
@@ -34,6 +42,7 @@ export function LandingComposer({ onStart }: { onStart: (busy: boolean) => void 
       await ensureVisitorSession(captcha)
       const created = await api.post<{ series: { id: string } }>('/api/series', {
         request: request.trim(), audience, language: 'es', section_count: sections, page_count: pages, format,
+        house_style: houseStyle,
       })
       navigate(`/app/tomos/${created.series.id}`)
     } catch (err) {
@@ -76,6 +85,7 @@ export function LandingComposer({ onStart }: { onStart: (busy: boolean) => void 
           {busy ? 'Generando…' : 'Generar'}
         </button>
       </div>
+      <StylePicker value={houseStyle} onChange={setHouseStyle} paid={false} />
       {SITE_KEY && <Turnstile siteKey={SITE_KEY} onToken={setCaptcha} />}
       {error ? <p className="error small" role="alert">{errorText(error, error instanceof Error ? error.message : 'No pudimos crear tu vista previa.')}</p> : null}
     </form>

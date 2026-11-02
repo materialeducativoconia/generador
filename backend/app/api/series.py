@@ -14,6 +14,7 @@ from app import credits
 from app.api.deps import current_user_id
 from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Block, Design, OutlineSection, block_assets
 from app.diagrams import render_diagram
+from app.house_styles import FREE_STYLES
 from app.illustrator import normalize_subject
 from app.errors import ApiError
 from app.plans import COVER, FREE_PREVIEW_PAGES, FREE_PREVIEWS_PER_DAY, FREE_PREVIEWS_PER_IP, OUTLINE, PAID, tome_credits
@@ -46,6 +47,8 @@ class NewTome(BaseModel):
     collection_id: uuid.UUID | None = None  # the collection the new tome joins, e.g. from a suggested level
     place: Literal["start", "end"] = "end"  # a lower level goes first in its collection, a higher one last
     format: Literal["auto", "picture_book", "coloring_book", "worksheets", "tutorial", "lesson_series"] = "auto"
+    # A house style (app.house_styles) for every picture; None lets the Designer choose.
+    house_style: Literal["enciclopedia", "acuarela", "gouache", "collage", "crayon", "didactico"] | None = None
 
 
     @model_validator(mode="after")
@@ -104,24 +107,28 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
             raise ApiError(403, "plan_required", f"La vista previa admite hasta {FREE_PREVIEW_PAGES} páginas y "
                            f"{FREE_PREVIEW_PAGES} secciones. Elige un plan para tomos más grandes.",
                            {"plan": acc.plan_key, "max_pages": FREE_PREVIEW_PAGES})
+        if body.house_style and body.house_style not in FREE_STYLES and acc.plan_key not in PAID:
+            raise ApiError(403, "plan_required", "Ese estilo de ilustración es de los planes de pago. Prueba gratis con "
+                           "Didáctico claro o Acuarela y tinta, o elige un plan.", {"plan": acc.plan_key})
         series_id, job_id = uuid7(), uuid7()
         # Identical plain requests share a preview: the first visitor's (or a buyer's) tome serves the next ones.
         plain = not (body.extra_instructions or body.style_id or body.identity_id or body.collection_id)
         key = "|".join([normalize_subject(body.request), body.audience, body.format, str(body.page_count),
-                        str(body.section_count)]) if plain else None
+                        str(body.section_count), body.house_style or ""]) if plain else None
         if free and key and (donor := await _preview_donor(conn, key)):
             await _clone_preview(conn, donor, series_id, user_id, body.request, ip)
             return await _created(conn, series_id, None)
         await conn.execute(text(
             """insert into public.series (id, user_id, topic, audience, language, lesson_count,
                                           extra_instructions, status, page_target, style_id, preview, preview_ip,
-                                          preview_key)
+                                          preview_key, house_style)
                values (:id, :u, :topic, cast(:audience as jsonb), :lang, :n, :extra, 'outlining', :pages,
                        (select id from public.styles where id = :st and user_id = :u and status = 'ready'),
-                       :free, :ip, :key)"""
+                       :free, :ip, :key, :house)"""
         ), {"id": series_id, "u": user_id, "topic": body.request, "audience": json.dumps({"label": body.audience}),
             "lang": body.language, "n": body.section_count, "extra": body.extra_instructions,
-            "st": body.style_id, "pages": body.page_count, "free": free, "ip": ip if free else None, "key": key})
+            "st": body.style_id, "pages": body.page_count, "free": free, "ip": ip if free else None, "key": key,
+            "house": body.house_style})
         await conn.execute(text(
             """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, idempotency_key)
                values (:id, :u, :s, 'outline', 'queued', cast(:payload as jsonb), :k)"""

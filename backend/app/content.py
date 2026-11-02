@@ -552,12 +552,13 @@ class Design(BaseModel):
     rationale: str = Field(default="", max_length=400)
     head_font: HeadFont | None = None
     frame: Frame = "none"
-    art_style: str | None = Field(default=None, max_length=500)  # English, for the image model
+    art_style: str | None = Field(default=None, max_length=1000)  # English, for the image model
     style_id: str | None = None  # the library style it came from
     illustration: ArtStyle | None = None  # the Designer's pick in app.themes.ART_STYLES
     cover_layout: CoverLayout = "plate"
     identity_id: str | None = None  # the identity it came from
     brand: Brand | None = None
+    house_style: str | None = None  # app.house_styles key the user picked: prompt, reference and finish
 
 
 class BrandDirection(Brand):

@@ -60,6 +60,38 @@ STYLES = [
                grain=0.12, colors=0),
 ]
 BY_KEY = {s.key: s for s in STYLES}
+FREE_STYLES = ("didactico", "acuarela")  # the ones a visitor's preview can use; plans get them all
+
+
+def apply(design, key: str):
+    """The tome's Design wearing a house style: its prompt replaces the Designer's illustration style."""
+    style = BY_KEY[key]
+    return design.model_copy(update={"house_style": key, "art_style": f"{style.prompt} {NOT_AI}",
+                                     "illustration": None})
+
+
+async def style_references(engine, storage, key: str | None) -> list[bytes]:
+    """The sample the team kept for this style (or its latest one), small, to anchor technique and texture."""
+    if not key or storage is None:
+        return []
+    from sqlalchemy import text
+
+    from app.illustrator import reference_image
+
+    async with engine.connect() as conn:
+        found = (await conn.execute(text(
+            """select key from public.style_samples where style = :st and status = 'done' and key is not null
+                order by chosen desc, created_at desc limit 1"""), {"st": key})).scalar_one_or_none()
+    if not found:
+        return []
+    try:
+        return [reference_image(await storage.download(found, bucket="images"))]
+    except Exception:  # a reference helps; painting goes on without it
+        return []
+
+
+STYLE_NOTE = ("The attached style reference shows the art style to match exactly: its technique, line, texture and "
+              "colour treatment, never its subject or composition.")
 
 
 def style_prompt(style: HouseStyle, subject: str, *, sheets: int = 0) -> str:
@@ -69,7 +101,7 @@ def style_prompt(style: HouseStyle, subject: str, *, sheets: int = 0) -> str:
             f"{cast}Leave the top quarter calm and simple for a title. Scene: {subject}. {NO_TEXT}")
 
 
-def finish(data: bytes, style: HouseStyle) -> bytes:
+def finish(data: bytes, style: HouseStyle, quality: int = 88) -> bytes:
     """Paper grain and, for print-styled looks, a reduced palette: a local, free step after the painting."""
     im = Image.open(io.BytesIO(data)).convert("RGB")
     if style.colors:
@@ -82,5 +114,5 @@ def finish(data: bytes, style: HouseStyle) -> bytes:
         noise = noise.point(lambda v: 255 - round(v * depth / 255))
         im = ImageChops.multiply(im, Image.merge("RGB", (noise, noise, noise)))
     out = io.BytesIO()
-    im.save(out, "JPEG", quality=88, optimize=True)
+    im.save(out, "JPEG", quality=quality, optimize=True)
     return out.getvalue()

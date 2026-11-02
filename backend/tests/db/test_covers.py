@@ -150,3 +150,38 @@ async def test_without_image_model_the_design_is_still_saved(raw_db, google_user
     await run_next(engine, ScriptedLLM(json.dumps(DESIGN)), covers=True, images=None, references=fake_references)
 
     assert json.loads(await raw_db.fetchval("select design from public.series where id = $1", sid))["theme"] == "editorial"
+
+
+async def test_a_picked_house_style_paints_the_cover_with_its_reference_and_finish(raw_db, google_user, client, key,
+                                                                                  engine):
+    from tests.db.test_jobs import NEW_TOME
+
+    user = await google_user()
+    created = await client.post("/api/series", json={**NEW_TOME, "house_style": "gouache"}, headers=bearer(key, user))
+    sid = created.json()["series"]["id"]
+    await run_next(engine, ScriptedLLM(json.dumps(OUTLINE)), covers=True)
+    images, storage = FakeImages(), FakeStorage()
+    storage.uploads[("images", "style-lab/r/gouache.jpg")] = (PNG, "image/jpeg")
+    await raw_db.execute("""insert into public.style_samples (run, style, subject, status, key, chosen)
+                            values (gen_random_uuid(), 'gouache', 'x', 'done', 'style-lab/r/gouache.jpg', true)""")
+
+    await run_next(engine, ScriptedLLM(json.dumps(DESIGN), json.dumps(PLAN)), covers=True, images=images,
+                   storage=storage, references=fake_references)
+
+    design = json.loads(await raw_db.fetchval("select design from public.series where id = $1", sid))
+    assert design["house_style"] == "gouache" and "risograph" in design["art_style"]
+    call = images.calls[0]
+    assert len(call["references"]) == 2 and "style reference" in call["prompt"]
+    await raw_db.execute("delete from public.style_samples where key = 'style-lab/r/gouache.jpg'")
+
+
+async def test_visitors_preview_only_the_free_house_styles(google_user, client, key):
+    from tests.db.test_jobs import NEW_TOME
+
+    anon = await google_user(anonymous=True)
+    paid_only = await client.post("/api/series", json={**NEW_TOME, "page_count": 2, "section_count": 1,
+                                                       "house_style": "collage"}, headers=bearer(key, anon))
+    assert paid_only.status_code == 403 and paid_only.json()["error"]["code"] == "plan_required"
+    free = await client.post("/api/series", json={**NEW_TOME, "page_count": 2, "section_count": 1,
+                                                  "house_style": "acuarela"}, headers=bearer(key, anon))
+    assert free.status_code == 202

@@ -1098,3 +1098,17 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .lab-img { aspect-ratio: 3 / 4; display: grid; place-items: center; background: var(--surface); }
 .lab-img img { width: 100%; height: 100%; object-fit: cover; }
 .lab-b { display: grid; gap: 4px; padding: 10px 12px 12px; }
+.style-picker { position: relative; display: flex; align-items: center; gap: 6px; padding: 0 10px 10px 14px; overflow-x: auto; scrollbar-width: none; }
+.style-picker::-webkit-scrollbar { display: none; }
+.style-picker-label { font-size: 12px; color: var(--muted); margin-right: 2px; flex: none; }
+.style-picker button { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 4px 10px 4px 4px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); font: inherit; font-size: 13px; color: var(--text); cursor: pointer; transition: border-color 150ms ease, transform 160ms ease-out; }
+.style-picker button:active:not(:disabled) { transform: scale(0.97); }
+.style-picker button.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.style-picker button:disabled { cursor: not-allowed; color: var(--faint); }
+.style-picker button:disabled img { opacity: 0.5; }
+.style-picker img { width: 24px; height: 32px; object-fit: cover; border-radius: 5px; }
+.style-auto { display: grid; place-items: center; width: 24px; height: 32px; border-radius: 5px; background: var(--accent-soft); color: var(--accent); font-size: 12px; }
+.style-lock { font-size: 10px; padding: 1px 5px; border-radius: 6px; background: var(--surface-2); color: var(--muted); }
+.l-styles button { all: unset; cursor: pointer; display: grid; gap: 4px; }
+.l-styles button:focus-visible img { outline: 2px solid var(--focus); outline-offset: 3px; }
+.l-style-use { font-size: 13px; color: var(--accent); font-weight: 600; }

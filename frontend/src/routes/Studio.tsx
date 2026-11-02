@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { AUDIENCES, FORMATS, tomeName } from '../lib/labels'
+import { StylePicker } from '../components/StylePicker'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
 import { errorText } from '../components/ErrorNote'
@@ -42,6 +43,7 @@ export function Studio() {
   const [quoting, setQuoting] = useState(false)  // the cost window, shown before anything is created
   const [style, setStyle] = useState('auto')
   const [format, setFormat] = useState('auto')
+  const [houseStyle, setHouseStyle] = useState<string | null>(null)
   const ready = (useStyles().data?.styles ?? []).filter((s) => s.status === 'ready')
   const identities = usableIdentities(useIdentities().data?.identities)
   const [identity, setIdentity] = useState('')
@@ -57,6 +59,7 @@ export function Studio() {
           section_count: sections,
           page_count: pages,
           format,
+          house_style: houseStyle,
           style_id: style === 'auto' ? null : style,
           identity_id: identity || null,
           collection_id: collection?.id ?? null,
@@ -163,6 +166,7 @@ export function Studio() {
               {create.isPending ? <span className="spinner" /> : <ArrowUp />}
             </button>
           </div>
+          <StylePicker value={houseStyle} onChange={setHouseStyle} paid={!!me && me.plan.key !== 'prueba'} />
         </form>
         {quoting && (
           <CostDialog sections={sections} pages={pages} pending={create.isPending}
