@@ -48,6 +48,7 @@ OUTLINE = 1  # research + the Architect + the Designer
 COVER = 4
 IDENTITY = 3
 STYLE = 2
+CHARACTER = 3  # the character maker: a designer call and a 2K model sheet
 
 
 def lookup_key(plan: str) -> str:

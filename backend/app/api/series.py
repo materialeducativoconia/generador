@@ -49,6 +49,7 @@ class NewTome(BaseModel):
     format: Literal["auto", "picture_book", "coloring_book", "worksheets", "tutorial", "lesson_series"] = "auto"
     # A house style (app.house_styles) for every picture; None lets the Designer choose.
     house_style: Literal["enciclopedia", "acuarela", "gouache", "collage", "crayon", "didactico"] | None = None
+    guide_id: uuid.UUID | None = None  # a character from the library (or the user's own) as the book's guide
 
 
     @model_validator(mode="after")
@@ -110,9 +111,13 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
         if body.house_style and body.house_style not in FREE_STYLES and acc.plan_key not in PAID:
             raise ApiError(403, "plan_required", "Ese estilo de ilustración es de los planes de pago. Prueba gratis con "
                            "Didáctico claro o Acuarela y tinta, o elige un plan.", {"plan": acc.plan_key})
+        if body.guide_id and acc.plan_key not in PAID:
+            raise ApiError(403, "plan_required", "Elegir el personaje guía es de los planes de pago.",
+                           {"plan": acc.plan_key})
         series_id, job_id = uuid7(), uuid7()
         # Identical plain requests share a preview: the first visitor's (or a buyer's) tome serves the next ones.
-        plain = not (body.extra_instructions or body.style_id or body.identity_id or body.collection_id)
+        plain = not (body.extra_instructions or body.style_id or body.identity_id or body.collection_id
+                     or body.guide_id)
         key = "|".join([normalize_subject(body.request), body.audience, body.format, str(body.page_count),
                         str(body.section_count), body.house_style or ""]) if plain else None
         if free and key and (donor := await _preview_donor(conn, key)):
@@ -121,20 +126,22 @@ async def create_series(body: NewTome, request: Request, user_id: UserId,
         await conn.execute(text(
             """insert into public.series (id, user_id, topic, audience, language, lesson_count,
                                           extra_instructions, status, page_target, style_id, preview, preview_ip,
-                                          preview_key, house_style)
+                                          preview_key, house_style, guide_id)
                values (:id, :u, :topic, cast(:audience as jsonb), :lang, :n, :extra, 'outlining', :pages,
                        (select id from public.styles where id = :st and user_id = :u and status = 'ready'),
-                       :free, :ip, :key, :house)"""
+                       :free, :ip, :key, :house,
+                       (select id from public.characters where id = :guide and status = 'ready'
+                           and (shared or user_id = :u)))"""
         ), {"id": series_id, "u": user_id, "topic": body.request, "audience": json.dumps({"label": body.audience}),
             "lang": body.language, "n": body.section_count, "extra": body.extra_instructions,
             "st": body.style_id, "pages": body.page_count, "free": free, "ip": ip if free else None, "key": key,
-            "house": body.house_style})
+            "house": body.house_style, "guide": body.guide_id})
         await conn.execute(text(
             """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, idempotency_key)
                values (:id, :u, :s, 'outline', 'queued', cast(:payload as jsonb), :k)"""
         ), {"id": job_id, "u": user_id, "s": series_id, "k": idempotency_key,
             "payload": json.dumps({"brief": {**body.model_dump(exclude={"style_id", "identity_id", "collection_id",
-                                                                       "place"}),
+                                                                       "place", "guide_id"}),
                                              "brand_characters": not acc.plan.commercial}})})
         if not free:  # the free preview is on us
             await credits.charge(conn, user_id, OUTLINE, "Esquema", job_id)

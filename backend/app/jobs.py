@@ -87,7 +87,8 @@ async def reap_stale_jobs(engine: AsyncEngine, lease_seconds: int = 600) -> int:
 
 async def process_job(deps: Deps, job: dict) -> None:
     handler = {"outline": _outline, "lesson": _lesson, "pdf_export": _pdf_export, "cover": _cover,
-               "illustration": _illustration, "style": _style, "identity": _identity}[job["kind"]]
+               "illustration": _illustration, "style": _style, "identity": _identity,
+               "character": _character}[job["kind"]]
     try:
         await handler(deps, job)
     except UpstreamError as exc:
@@ -860,6 +861,12 @@ async def _attach_image(conn, lesson_id: str, block_id: str, asset_id, word: str
             return
 
 
+async def _character(deps: Deps, job: dict) -> None:
+    from app.casting import make_character  # casting imports this module
+
+    await make_character(deps, job)
+
+
 async def _style(deps: Deps, job: dict) -> None:
     """Style library: sample the user's reference file, let one vision call pick the best pages and read their
     style, and turn that into a Design (app.styles)."""
@@ -1008,6 +1015,9 @@ async def _fail(engine: AsyncEngine, job: dict, code: str, message: str) -> None
                 "update public.lessons set status = 'failed', last_error = cast(:e as jsonb) where id = :l"
             ), {"l": job["lesson_id"], "e": error})
             await conn.execute(text("select public.refresh_series_status(:s)"), {"s": job["series_id"]})
+        elif job["kind"] == "character":
+            await conn.execute(text("update public.characters set status = 'failed', error = :m where id = :id"),
+                               {"id": job["payload"].get("character_id"), "m": message[:300]})
         elif job["kind"] == "pdf_export":
             await conn.execute(text(
                 "update public.exports set status = 'failed', finished_at = now() where job_id = :j"

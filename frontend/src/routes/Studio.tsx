@@ -8,7 +8,7 @@ import { BookCover } from '../components/BookCover'
 import { errorText } from '../components/ErrorNote'
 import { FREE_PREVIEW_PAGES } from '../lib/pricing'
 import { api } from '../lib/apiClient'
-import { useCollections, useEstimate, useIdentities, useMe, useSeriesList, useStyles } from '../lib/queries'
+import { useCharacters, useCollections, useEstimate, useIdentities, useMe, useSeriesList, useStyles } from '../lib/queries'
 import type { Collection, Identity, SeriesSummary } from '../lib/types'
 
 
@@ -44,6 +44,9 @@ export function Studio() {
   const [style, setStyle] = useState('auto')
   const [format, setFormat] = useState('auto')
   const [houseStyle, setHouseStyle] = useState<string | null>(null)
+  const paid = !!me && me.plan.key !== 'prueba'
+  const guides = (useCharacters().data?.characters ?? []).filter((c) => c.status === 'ready' && c.sheet_url)
+  const [guide, setGuide] = useState('')
   const ready = (useStyles().data?.styles ?? []).filter((s) => s.status === 'ready')
   const identities = usableIdentities(useIdentities().data?.identities)
   const [identity, setIdentity] = useState('')
@@ -60,6 +63,7 @@ export function Studio() {
           page_count: pages,
           format,
           house_style: houseStyle,
+          guide_id: guide || null,
           style_id: style === 'auto' ? null : style,
           identity_id: identity || null,
           collection_id: collection?.id ?? null,
@@ -152,6 +156,16 @@ export function Studio() {
                 </select>
               </label>
             )}
+            {paid && guides.length > 0 && (
+              <label className="select-pill">
+                <span className="sr-only">Personaje guía</span>
+                <select value={guide} onChange={(e) => setGuide(e.target.value)} title="Para libros ilustrados y para colorear">
+                  <option value="">Guía: automático</option>
+                  {guides.filter((c) => c.mine).length > 0 && <optgroup label="Tus personajes">{guides.filter((c) => c.mine).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>}
+                  <optgroup label="Biblioteca">{guides.filter((c) => !c.mine).map((c) => <option key={c.id} value={c.id}>{c.name} · {c.archetype}</option>)}</optgroup>
+                </select>
+              </label>
+            )}
             {ready.length > 0 && !identity && !lineOf && (
               <label className="select-pill">
                 <span className="sr-only">Estilo</span>
@@ -166,7 +180,7 @@ export function Studio() {
               {create.isPending ? <span className="spinner" /> : <ArrowUp />}
             </button>
           </div>
-          <StylePicker value={houseStyle} onChange={setHouseStyle} paid={!!me && me.plan.key !== 'prueba'} />
+          <StylePicker value={houseStyle} onChange={setHouseStyle} paid={paid} />
         </form>
         {quoting && (
           <CostDialog sections={sections} pages={pages} pending={create.isPending}

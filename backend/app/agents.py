@@ -18,7 +18,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@5", "writer": "writer@8", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@4", "casting": "casting@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1"}
+PROMPT_VERSION = {"architect": "architect@5", "writer": "writer@8", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@4", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1"}
 
 
 @dataclass

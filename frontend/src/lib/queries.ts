@@ -59,7 +59,10 @@ type Styles = { styles: Style[]; poll_after_ms: number | null }
 
 /** The style library; polls while a reference is being analysed (~20 s). */
 export const useCharacters = () =>
-  useQuery({ queryKey: ['characters'], queryFn: () => api.get<{ characters: Character[] }>('/api/characters') })
+  useQuery({
+    queryKey: ['characters'], queryFn: () => api.get<{ characters: Character[] }>('/api/characters'),
+    refetchInterval: (q) => q.state.data?.characters.some((c) => c.status === 'painting') ? 5000 : false,
+  })
 
 export const useStyles = () =>
   useQuery({

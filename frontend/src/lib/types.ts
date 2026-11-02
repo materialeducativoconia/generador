@@ -17,6 +17,7 @@ export type CastMember = { name: string; role: string | null; archetype: string 
 export type Character = {
   id: string; name: string; role: 'guide' | 'companion'; archetype: string; personality: string; signature: string
   palette: string[]; topics: string[]; use_count: number; mine: boolean; shared: boolean; sheet_url: string | null
+  status: 'painting' | 'ready' | 'failed'; error: string | null; description: string | null; styles: string[]
 }
 
 export type Design = {

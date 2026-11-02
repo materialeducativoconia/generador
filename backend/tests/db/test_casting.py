@@ -62,3 +62,61 @@ async def test_a_worksheet_tome_has_no_cast(raw_db, google_user, client, key, en
 
     assert len(images.calls) == 1
     assert await raw_db.fetchval('select "cast" from public.series where id = $1', sid) is None
+
+
+MADE = {"name": "Tula", "role": "guide", "archetype": "tortuga marina exploradora",
+        "look": "A small green sea turtle with a round friendly face, big dark eyes, a teal shell with yellow "
+                "hexagon spots and a little red snorkel mask pushed up on her head.",
+        "personality": "Tranquila y curiosa.", "signature": "a red snorkel mask", "palette": ["#2BB673", "#FFD23F", "#E63946"]}
+
+
+async def test_a_creator_makes_a_private_character_in_a_house_style(raw_db, google_user, client, key, engine):
+    from tests.db.test_admin import bearer
+
+    images, storage = FakeImages(), FakeStorage()
+    creator = await google_user(plan="creador", credits=50)
+    made = await client.post("/api/characters", json={"description": "una tortuga marina con careta roja",
+                                                      "style": "collage"}, headers=bearer(key, creator))
+    assert made.status_code == 202
+    char = made.json()["character"]["id"]
+    await raw_db.execute("update public.generation_jobs set status = 'cancelled' where kind = 'cover' and status = 'queued'")
+
+    await run_next(engine, ScriptedLLM(json.dumps(MADE)), images=images, storage=storage)
+
+    row = await raw_db.fetchrow("select name, status, shared, sheet_key from public.characters where id = $1::uuid", char)
+    assert row["name"] == "Tula" and row["status"] == "ready" and not row["shared"]
+    assert "Cut-paper" in images.calls[0]["prompt"] and "Tula" in images.calls[0]["prompt"]
+    assert await raw_db.fetchval("select style from public.character_sheets where character_id = $1::uuid", char) == "collage"
+    listed = (await client.get("/api/characters", headers=bearer(key, creator))).json()["characters"]
+    assert listed[0]["id"] == char and listed[0]["mine"] and listed[0]["styles"] == ["collage"]
+
+    teacher = await google_user(plan="docente")
+    denied = await client.post("/api/characters", json={"description": "un robot amable"}, headers=bearer(key, teacher))
+    assert denied.status_code == 403
+
+
+async def test_a_picked_guide_is_redrawn_once_in_the_tomes_house_style(raw_db, google_user, client, key, engine):
+    from tests.db.test_admin import bearer
+    from tests.db.test_jobs import NEW_TOME, OUTLINE
+
+    images, storage = FakeImages(), FakeStorage()
+    user = await google_user()
+    guide = await raw_db.fetchval(
+        """insert into public.characters (name, archetype, look, signature, sheet_key, shared)
+           values ('Pepa', 'niña inventora', 'A girl with a yellow helmet.', 'yellow helmet', 'characters/pepa.jpg',
+                   true) returning id""")
+    storage.uploads[("images", "characters/pepa.jpg")] = (PNG, "image/jpeg")
+    created = await client.post("/api/series", json={**NEW_TOME, "house_style": "gouache", "guide_id": str(guide)},
+                                headers=bearer(key, user))
+    sid = created.json()["series"]["id"]
+    await run_next(engine, ScriptedLLM(json.dumps(OUTLINE)), covers=True)
+    await raw_db.execute("update public.series set genre = 'picture_book' where id = $1::uuid", sid)
+
+    await run_next(engine, ScriptedLLM(json.dumps(DESIGN), json.dumps(PLAN)), covers=True, images=images,
+                   storage=storage, references=fake_references)
+
+    restyle, cover = images.calls  # no casting call: the user chose Pepa
+    assert "same character" in restyle["prompt"] and "risograph" in restyle["prompt"]
+    cast = json.loads(await raw_db.fetchval('select "cast" from public.series where id = $1::uuid', sid))
+    assert cast[0]["name"] == "Pepa" and cast[0]["sheet_key"] == f"characters/{guide}-gouache.jpg"
+    await raw_db.execute("delete from public.characters where id = $1", guide)

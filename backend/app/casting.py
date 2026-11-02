@@ -116,7 +116,7 @@ async def library_for(conn, user_id, topic: str, limit: int = 12) -> list[dict]:
         """select id::text, name, role, archetype, look, personality, signature, palette, topics, sheet_key,
                   use_count, style
              from public.characters
-            where sheet_key is not null and (shared or user_id = :u)
+            where sheet_key is not null and status = 'ready' and (shared or user_id = :u)
             order by greatest(extensions.similarity(array_to_string(topics, ' '), :t),
                               extensions.similarity(archetype, :t)) desc, use_count desc, created_at
             limit :n"""), {"u": user_id, "t": topic, "n": limit})).mappings().all()
@@ -133,6 +133,20 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
     if (series["genre"] or "") not in CAST_GENRES:
         return [], 0.0
     topic = normalize_subject(series["title"] or series["topic"])
+    house = design.house_style if design else None
+    if series.get("guide_id"):  # the user picked the guide: no casting call
+        async with deps.engine.begin() as conn:
+            row = (await conn.execute(text(
+                """update public.characters set use_count = use_count + 1 where id = :id and status = 'ready'
+                   returning id::text, name, role, archetype, look, signature, sheet_key"""),
+                {"id": series["guide_id"]})).mappings().first()
+        if row:
+            key, cost = await styled_sheet(deps, dict(row), house, design, paint=paint)
+            cast = [_entry(row["id"], row, key)]
+            async with deps.engine.begin() as conn:
+                await conn.execute(text('update public.series set "cast" = cast(:c as jsonb) where id = :s'),
+                                   {"s": job["series_id"], "c": json.dumps(cast)})
+            return cast, cost
     async with deps.engine.connect() as conn:
         library = await library_for(conn, job["user_id"], topic)
     try:
@@ -153,7 +167,9 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
                     """update public.characters set use_count = use_count + 1,
                               topics = (select array_agg(distinct t) from unnest(topics || array[:t]) t)
                         where id = :id"""), {"id": m.reuse, "t": topic})
-            cast.append(_entry(row["id"], row, row["sheet_key"]))
+            key, restyled = await styled_sheet(deps, row, house, design, paint=paint)
+            cost += restyled
+            cast.append(_entry(row["id"], row, key))
             continue
         if not paint or deps.images is None:
             cast.append(_entry(None, m.model_dump(), None))
@@ -187,12 +203,122 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
                  "style": style, "t": topic, "aud": brief.audience, "key": key,
                  "parent": parent["id"] if parent else None, "u": job["user_id"],
                  "shared": not private and not series["preview"]})
+            if house:
+                await conn.execute(text(
+                    "insert into public.character_sheets (character_id, style, sheet_key) values (:id, :st, :k)"),
+                    {"id": char_id, "st": house, "k": key})
         cast.append(_entry(char_id, m.model_dump(), key))
     async with deps.engine.begin() as conn:
         await _insert_logs(conn, job, "casting", result.attempts)
         await conn.execute(text('update public.series set "cast" = cast(:c as jsonb) where id = :s'),
                            {"s": job["series_id"], "c": json.dumps(cast)})
     return cast, cost
+
+
+RESTYLE = ("The attached image is this character's model sheet: draw exactly the same character (face, hair, "
+           "outfit, colours, proportions, signature detail) in the new art style below, same layout. ")
+
+
+async def styled_sheet(deps, row: dict, house: str | None, design: Design | None, *,
+                       paint: bool) -> tuple[str | None, float]:
+    """The character's sheet in the tome's house style: kept from an earlier tome, or redrawn from its own sheet
+    once (paint False: the sheet it has). Returns the sheet key and what redrawing cost."""
+    if not house or not row.get("sheet_key"):
+        return row.get("sheet_key"), 0.0
+    async with deps.engine.connect() as conn:
+        kept = (await conn.execute(text(
+            "select sheet_key from public.character_sheets where character_id = :id and style = :st"),
+            {"id": row["id"], "st": house})).scalar_one_or_none()
+    if kept or not paint or deps.images is None:
+        return kept or row["sheet_key"], 0.0
+    try:
+        base = reference_image(await deps.storage.download(row["sheet_key"], bucket="images"))
+        image = await deps.images.generate(RESTYLE + sheet_prompt(row, design.art_style or SHEET_STYLE, False),
+                                           references=[base], aspect_ratio="4:3", resolution="2K")
+    except Exception as exc:  # the base sheet still keeps the character recognisable
+        log.warning("restyle of %s failed: %s", row["name"], exc)
+        return row["sheet_key"], 0.0
+    key = f"characters/{row['id']}-{house}.jpg"
+    await deps.storage.upload(key, await asyncio.to_thread(_jpeg, image.data), "image/jpeg", bucket="images")
+    async with deps.engine.begin() as conn:
+        await conn.execute(text(
+            """insert into public.character_sheets (character_id, style, sheet_key) values (:id, :st, :k)
+               on conflict (character_id, style) do update set sheet_key = excluded.sheet_key"""),
+            {"id": row["id"], "st": house, "k": key})
+    return key, image.cost_usd or 0.0
+
+
+MAKER_SYSTEM = """Eres diseñadora de personajes de una editorial de libros educativos infantiles premium (al nivel de
+Larousse, Usborne, Oxford Reading Tree o DK). Conviertes la descripción del usuario en un personaje recurrente que
+se pueda dibujar igual en cada página. Responde solo con json:
+{"name": "…", "role": "guide|companion", "archetype": "en español, 2 a 5 palabras",
+ "look": "en inglés: aspecto fijo", "personality": "en español, una frase",
+ "signature": "en inglés: el detalle que nunca falta", "palette": ["#hex", "#hex", "#hex"]}
+
+- Respeta lo que pide el usuario (especie, edad, ropa, nombre si lo da); completa lo que falte con oficio.
+- Silueta legible y formas amables; cabeza grande (1:3 a 1:4) y ojos expresivos; máximo 3 colores de identidad.
+- Un rasgo de firma que siempre está. Ropa simple, sin logos, letras ni números.
+- "look" en inglés, 40 a 90 palabras, concreto y repetible: especie o edad, piel, cabello, ojos, ropa pieza por
+  pieza con colores, accesorios, proporciones. Nada de poses ni escenas.
+- Nunca copies personajes de películas, series, videojuegos o marcas: crea uno original del mismo espíritu.
+- Si hay un personaje base, conserva su cuerpo, cara y proporciones y cambia solo lo que pide el usuario."""
+
+
+async def character_designer(llm, description: str, parent: dict | None) -> AgentResult[CastMember]:
+    base = (f"\nPersonaje base: {parent['name']} | {parent['archetype']} | {parent['look']} | firma: "
+            f"{parent['signature']}") if parent else ""
+    messages = [{"role": "system", "content": MAKER_SYSTEM},
+                {"role": "user", "content": f"Descripción del usuario: {description}{base}"}]
+    return await _json_call(llm, messages, CastMember, temperature=0.7, max_tokens=1200)
+
+
+async def make_character(deps, job: dict) -> None:
+    """The character job: the designer writes the character, the Illustrator paints its sheet in the chosen style."""
+    from app.house_styles import BY_KEY, NOT_AI
+    from app.jobs import JobFailed, _insert_logs, _succeed  # jobs imports this module
+
+    char_id = job["payload"]["character_id"]
+    async with deps.engine.connect() as conn:
+        row = (await conn.execute(text("select * from public.characters where id = :id"),
+                                  {"id": char_id})).mappings().one_or_none()
+        parent = (await conn.execute(text(
+            "select id::text, name, archetype, look, signature, sheet_key from public.characters where id = :id"),
+            {"id": row["based_on"]})).mappings().one_or_none() if row and row["based_on"] else None
+    if row is None:  # deleted meanwhile
+        async with deps.engine.begin() as conn:
+            await _succeed(conn, job)
+        return
+    if deps.images is None:
+        raise JobFailed("not_configured", "Falta OPENROUTER_API_KEY para pintar personajes.")
+    result = await character_designer(deps.llm, row["description"] or row["name"], dict(parent) if parent else None)
+    m = result.value
+    house = job["payload"].get("style")
+    style = f"{BY_KEY[house].prompt} {NOT_AI}" if house in BY_KEY else SHEET_STYLE
+    refs = []
+    if parent and parent["sheet_key"]:
+        try:
+            refs = [reference_image(await deps.storage.download(parent["sheet_key"], bucket="images"))]
+        except Exception:
+            log.warning("sheet %s unavailable", parent["sheet_key"])
+    image = await deps.images.generate(sheet_prompt(m, style, bool(refs)), references=refs, aspect_ratio="4:3",
+                                       resolution="2K")
+    key = f"characters/{char_id}.jpg"
+    await deps.storage.upload(key, await asyncio.to_thread(_jpeg, image.data), "image/jpeg", bucket="images")
+    async with deps.engine.begin() as conn:
+        await _insert_logs(conn, job, "character", result.attempts)
+        await conn.execute(text(
+            """update public.characters set name = :name, role = :role, archetype = :arch, look = :look,
+                      personality = :pers, signature = :sig, palette = :pal, style = :style, sheet_key = :key,
+                      status = 'ready', error = null where id = :id"""),
+            {"id": char_id, "name": m.name, "role": m.role if m.role in ("guide", "companion") else "guide",
+             "arch": m.archetype, "look": m.look, "pers": m.personality, "sig": m.signature, "pal": m.palette,
+             "style": style, "key": key})
+        if house in BY_KEY:
+            await conn.execute(text(
+                """insert into public.character_sheets (character_id, style, sheet_key) values (:id, :st, :k)
+                   on conflict (character_id, style) do update set sheet_key = excluded.sheet_key"""),
+                {"id": char_id, "st": house, "k": key})
+        await _succeed(conn, job)
 
 
 def _entry(char_id, data: dict, sheet_key) -> dict:
