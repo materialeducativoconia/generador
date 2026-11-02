@@ -76,7 +76,10 @@ export function Studio() {
 
   function submit(e?: FormEvent) {
     e?.preventDefault()
-    if (request.trim().length >= 3 && sized && !create.isPending) setQuoting(true)
+    if (request.trim().length < 3 || !sized || create.isPending) return
+    // The credits-and-AI-cost window is an admin tool; everyone else goes straight to the outline.
+    if (me?.platform_role === 'admin') setQuoting(true)
+    else create.mutate()
   }
 
   const firstName = me?.display_name?.split(' ')[0]

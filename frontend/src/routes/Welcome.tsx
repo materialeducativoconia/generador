@@ -64,6 +64,10 @@ export function Welcome() {
 
   return (
     <>
+    <header className="welcome-top">
+      <a href="#planes" className="welcome-top-link">Planes</a>
+      <button className="welcome-login" onClick={start} disabled={starting || loading}>{starting ? 'Abriendo…' : 'Entrar'}</button>
+    </header>
     <main className="welcome">
       <div className="orb" aria-hidden="true" />
       {session?.user.is_anonymous && !previewing && <ReturningVisitor />}
