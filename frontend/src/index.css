@@ -651,7 +651,10 @@ a.sec-row { transition: background-color 160ms ease; }
 .book-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #fbbf24; animation: pulse 1.4s ease-in-out infinite; }
 
 .tome-h.with-cover { grid-template-columns: 1fr auto; align-items: center; gap: 24px; justify-items: stretch; }
-.tome-h-text { display: grid; gap: 10px; justify-items: start; }
+.tome-h-text { display: grid; gap: 10px; justify-items: start; min-width: 0; }
+/* While the Architect names the tome, the request shows as a quiet quote: a pasted brief never becomes a headline. */
+.tome-request { margin: 0; max-width: 40rem; padding-left: 12px; border-left: 2px solid var(--border-strong); color: var(--muted); font-size: 14px;
+                line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .cover-panel { display: grid; gap: 10px; justify-items: center; width: 240px; }
 .cover-panel .book { width: 100%; }
 @media (max-width: 640px) {

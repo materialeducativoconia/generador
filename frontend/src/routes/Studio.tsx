@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { AUDIENCES, FORMATS } from '../lib/labels'
+import { AUDIENCES, FORMATS, tomeName } from '../lib/labels'
 import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover } from '../components/BookCover'
 import { errorText } from '../components/ErrorNote'
@@ -281,14 +281,14 @@ function BookItem({ tome: s, index, level, collections }: { tome: SeriesSummary;
   const move = useMutation({
     mutationFn: async (target: string) => {
       const id = target === 'new'
-        ? (await api.post<{ collection: Collection }>('/api/collections', { name: window.prompt('Nombre de la colección', s.title ?? s.topic) || (s.title ?? s.topic) })).collection.id
+        ? (await api.post<{ collection: Collection }>('/api/collections', { name: window.prompt('Nombre de la colección', tomeName(s)) || (tomeName(s)) })).collection.id
         : target || null
       return api.put(`/api/series/${s.id}/collection`, { collection_id: id })
     },
     onSettled: () => { setMenu(false); return refresh() },
   })
   const remove = useMutation({ mutationFn: () => api.delete(`/api/series/${s.id}`), onSettled: refresh })
-  const title = s.title ?? s.topic
+  const title = tomeName(s)
   return (
     <li style={{ '--i': index } as React.CSSProperties} className="book-item">
       <Link to={`/app/tomos/${s.id}`} className="book-card" aria-label={`Abrir ${title}`}>

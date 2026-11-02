@@ -6,7 +6,7 @@ import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover, CoverViewer } from '../components/BookCover'
 import { errorText } from '../components/ErrorNote'
 import { PageThumb } from '../components/Sheet'
-import { ART_LABEL, COVER_LABEL, FRAME_LABEL, GENRE_LABEL, THEME_LABEL } from '../lib/labels'
+import { ART_LABEL, COVER_LABEL, FRAME_LABEL, GENRE_LABEL, THEME_LABEL, tomeName } from '../lib/labels'
 import { api } from '../lib/apiClient'
 import { useExport, useIdentities, useMe, usePreview, useProgress, useQuality, useSeries, useStyles } from '../lib/queries'
 import type { Block, Design, Export, LessonSummary, Level, Preflight, Progress, Series } from '../lib/types'
@@ -28,7 +28,8 @@ export function TomePage() {
       <header className="tome-h with-cover">
         <div className="tome-h-text">
           <p className="eyebrow">{s.genre ? GENRE_LABEL[s.genre] : 'Nuevo tomo'} · {s.audience.label}</p>
-          <h1 className="display sm">{s.title ?? s.topic}</h1>
+          <h1 className="display sm">{s.title ?? 'Tu nuevo tomo'}</h1>
+          {!s.title && <p className="tome-request" title={s.topic}>{s.topic}</p>}
           <StatusPill status={status} />
           {s.cast?.length ? (
             <ul className="cast-row" aria-label="Personajes del tomo">
@@ -37,7 +38,7 @@ export function TomePage() {
               ))}
             </ul>
           ) : null}
-          <DeleteTome id={s.id} title={s.title ?? s.topic} />
+          <DeleteTome id={s.id} title={tomeName(s)} />
         </div>
         {s.title && <CoverPanel series={s} />}
       </header>
@@ -123,7 +124,7 @@ function CoverPanel({ series: s }: { series: Series }) {
   })
   const busy = s.cover_status === 'queued' || s.cover_status === 'running' || repaint.isPending
   const [big, setBig] = useState(false)
-  const cover = { title: s.title ?? s.topic, genre: s.genre, audience: s.audience.label, cover_url: s.cover_url, cover_status: s.cover_status,
+  const cover = { title: tomeName(s), genre: s.genre, audience: s.audience.label, cover_url: s.cover_url, cover_status: s.cover_status,
                   cover_palette: s.cover_palette ?? s.design?.palette ?? null, design: s.design, marked: s.preview }
   return (
     <div className="cover-panel">
@@ -287,7 +288,7 @@ function LevelsPanel({ series: s, levels }: { series: Series; levels: Level[] })
   const open = useMutation({
     mutationFn: async (lv: Level) => {
       const collection = s.collection_id ?? (await api.post<{ collection: { id: string } }>(
-        '/api/collections', { name: s.title ?? s.topic, series_ids: [s.id] })).collection.id
+        '/api/collections', { name: tomeName(s), series_ids: [s.id] })).collection.id
       return { lv, collection }
     },
     onSuccess: ({ lv, collection }) => navigate(`/app?${new URLSearchParams({
@@ -320,7 +321,7 @@ function LevelsPanel({ series: s, levels }: { series: Series; levels: Level[] })
         {before.map(card)}
         <li className="level current">
           <span className="eyebrow">Este tomo · {s.audience.label}</span>
-          <p className="small">{s.title ?? s.topic}</p>
+          <p className="small">{tomeName(s)}</p>
         </li>
         {after.map(card)}
       </ol>

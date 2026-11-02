@@ -35,3 +35,11 @@ export const ART_LABEL: Record<NonNullable<Design['illustration']>, string> = {
 export const COVER_LABEL: Record<NonNullable<Design['cover_layout']>, string> = {
   plate: 'portada con tarjeta', band: 'portada con franja', framed: 'portada enmarcada',
 }
+
+/** A tome's name for headings: its title once the Architect gave it one, else the request cut to its first
+ *  phrase (a pasted brief can run for paragraphs). */
+export function tomeName(s: { title: string | null; topic: string }, max = 60): string {
+  if (s.title) return s.title
+  const first = s.topic.trim().split(/(?<=[.:;!?])\s|\n/)[0] ?? s.topic
+  return first.length > max ? `${first.slice(0, max).replace(/\s+\S*$/, '')}…` : first
+}
