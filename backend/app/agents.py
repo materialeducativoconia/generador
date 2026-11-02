@@ -155,7 +155,8 @@ Catálogo de bloques (usa solo estos "type"):
   entera: la ilustración a sangre y encima la pregunta (question, corta, con ¿?), la respuesta (answer, 2 o 3
   frases sencillas, máximo 45 palabras), de 2 a 4 notes (datos curiosos de máximo 15 palabras, cada uno sobre
   algo que se ve en la escena) y find (reto «Observa y encuentra»: algo que el niño debe buscar en la escena).
-  subject describe una escena rica y detallada que muestra la respuesta, con el sujeto principal al centro.
+  subject describe una escena rica y detallada que muestra la respuesta, con el sujeto principal al centro
+  (máximo 500 caracteres).
   inset? (opcional): un diagrama exacto que el código dibuja sobre la lámina, en un recuadro abajo. Úsalo cuando
   la respuesta depende de un dato que una pintura suele equivocar: orden o tamaño (sizes), fases (phases), un
   ciclo o proceso (cycle), fechas (timeline), cantidades (bar_chart). Lleva su propio id. Con inset, el subject

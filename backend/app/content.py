@@ -108,7 +108,7 @@ class Image(_Block):
 
     type: Literal["image"]
     kind: Literal["line_art", "illustration", "photo", "diagram"]
-    subject: Short  # what to draw, e.g. "una ardilla con una bellota"
+    subject: Annotated[str, Field(min_length=1, max_length=700)]  # what to draw, e.g. "una ardilla con una bellota"
     caption: Short | None = None
     size: Literal["full", "half", "small", "plate"] = "half"
     asset_id: str | None = None
@@ -121,6 +121,12 @@ class Image(_Block):
     # A plate's exact fact drawn by code over the picture (planet order, moon phases, a cycle): the painting sets
     # the scene, the inset carries what must be right.
     inset: "Inset | None" = None
+
+    @field_validator("subject", mode="before")
+    @classmethod
+    def _clip_subject(cls, v):
+        """A plate's scene can run long; it is only the Illustrator's brief, never a reason to reject a section."""
+        return v[:700].rstrip() if isinstance(v, str) else v
 
 
 # Diagrams drawn exactly by code (app.diagrams): free, instant, real text, never a garbled picture.

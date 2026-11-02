@@ -117,3 +117,10 @@ def test_a_plate_carries_an_exact_diagram_over_its_picture():
 
     assert 'class="pi above"' in html and "dg-phases" in html
     assert pages == 2
+
+
+def test_a_long_plate_scene_is_clipped_not_rejected():
+    from app.content import Image
+
+    b = Image.model_validate({"id": "b1", "type": "image", "kind": "illustration", "size": "plate", "subject": "x" * 900})
+    assert len(b.subject) == 700
