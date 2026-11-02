@@ -1,6 +1,6 @@
 export type SeriesStatus = 'outlining' | 'outline_ready' | 'outline_failed' | 'generating' | 'needs_attention' | 'ready'
 export type LessonStatus = 'pending' | 'queued' | 'generating' | 'generated' | 'failed' | 'edited' | 'approved'
-export type Genre = 'picture_book' | 'coloring_book' | 'worksheets' | 'tutorial' | 'lesson_series'
+export type Genre = 'picture_book' | 'story_book' | 'coloring_book' | 'worksheets' | 'tutorial' | 'lesson_series'
 export type ApiErrorBody = { code: string; message: string }
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
@@ -210,7 +210,7 @@ export type Block =
   | { id: string; type: 'keyboard'; start: string; octaves: number; highlight: string[]; show_labels: boolean; caption?: string | null }
   | { id: string; type: 'tracing'; text: string; repeat: number; instruction?: string | null }
   | { id: string; type: 'letter_grid'; targets: string[]; distractors: string[]; rows: number; cols: number; instruction?: string | null }
-  | { id: string; type: 'image'; kind: 'line_art' | 'illustration' | 'photo' | 'diagram'; subject: string; caption?: string | null; size: 'full' | 'half' | 'small' | 'plate'; asset_id?: string | null; question?: string | null; answer?: string | null; notes?: string[]; find?: string | null; inset?: { id: string; type: string; caption?: string | null } | null }
+  | { id: string; type: 'image'; kind: 'line_art' | 'illustration' | 'photo' | 'diagram'; subject: string; caption?: string | null; size: 'full' | 'half' | 'small' | 'plate'; asset_id?: string | null; narration?: string | null; layout?: 'bleed' | 'band' | 'vignette' | 'spread' | null; question?: string | null; answer?: string | null; notes?: string[]; find?: string | null; inset?: { id: string; type: string; caption?: string | null } | null }
   | { id: string; type: 'writing_lines'; lines: number; label?: string | null }
   | { id: string; type: 'page_break' }
   | { id: string; type: DiagramType; caption?: string | null }

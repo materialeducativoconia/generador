@@ -22,7 +22,7 @@ from app.illustrator import NO_TEXT, normalize_subject, reference_image
 
 log = logging.getLogger("casting")
 
-CAST_GENRES = ("picture_book", "coloring_book")  # books with a guide on every page
+CAST_GENRES = ("picture_book", "story_book", "coloring_book")  # books with a guide on every page
 SHEET_STYLE = ("premium children's book illustration, warm gouache and coloured-pencil texture, soft shading, "
                "clean readable shapes")
 Hex = Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")]

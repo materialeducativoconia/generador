@@ -336,6 +336,8 @@
   .plate .pn.s2 { right: 5mm; top: 50%; }
   .plate .pn.s3 { left: 5mm; top: 58%; }
   .plate.spread .pq { right: 30%; }
+  /* A story page's text: read aloud, so larger and airy, in the theme's heading face. */
+  .plate .nar { margin: 0 !important; font: 600 {{ 13 if geo.w < 180 else 15.5 }}pt/1.45 {{ head|safe }} !important; color: var(--ink); }
   {% if tome.mono %}
   /* Black and white for a home printer: the coloured boxes become light greys, their titles dark grey. */
   .callout.tip, .callout.warning, .callout.fun_fact { background: #f4f4f4; }
@@ -355,7 +357,7 @@
   {% if seal %}<div class="imprint">{{ seal }}<span>{{ tome.brand.name }}</span></div>{% endif %}
 </div>
 {% else %}
-{% if tome.cover_data_uri and tome.genre == "picture_book" %}
+{% if tome.cover_data_uri and tome.genre in ("picture_book", "story_book") %}
 <div class="cover art poster">
   <img class="cover-art" src="{{ tome.cover_data_uri }}" alt="">
   <div class="poster-top">
@@ -461,19 +463,20 @@
       {% set uri = tome.image_uri(b.asset_id) %}
       {% set placed, carded = plate_notes(b, tome.busy.get(b.asset_id), lay) %}
       {% set kicker %}{% if loop.first %}<div class="k">{{ s.position }} · {{ s.title }}</div>{% endif %}{% endset %}
+      {% set head %}{% if b.narration %}<p class="nar">{{ b.narration|inline }}</p>{% else %}<h3>{{ (b.question or b.caption or s.title)|inline }}</h3>{% if b.answer %}<p>{{ b.answer|inline }}</p>{% endif %}{% endif %}{% endset %}
       {% set find %}{% if b.find %}<div class="pf"><b>Observa y encuentra:</b>{{ b.find|inline }}</div>{% endif %}{% endset %}
       {% if lay == "band" %}
       <div class="plate band" data-block="{{ s.position ~ ':' ~ b.id }}">
         {% if uri %}<img src="{{ uri }}" alt="{{ b.subject }}">{% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
         <div class="pband">
-          <div class="pbq">{{ kicker }}<h3>{{ (b.question or b.caption or s.title)|inline }}</h3>{% if b.answer %}<p>{{ b.answer|inline }}</p>{% endif %}</div>
+          <div class="pbq">{{ kicker }}{{ head }}</div>
           {% if b.notes %}<ul class="pbn">{% for n in b.notes %}<li>{{ n|inline }}</li>{% endfor %}</ul>{% endif %}
         </div>
         {{ find }}
       </div>
       {% elif lay == "vignette" %}
       <div class="plate vignette" data-block="{{ s.position ~ ':' ~ b.id }}">
-        <div class="pvh">{{ kicker }}<h3>{{ (b.question or b.caption or s.title)|inline }}</h3>{% if b.answer %}<p>{{ b.answer|inline }}</p>{% endif %}</div>
+        <div class="pvh">{{ kicker }}{{ head }}</div>
         {% if uri %}<img class="pvi" src="{{ uri }}" alt="{{ b.subject }}">{% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
         {% if b.notes %}<ul class="pvn">{% for n in b.notes %}<li>{{ n|inline }}</li>{% endfor %}</ul>{% endif %}
         {{ find }}
@@ -481,7 +484,7 @@
       {% elif lay == "spread" %}
       <div class="plate spread sl" data-block="{{ s.position ~ ':' ~ b.id }}">
         {% if uri %}<img src="{{ uri }}" alt="{{ b.subject }}">{% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
-        <div class="pq">{{ kicker }}<h3>{{ (b.question or b.caption or s.title)|inline }}</h3>{% if b.answer %}<p>{{ b.answer|inline }}</p>{% endif %}
+        <div class="pq">{{ kicker }}{{ head }}
           {% if carded %}<ul class="pqf">{% for n in carded %}<li>{{ n|inline }}</li>{% endfor %}</ul>{% endif %}</div>
         {% for spot, n in placed if spot == "s3" %}<div class="pn {{ spot }}">{{ n|inline }}</div>{% endfor %}
       </div>
@@ -495,7 +498,7 @@
         {% if uri %}<img src="{{ uri }}" alt="{{ b.subject }}">
         {% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
         <div class="pq">{{ kicker }}
-          <h3>{{ (b.question or b.caption or s.title)|inline }}</h3>{% if b.answer %}<p>{{ b.answer|inline }}</p>{% endif %}
+          {{ head }}
           {% if carded %}<ul class="pqf">{% for n in carded %}<li>{{ n|inline }}</li>{% endfor %}</ul>{% endif %}</div>
         {% for spot, n in placed %}<div class="pn {{ spot }}">{{ n|inline }}</div>{% endfor %}
         {% if b.inset %}<div class="pi{% if b.find %} above{% endif %}">{{ render_diagram(b.inset, c, th.head) }}{% if b.inset.caption %}<div class="pic">{{ b.inset.caption|inline }}</div>{% endif %}</div>{% endif %}

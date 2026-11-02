@@ -18,7 +18,7 @@ export function BookCover({ title, genre, audience, cover_url, cover_status, cov
   useThemeFonts(design)
   const [bg, ink, accent] = cover_palette ?? ['#EEF2FF', '#1C1917', '#4F46E5']
   const painting = cover_status === 'queued' || cover_status === 'running'
-  const layout = genre === 'picture_book' ? 'poster' : design?.cover_layout ?? 'plate'  // as the PDF sets it
+  const layout = genre === 'picture_book' || genre === 'story_book' ? 'poster' : design?.cover_layout ?? 'plate'  // as the PDF sets it
   const head = design ? (themeVars(design).style as Record<string, string>)['--t-head'] : undefined
   return (
     <div

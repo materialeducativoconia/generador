@@ -144,9 +144,23 @@ def check_picture_book(content: SectionContent) -> list[str]:
     return problems
 
 
+def check_story_book(content: SectionContent) -> list[str]:
+    """A story's pages are plates with their narration; the closing «¿Sabías que…?» plate has a question and facts."""
+    problems = []
+    for b in content.blocks:
+        if b.type == "image" and b.kind == "illustration" and b.size != "plate":
+            problems.append(f"{b.id}: en un cuento cada página es una lámina: size \"plate\" con narration")
+        elif b.type == "image" and b.size == "plate" and not (b.narration or (b.question and b.notes)):
+            problems.append(f"{b.id}: la página del cuento necesita narration (el texto que se lee en esa página)")
+        elif b.type in ("exercise", "heading", "paragraph"):
+            problems.append(f"{b.id}: un cuento solo tiene láminas (el texto va en narration de cada lámina)")
+    return problems
+
+
 def plate_up(content: SectionContent) -> None:
     """Last resort when the Writer still drew loose pictures in a picture book: they print as plates anyway."""
     for b in content.blocks:
         if b.type == "image" and b.kind == "illustration" and b.size != "plate":
             b.size = "plate"
-            b.question = b.question or (re.sub(r"^\s*Lámina\s*\d+\s*[—–-]\s*", "", b.caption or "") or None)
+            if not (b.question or b.narration):  # a story page keeps its narration and needs no question
+                b.question = re.sub(r"^\s*Lámina\s*\d+\s*[—–-]\s*", "", b.caption or "") or None

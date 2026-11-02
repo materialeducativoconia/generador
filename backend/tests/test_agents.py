@@ -114,3 +114,27 @@ async def test_a_picture_book_section_always_prints_as_plates():
     assert "lámina" in llm.calls[1][-1]["content"]  # one chance to fix it
     plate = result.value.blocks[0]
     assert plate.size == "plate" and plate.question == "Kakapo"
+
+
+async def test_a_story_book_prints_pages_with_narration_and_lays_them_out():
+    from app.agents import Brief, Outline, writer
+    from app.content import OutlineSection
+    from app.layout import lay_out
+    from tests.fakes import ScriptedLLM
+
+    loose = {"blocks": [{"id": "p1", "type": "image", "kind": "illustration", "size": "full", "subject": "Leo ve un T-Rex",
+                         "narration": "Leo abrió la puerta y… ¡un T-Rex!"}]}
+    fixed = {"blocks": [{"id": "p1", "type": "image", "kind": "illustration", "size": "plate", "subject": "Leo ve un T-Rex",
+                         "narration": "Leo abrió la puerta y… ¡un T-Rex!"},
+                        {"id": "p2", "type": "image", "kind": "illustration", "size": "plate", "subject": "El T-Rex sonríe",
+                         "narration": "—¡Hola! —dijo el T-Rex."}]}
+    outline = Outline(title="Hay un T-Rex en mi casa", genre="story_book", style_notes="",
+                      sections=[OutlineSection(title="La visita", objectives=["Conocer al T-Rex"], key_points=["llega"], pages=3)])
+    llm = ScriptedLLM(json.dumps(loose), json.dumps(fixed))
+    result = await writer(llm, Brief(request="un cuento de dinosaurios", audience="Preescolar"), outline, 1)
+
+    assert "narration" in llm.calls[0][0]["content"] and len(llm.calls) == 2  # the loose picture got one fix
+    content = result.value
+    assert all(b.size == "plate" and b.narration and not b.question for b in content.blocks)
+    lay_out(content, position=1, pages=3, house_style="enciclopedia", story=True)
+    assert [b.layout for b in content.blocks] == ["band", "spread"]

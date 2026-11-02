@@ -17,6 +17,7 @@ TASTE = {
     "collage": ["vignette", "bleed", "band"],
 }
 DEFAULT = ["bleed", "band", "vignette"]
+STORY = ["band", "bleed"]  # a story reads best with its text beside the picture, never a cut-out encyclopedia page
 # What the painting must leave room for, by composition (the plate's subject is extended with it).
 COMPOSE = {
     "bleed": "",
@@ -29,12 +30,13 @@ COMPOSE = {
 }
 
 
-def lay_out(content: SectionContent, *, position: int, pages: int | None, house_style: str | None) -> None:
+def lay_out(content: SectionContent, *, position: int, pages: int | None, house_style: str | None,
+            story: bool = False) -> None:
     """Gives each plate without one its composition. A plate with an exact diagram keeps the full bleed (its card
     sits over the calm lower third); a section with a page more than plates gets one spread."""
     plates = [b for b in content.blocks if b.type == "image" and b.size == "plate"]
     spare = 1 if pages and pages > len(plates) else 0
-    taste = TASTE.get(house_style or "", DEFAULT)
+    taste = STORY if story else TASTE.get(house_style or "", DEFAULT)
     last = None
     for i, b in enumerate(plates):
         if b.layout:

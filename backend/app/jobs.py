@@ -27,6 +27,7 @@ from app.llm import LLM, UpstreamAuthError, UpstreamError
 from app.artwork import ImageRequest, plan_sheets, sheet_prompt, slice_sheet
 from app.house_styles import BY_KEY, STYLE_NOTE, finish, style_references
 from app.house_styles import apply as apply_house_style
+from app.content import PLATE_GENRES
 from app.layout import COMPOSE, lay_out
 from app.illustrator import (ASPECT, cover_jpeg, line_art_coverage, normalize_subject, prepare_image, reference_image,
                              upscale, vectorize)
@@ -312,10 +313,10 @@ async def _lesson(deps: Deps, job: dict) -> None:
             edit_attempts = edited.attempts
     if result.notes:  # words with letters the child has not learnt yet, after the Writer's second try
         review = {"score": None, "issues": [], "fixed": 0, **(review or {}), "letters": result.notes[:20]}
-    if outline.genre == "picture_book":  # the Layout designer: each plate's composition, before it is painted
+    if outline.genre in PLATE_GENRES:  # the Layout designer: each plate's composition, before it is painted
         design = _json(series["design"]) or {}
         lay_out(content, position=position, pages=outline.sections[position - 1].pages,
-                house_style=design.get("house_style"))
+                house_style=design.get("house_style"), story=outline.genre == "story_book")
     async with deps.engine.begin() as conn:
         await _lock_series(conn, job)
         await _insert_logs(conn, job, "writer", result.attempts)

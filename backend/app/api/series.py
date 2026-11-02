@@ -46,7 +46,7 @@ class NewTome(BaseModel):
     identity_id: uuid.UUID | None = None  # one of the user's identities; a collection's identity wins
     collection_id: uuid.UUID | None = None  # the collection the new tome joins, e.g. from a suggested level
     place: Literal["start", "end"] = "end"  # a lower level goes first in its collection, a higher one last
-    format: Literal["auto", "picture_book", "coloring_book", "worksheets", "tutorial", "lesson_series"] = "auto"
+    format: Literal["auto", "picture_book", "story_book", "coloring_book", "worksheets", "tutorial", "lesson_series"] = "auto"
     # A house style (app.house_styles) for every picture; None lets the Designer choose.
     house_style: Literal["enciclopedia", "acuarela", "gouache", "collage", "crayon", "didactico"] | None = None
     guide_id: uuid.UUID | None = None  # a character from the library (or the user's own) as the book's guide
@@ -449,6 +449,10 @@ async def design_preview(series_id: uuid.UUID, request: Request, user_id: UserId
                   {"id": "k", "type": "syllable_cards", "cut": False, "instruction": f"Lee las sílabas de la {letter}.",
                    "syllables": [letter + v for v in "aeiou"] + [letter.upper() + v for v in "aeiou"]},
                   {"id": "d", "type": "dictation", "lines": 3, "show_words": False}]
+    elif series["genre"] == "story_book":
+        blocks = [{"id": "l", "type": "image", "kind": "illustration", "size": "plate", "subject": title,
+                   "narration": "Así se verán las páginas de tu cuento: la ilustración grande y el texto para leer en "
+                                "voz alta, página a página."}]
     elif series["genre"] == "picture_book":
         blocks = [{"id": "l", "type": "image", "kind": "illustration", "size": "plate", "subject": title,
                    "question": f"¿Qué sabes de {title.lower()}?",

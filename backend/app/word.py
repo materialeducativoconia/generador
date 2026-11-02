@@ -171,6 +171,8 @@ def _block(doc, b, n, column, accent, c, drawing, tome, inset=None) -> None:
         if b.caption:
             doc.add_paragraph(b.caption).alignment = WD_ALIGN_PARAGRAPH.CENTER
         if b.size == "plate":  # a picture book's page: what the PDF lays over the picture, under it
+            if b.narration:
+                _inline(doc.add_paragraph(), b.narration)
             if b.question:
                 doc.add_heading(b.question, level=2)
             if b.answer:

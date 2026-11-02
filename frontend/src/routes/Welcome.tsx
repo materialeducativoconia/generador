@@ -243,6 +243,7 @@ const FEATURES: [string, string][] = [
 
 const FORMAT_CARDS: [string, string][] = [
   ['Libro ilustrado', 'Preguntas y respuestas con láminas a página completa, como los libros de divulgación infantil.'],
+  ['Cuento ilustrado', 'Una historia con su protagonista, para leer en voz alta, y al final datos reales del tema.'],
   ['Libro para colorear', 'Dibujos de línea limpia para manos pequeñas, con el nombre de cada figura.'],
   ['Cuadernillo de fichas', 'Práctica lista para fotocopiar: trazos, operaciones, sopas de letras y más.'],
   ['Método paso a paso', 'Una habilidad de principio a fin: piano, caligrafía, dibujo, un idioma.'],

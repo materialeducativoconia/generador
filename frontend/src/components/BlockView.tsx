@@ -25,8 +25,10 @@ function ImageBlock({ block }: { block: Extract<Block, { type: 'image' }> }) {
       <figure className={`plate${url ? '' : ' empty'}${painting && !url ? ' painting' : ''}`}>
         {url ? <img src={url} alt={block.subject} loading="lazy" /> : <span className="plate-ph">{painting ? 'Ilustrando…' : block.subject}</span>}
         <div className="pq">
-          <strong><Inline text={block.question ?? block.subject} /></strong>
-          {block.answer && <p><Inline text={block.answer} /></p>}
+          {block.narration ? <p className="nar"><Inline text={block.narration} /></p> : <>
+            <strong><Inline text={block.question ?? block.subject} /></strong>
+            {block.answer && <p><Inline text={block.answer} /></p>}
+          </>}
         </div>
         {block.notes?.map((n, i) => <span key={i} className={`pn n${i + 1}${inset ? ' up' : ''}`}><Inline text={n} /></span>)}
         {/* Static SVG drawn by our code (app.diagrams), never model markup. */}

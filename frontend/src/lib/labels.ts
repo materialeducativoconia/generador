@@ -4,6 +4,7 @@ export const AUDIENCES = ['Preescolar (3–5 años)', 'Primaria baja (6–8)', '
 
 export const GENRE_LABEL: Record<string, string> = {
   picture_book: 'Libro ilustrado',
+  story_book: 'Cuento ilustrado',
   coloring_book: 'Libro para colorear',
   worksheets: 'Cuadernillo de fichas',
   tutorial: 'Método paso a paso',
@@ -14,6 +15,7 @@ export const GENRE_LABEL: Record<string, string> = {
 export const FORMATS: { value: string; label: string }[] = [
   { value: 'auto', label: 'Formato automático' },
   { value: 'picture_book', label: 'Libro ilustrado' },
+  { value: 'story_book', label: 'Cuento ilustrado' },
   { value: 'coloring_book', label: 'Libro para colorear' },
   { value: 'worksheets', label: 'Cuadernillo de fichas' },
   { value: 'tutorial', label: 'Método paso a paso' },

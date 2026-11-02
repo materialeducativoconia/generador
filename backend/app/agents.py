@@ -12,13 +12,14 @@ from pydantic import BaseModel, ValidationError
 
 from app.content import (ArtPlan, BrandDirections, Character, CoverPlan, Design, EditReview, FactSheet, Fix,
                          IdentityLooks, Outline, ProgramReview, ProgramSheet, ResearchPlan, SectionContent)
-from app.literacy import allowed_letters, check_blocks, check_picture_book, check_section, plate_up, tidy
+from app.literacy import (allowed_letters, check_blocks, check_picture_book, check_section, check_story_book, plate_up,
+                           tidy)
 from app.themes import ART_STYLES, COVER_LAYOUTS, FONTS, FRAMES, THEMES
 from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@5", "writer": "writer@8", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@5", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1"}
+PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@9", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@5", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1"}
 
 
 @dataclass
@@ -98,6 +99,9 @@ diseñas el TOMO completo.
    - "picture_book": libro ilustrado de conocimientos para niños, como los de Larousse, SM o DK: cada página es
      una lámina ilustrada a sangre con una pregunta y su respuesta corta. Es el formato por defecto: elígelo
      siempre que el pedido no sea claramente uno de los otros.
+   - "story_book": cuento ilustrado con un protagonista y una historia (como «Hay un T-Rex en la ciudad» o «Mi
+     vecino es un dinosaurio»), cuando el pedido habla de cuento, historia o aventura. Las secciones son los actos
+     de la historia (1 a 3: inicio, problema y aventura, final) y sus key_points son los momentos, uno por página.
    - "coloring_book": libro de colorear; cada sección es una página con un dibujo de línea a página completa.
    - "worksheets": cuadernillo de fichas de actividades (repasar, colorear, unir, recortar, completar).
    - "tutorial": método o guía paso a paso para aprender una habilidad (instrumento, oficio, software…).
@@ -119,7 +123,7 @@ contenidos y su orden (adaptados a la extensión pedida) y no añade temas ajeno
    la m). Para cualquier otro tomo deja ambas listas vacías.
 
 Responde SOLO con un objeto json con esta forma:
-{"title": "…", "genre": "picture_book|coloring_book|worksheets|tutorial|lesson_series", "style_notes": "tono y estilo visual",
+{"title": "…", "genre": "picture_book|story_book|coloring_book|worksheets|tutorial|lesson_series", "style_notes": "tono y estilo visual",
  "known_letters": [], "sections": [{"title": "…", "objectives": ["…"], "key_points": ["…"], "letters": [], "pages": 2}]}"""
 
 WRITER_SYSTEM = """Eres el Redactor de un generador de material educativo imprimible. Escribes UNA sección del tomo
@@ -212,6 +216,14 @@ Reglas según el género:
   de 3 a 5 exercise (multiple_choice o true_false, con answer) y un draw_frames, precedido de un page_break.
   Para niños de preescolar las respuestas son de 1 o 2 frases muy cortas. Si la lámina lleva inset, usa como
   máximo 2 notes.
+- story_book (cuento): cada página es una image size "plate" con "narration": el texto de esa página, para leer
+  en voz alta (preescolar: 1 o 2 frases cortas; primaria: 2 a 4), con ritmo, una frase que se repite como
+  estribillo a lo largo del cuento, sonidos y diálogos del protagonista entre «». Sin heading, paragraph,
+  exercise ni page_break: solo láminas. El "subject" describe en detalle el momento exacto que narra esa página
+  (quién, qué hace, dónde, su emoción). La historia tiene arco: el protagonista quiere algo, aparece un problema,
+  lo intenta, hay un giro y un final cálido; lo que aprende el niño (el tema del pedido) va dentro de la
+  aventura, con datos reales y exactos. La última página de la última sección es «¿Sabías que…?»: una lámina
+  con question «¿Sabías que…?», answer breve y 3 o 4 notes con datos reales del tema, sin narration.
 - coloring_book: un heading con el título y un image line_art size "full" por página; texto mínimo.
 - worksheets: cada ficha empieza con heading "Ficha N"; instrucciones cortas para niños; usa tracing,
   letter_grid, image line_art, writing_lines y exercise; separa fichas con page_break.
@@ -297,8 +309,10 @@ async def writer(llm: LLM, brief: Brief, outline: Outline, position: int) -> Age
     letters = (f"\nLetras que enseña esta sección: {', '.join(section.letters) or '(repaso)'}\n"
                f"Letras permitidas (el niño ya las conoce): {', '.join(sorted(allowed))}") if allowed else ""
     picture_book = outline.genre == "picture_book"
+    story = outline.genre == "story_book"
     if section.pages:
         letters += (f"\nExtensión: esta sección debe llenar unas {section.pages} páginas impresas, ni más ni menos " + (
+            "(una lámina image size \"plate\" con narration por página; sin page_break)" if story else
             "(una lámina image size \"plate\" por página, con question, answer, notes y find; sin page_break entre "
             "láminas)" if picture_book else
             "(una ficha o un dibujo full por página, separadas con page_break; en texto, unas 300 palabras por página)"))
@@ -314,7 +328,7 @@ async def writer(llm: LLM, brief: Brief, outline: Outline, position: int) -> Age
     result = await _json_call(llm, messages, SectionContent, temperature=1.0, max_tokens=8000)
     def check(content):
         return check_section(content, allowed) + check_blocks(content) + (
-            check_picture_book(content) if picture_book else [])
+            check_picture_book(content) if picture_book else check_story_book(content) if story else [])
 
     problems = check(result.value)
     if problems:  # decodable text and block misuse are checked by code: one chance to fix them
@@ -333,7 +347,7 @@ async def writer(llm: LLM, brief: Brief, outline: Outline, position: int) -> Age
             result = retry if len(left) < len(problems) else result
             result.attempts, problems = attempts, min(left, problems, key=len)
         result.notes = problems
-    if picture_book:
+    if picture_book or story:
         plate_up(result.value)
     tidy(result.value, section.title)
     return result
@@ -580,6 +594,8 @@ Reglas:
   altura) tranquilas, porque ahí van la pregunta y las notas; personajes y sujeto al centro y abajo. band: la
   escena ocupa la parte de arriba de la página. vignette: sujeto recortado sobre blanco, sin escenario, como en
   una enciclopedia. spread: panorámica de doble página, nada importante en la franja central del pliegue.
+- En un cuento (láminas con narración) cada lámina ilustra el momento exacto que narra su texto, con el
+  protagonista siempre reconocible y una emoción clara; el clímax merece la doble página.
 - Diriges el libro entero como una secuencia, no imágenes sueltas: alterna el tipo de plano entre láminas
   seguidas (general, medio, primer plano, vista desde arriba, corte transversal), varía escenario y momento del
   día cuando el tema lo permite, y que el guía cambie de pose y de acción (señala, se asombra, mide, se esconde,

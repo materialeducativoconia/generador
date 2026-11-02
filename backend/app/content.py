@@ -7,7 +7,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-Genre = Literal["picture_book", "coloring_book", "worksheets", "tutorial", "lesson_series"]
+Genre = Literal["picture_book", "story_book", "coloring_book", "worksheets", "tutorial", "lesson_series"]
+PLATE_GENRES = ("picture_book", "story_book")  # books made of full-page plates
 Note = Annotated[str, Field(pattern=r"^[A-G]#?[1-7]$")]  # scientific pitch, e.g. C4, F#3
 Text = Annotated[str, Field(min_length=1, max_length=4000)]
 Short = Annotated[str, Field(min_length=1, max_length=300)]
@@ -116,6 +117,7 @@ class Image(_Block):
     layout: Literal["bleed", "band", "vignette", "spread"] | None = None
     # A plate (picture book) is the whole page: the picture to the edges, the question, a short answer, up to four
     # stickers with facts and an "Observa y encuentra" prompt laid over it.
+    narration: Annotated[str, Field(max_length=700)] | None = None  # a story page's text, read aloud
     question: Short | None = None
     answer: Annotated[str, Field(max_length=500)] | None = None
     notes: list[Annotated[str, Field(min_length=1, max_length=140)]] = Field(default_factory=list, max_length=4)

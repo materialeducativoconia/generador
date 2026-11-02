@@ -29,7 +29,7 @@ TEMPLATES = Path(__file__).parent / "templates"
 
 WHITE_NOTES = ["C", "D", "E", "F", "G", "A", "B"]
 NOTE_NAMES_ES = {"C": "Do", "D": "Re", "E": "Mi", "F": "Fa", "G": "Sol", "A": "La", "B": "Si"}
-GENRE_LABEL = {"picture_book": "Libro ilustrado", "coloring_book": "Libro para colorear", "worksheets": "Cuadernillo de actividades",
+GENRE_LABEL = {"picture_book": "Libro ilustrado", "story_book": "Cuento ilustrado", "coloring_book": "Libro para colorear", "worksheets": "Cuadernillo de actividades",
                "tutorial": "Método paso a paso", "lesson_series": "Secuencia didáctica"}
 
 
