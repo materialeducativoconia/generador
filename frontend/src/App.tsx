@@ -8,6 +8,7 @@ import { AuthCallback } from './routes/AuthCallback'
 import { SectionPage } from './routes/SectionPage'
 import { Studio } from './routes/Studio'
 import { AdminTomes } from './routes/AdminTomes'
+import { AdminStyles } from './routes/AdminStyles'
 import { Characters } from './routes/Characters'
 import { Styles } from './routes/Styles'
 import { Identities } from './routes/Identities'
@@ -40,6 +41,7 @@ export default function App() {
             <Route path="/app/perfil" element={authed(<Profile />)} />
             <Route path="/admin" element={authed(<AdminUsers />)} />
             <Route path="/admin/tomos" element={authed(<AdminTomes />)} />
+            <Route path="/admin/estilos" element={authed(<AdminStyles />)} />
             <Route path="/admin/analytics" element={authed(<Analytics />)} />
             <Route path="/adminpanel" element={<Navigate to="/admin" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />

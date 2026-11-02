@@ -99,6 +99,7 @@ export function AdminTomes() {
               </span>
               <span className="admin-tome-actions">
                 <Link className="ghost small" to={`/app/tomos/${t.id}`}>Ver</Link>
+                {t.cover_url && <Link className="ghost small" to={`/admin/estilos?tomo=${t.id}`}>Probar estilos</Link>}
                 {t.export?.status === 'succeeded' && (
                   <button className="ghost small" onClick={() => download.mutate(t.export!.id)} disabled={download.isPending}>
                     {t.export.format === 'docx' ? 'Word' : `PDF${t.export.pages ? ` · ${t.export.pages} págs.` : ''}`}

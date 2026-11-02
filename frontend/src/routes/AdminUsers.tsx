@@ -26,6 +26,7 @@ export function AdminTabs() {
     <nav className="admin-tabs" aria-label="Administración">
       <NavLink to="/admin" end>Usuarios</NavLink>
       <NavLink to="/admin/tomos">Tomos</NavLink>
+      <NavLink to="/admin/estilos">Estilos</NavLink>
       <NavLink to="/admin/analytics">Analítica</NavLink>
     </nav>
   )

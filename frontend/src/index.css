@@ -1082,3 +1082,14 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .admin-tome-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .admin-tome-actions { display: flex; gap: 6px; margin-top: 4px; }
 .review-note { margin: -8px 0 18px; }
+.lab-form { display: grid; gap: 10px; max-width: 720px; margin: 20px 0; }
+.lab-form textarea, .lab-form input { font: inherit; font-size: 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.lab-form button { justify-self: start; }
+.lab-run { margin: 28px 0; }
+.lab-subject { font-size: 13px; color: var(--muted); max-width: 900px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lab-grid { list-style: none; padding: 0; margin: 12px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.lab-grid li { border: 1px solid var(--border); border-radius: 16px; background: var(--card); overflow: hidden; }
+.lab-grid li.chosen { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.lab-img { aspect-ratio: 3 / 4; display: grid; place-items: center; background: var(--surface); }
+.lab-img img { width: 100%; height: 100%; object-fit: cover; }
+.lab-b { display: grid; gap: 4px; padding: 10px 12px 12px; }
