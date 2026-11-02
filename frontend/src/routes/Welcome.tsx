@@ -116,6 +116,20 @@ export function Welcome() {
       </section>
 
       <section>
+        <p className="eyebrow">Estilos de ilustración</p>
+        <h2 className="l-h">El mismo tema, el estilo que tu clase merece.</h2>
+        <p className="l-lede">Ilustraciones con el acabado de los libros de las mejores editoriales, no de una imagen genérica. Así se ve el mismo tema en tres estilos.</p>
+        <ul className="l-styles">
+          {STYLE_SAMPLES.map(([file, name, desc]) => (
+            <li key={file}>
+              <img src={`/estilos/${file}.webp`} alt={`El sistema solar en estilo ${name}`} loading="lazy" width={717} height={960} />
+              <strong>{name}</strong><span>{desc}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section>
         <p className="eyebrow">Para quién</p>
         <h2 className="l-h">Hecho para quien enseña, y para quien vende lo que enseña.</h2>
         <div className="l-who">
@@ -199,6 +213,12 @@ const VALUES: [string, string][] = [
   ['Minutos, no fines de semana', 'Del tema al libro terminado en una sola sesión. Tú decides; Jelyx investiga, escribe, ilustra y maqueta.'],
   ['Se ve como libro de editorial', 'Portada pintada para tu tema, ilustraciones en cada página, tipografía y colores cuidados. Nada de plantillas genéricas.'],
   ['Tuyo para usar o vender', 'Imprímelo para tu grupo o, desde el plan Creador, véndelo en Amazon KDP, Teachers Pay Teachers o tu tienda, sin marca de agua.'],
+]
+
+const STYLE_SAMPLES: [string, string, string][] = [
+  ['didactico', 'Didáctico claro', 'Contornos limpios y colores planos, como en los libros de texto.'],
+  ['gouache', 'Gouache moderno', 'Formas gráficas y pocas tintas, con textura de impresión.'],
+  ['acuarela', 'Acuarela y tinta', 'Trazo suelto y aguadas suaves sobre papel.'],
 ]
 
 const FEATURES: [string, string][] = [

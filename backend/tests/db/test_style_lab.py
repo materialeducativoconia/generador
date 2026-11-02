@@ -36,3 +36,37 @@ async def test_the_style_lab_is_for_admins(google_user, client, key):
     response = await client.post("/api/admin/style-lab", json={"subject": "x"}, headers=bearer(key, user))
     assert response.status_code in (403, 503)
     assert (await client.get("/api/admin/style-lab", headers=bearer(key, user))).status_code == 403
+
+
+async def test_a_failed_style_is_painted_again_alone(raw_db, google_user, client, key):
+    admin = await google_user(email="reintento@jelyx.test")
+    await raw_db.execute("update public.profiles set platform_role = 'admin' where id = $1", admin)
+    app = client._transport.app
+    images, failing = FakeImages(), {"collage"}
+    real = images.generate
+
+    async def generate(prompt, **kw):
+        if failing and "Cut-paper" in prompt:
+            raise RuntimeError("OpenRouter 403: Key limit exceeded")
+        return await real(prompt, **kw)
+
+    images.generate = generate
+    app.state.images, app.state.storage = images, FakeStorage()
+
+    async def settled():
+        for _ in range(100):
+            body = (await client.get("/api/admin/style-lab", headers=bearer(key, admin))).json()
+            found = next(r for r in body["runs"] if r["run"] == run)
+            if all(s["status"] != "painting" for s in found["samples"]):
+                return {s["style"]: s["status"] for s in found["samples"]}
+            await asyncio.sleep(0.05)
+
+    run = (await client.post("/api/admin/style-lab", json={"subject": "un búho", "styles": ["collage", "gouache"]},
+                             headers=bearer(key, admin))).json()["run"]
+    assert await settled() == {"collage": "failed", "gouache": "done"}
+    failing.clear()
+    painted = len(images.calls)
+    retry = await client.post(f"/api/admin/style-lab/{run}/retry", headers=bearer(key, admin))
+    assert retry.json()["styles"] == ["collage"]
+    assert await settled() == {"collage": "done", "gouache": "done"}
+    assert len(images.calls) == painted + 1

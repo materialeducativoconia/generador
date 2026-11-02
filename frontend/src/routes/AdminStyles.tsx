@@ -30,6 +30,10 @@ export function AdminStyles() {
     mutationFn: () => api.post('/api/admin/style-lab', { subject: subject.trim() || null, series_id: seriesId.trim() || null }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['style-lab'] }),
   })
+  const retry = useMutation({
+    mutationFn: (run: string) => api.post(`/api/admin/style-lab/${run}/retry`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['style-lab'] }),
+  })
   const choose = useMutation({
     mutationFn: (s: Sample) => api.patch(`/api/admin/style-lab/${s.id}`, { chosen: !s.chosen }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['style-lab'] }),
@@ -59,9 +63,15 @@ export function AdminStyles() {
         </form>
       )}
       {error && <p className="error">{errorText(error, 'No pudimos cargar el laboratorio.')}</p>}
+      {retry.error && <p className="error">{errorText(retry.error, 'No se pudo repintar.')}</p>}
       {data?.runs.map((run) => (
         <section key={run.run} className="lab-run">
           <p className="lab-subject">{run.subject}</p>
+          {admin && run.samples.some((s) => s.status === 'failed') && (
+            <button type="button" className="ghost small" onClick={() => retry.mutate(run.run)} disabled={retry.isPending}>
+              Repintar las fallidas
+            </button>
+          )}
           <ul className="lab-grid">
             {run.samples.map((s) => (
               <li key={s.id} className={s.chosen ? 'chosen' : undefined}>
