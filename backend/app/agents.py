@@ -18,7 +18,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@5", "writer": "writer@8", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@4", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1"}
+PROMPT_VERSION = {"architect": "architect@5", "writer": "writer@8", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@5", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1"}
 
 
 @dataclass
@@ -575,10 +575,17 @@ Reglas:
 - 0 a 4 personajes; si la portada tiene un protagonista, úsalo como personaje principal. En un libro ilustrado
   (láminas, tamaño plate) crea siempre un personaje guía (niño o niña explorador, mascota o animal simpático
   ligado al tema) y ponlo en cada lámina, mirando o señalando lo importante.
-- Láminas (tamaño plate): escena a página completa, rica en detalles para buscar; sujeto principal al centro;
-  la franja superior (una quinta parte) y las franjas laterales (un tercio de cada lado, a media altura)
-  tranquilas: los personajes y el sujeto van en el centro y abajo, porque
-  ahí van la pregunta y las notas.
+- Láminas (tamaño plate): cada una trae su composición de página. bleed: escena a página completa, rica en
+  detalles para buscar, con la franja superior (una quinta parte) y las laterales (un tercio de cada lado, a media
+  altura) tranquilas, porque ahí van la pregunta y las notas; personajes y sujeto al centro y abajo. band: la
+  escena ocupa la parte de arriba de la página. vignette: sujeto recortado sobre blanco, sin escenario, como en
+  una enciclopedia. spread: panorámica de doble página, nada importante en la franja central del pliegue.
+- Diriges el libro entero como una secuencia, no imágenes sueltas: alterna el tipo de plano entre láminas
+  seguidas (general, medio, primer plano, vista desde arriba, corte transversal), varía escenario y momento del
+  día cuando el tema lo permite, y que el guía cambie de pose y de acción (señala, se asombra, mide, se esconde,
+  ríe) en cada lámina. Misma luz, paleta y técnica en todo el libro.
+- Exactitud de editorial: dibuja lo que dicen los datos (número de patas, cuernos, alas, colores, tamaños
+  relativos, hábitat); si un animal o un objeto real aparece, que sea anatómicamente correcto.
 - Respeta la regla de personajes del pedido: si no se permiten personajes de películas o marcas, descríbelos
   como personajes originales sin nombre propio ni rasgos de marca.
 - Un prompt por cada ref recibida. Nada de texto, letras ni números dentro de las imágenes: si el pedido
@@ -590,7 +597,8 @@ Reglas:
 
 async def art_director(llm: LLM, brief: Brief, title: str, design: Design | None, cover_concept: str | None,
                        requests: list, cast: list[dict] | None = None) -> AgentResult[ArtPlan]:
-    lines = [f"- {r.ref} | {r.kind} | {r.size} | {r.subject}" for r in requests]
+    lines = [f"- {r.ref} | {r.kind} | {r.size}{' | composición ' + r.layout if getattr(r, 'layout', None) else ''}"
+             f" | {r.subject}" for r in requests]
     look = f"Tema {design.theme}, paleta {', '.join(design.palette)}" if design else "Tema clásico"
     if design and design.art_style:
         look += f"\nEstilo de ilustración del tomo (basa tu style en él): {design.art_style}"

@@ -32,6 +32,8 @@ class ImageRequest:
     subject: str
     word: str | None = None  # a worksheet word's picture (kind "icon"), stored in the block's `pictures`
     layout: str | None = None  # a plate's composition (app.layout): its own aspect and page area
+    compose: str = ""  # room the page layout needs (kept after the Art director's rewrite of the scene)
+    check: str | None = None  # what the Reviewer verifies: the plate's question and facts, else the subject
 
 
 @dataclass
@@ -121,7 +123,7 @@ def sheet_prompt(sheet: Sheet, plan: ArtPlan, design: Design | None, feedback: s
     if sheet.family == "icon":
         return icon_sheet_prompt(sheet, feedback)
     slots = _slots(sheet.cols)
-    panels = [f"{slot}: {plan.prompts.get(r.ref, r.subject)}" for slot, r in zip(slots, sheet.requests)]
+    panels = [f"{slot}: {plan.prompts.get(r.ref, r.subject)}{r.compose}" for slot, r in zip(slots, sheet.requests)]
     panels += [f"{slot}: leave this panel completely empty and white" for slot in slots[len(sheet.requests):]]
     cast = "; ".join(f"{c.name} is {c.look}" for c in plan.characters)
     if sheet.family == "line":

@@ -505,10 +505,13 @@ def _picture_requests(lessons) -> list[ImageRequest]:
             ref = f"{lesson['position']}:{b['id']}"
             if b.get("type") == "image" and not b.get("asset_id"):
                 # A plate with an exact diagram keeps its lower third calm: the inset card sits there.
-                subject = b["subject"] + (" (keep the lower third of the picture calm: a diagram card goes there)"
-                                          if b.get("inset") else "") + COMPOSE.get(b.get("layout") or "", "")
+                compose = (" (keep the lower third of the picture calm: a diagram card goes there)"
+                           if b.get("inset") else "") + COMPOSE.get(b.get("layout") or "", "")
+                facts = [b.get("question"), b.get("answer"), *(b.get("notes") or [])]
+                check = ". ".join(f for f in facts if f) or None
                 images.append(ImageRequest(ref=ref, lesson_id=lesson["id"], block_id=b["id"], kind=b["kind"],
-                                           size=b.get("size", "half"), subject=subject, layout=b.get("layout")))
+                                           size=b.get("size", "half"), subject=b["subject"], layout=b.get("layout"),
+                                           compose=compose, check=f"{b['subject']} | Datos: {check}" if check else None))
             elif b.get("type") in PICTURED:
                 field, attr = PICTURED[b["type"]]
                 words = [i if attr is None else i.get(attr) for i in b.get(field) or []]
@@ -806,13 +809,15 @@ async def _review_sheet(deps: Deps, sheet_image: bytes, panels: list[tuple[bytes
     if deps.vision is None:
         return [c or Review(ok=True) for c in checks]
     try:
-        seen = await deps.vision.review_sheet(sheet_image, [r.subject for r in sheet.requests],
+        seen = await deps.vision.review_sheet(sheet_image, [r.check or r.subject for r in sheet.requests],
                                               kind=sheet.requests[0].kind)
     except (UpstreamError, UpstreamAuthError) as exc:  # a reviewer outage must not block the tome
         log.warning("image review skipped: %s", exc)
         seen = [Review(ok=True, issues="sin revisar") for _ in sheet.requests]
-    # Only hard failures earn a repaint: text in the picture, the wrong subject, or a deterministic check.
-    return [replace(c or (v if v.has_text or not v.matches_subject else Review(ok=True, issues=v.issues)),
+    # Only hard failures earn a repaint: text in the picture, the wrong subject, a fact drawn wrong (three horns on
+    # a triceratops), a visible AI defect (extra fingers, fused bodies), or a deterministic check.
+    return [replace(c or (v if v.has_text or not v.matches_subject or v.defect or v.fact_wrong
+                          else Review(ok=True, issues=v.issues)),
                     cost_usd=v.cost_usd) for c, v in zip(checks, seen)]
 
 

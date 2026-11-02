@@ -205,3 +205,16 @@ async def test_an_export_made_before_the_pictures_arrived_is_stale(raw_db, googl
     after = (await client.get(f"/api/series/{sid}/progress", headers=bearer(key, user))).json()["latest_export"]
 
     assert before["stale"] is False and after["stale"] is True
+
+
+async def test_a_fact_drawn_wrong_or_an_ai_defect_is_repainted(raw_db, google_user, client, key, engine):
+    user = await google_user()
+    await written_tome(client, key, user, engine, FIVE)
+    vision = FakeVision([Review(ok=False, fact_wrong=True, issues="el triceratops tiene dos cuernos, no tres"),
+                         Review(ok=False, defect=True, issues="la niña tiene seis dedos")])
+    images = FakeImages()
+
+    await illustrate(engine, images, vision)
+
+    assert len(images.calls) == 3  # two sheets, then both panels repainted in one sheet
+    assert "dos cuernos" in images.calls[2]["prompt"] and "seis dedos" in images.calls[2]["prompt"]

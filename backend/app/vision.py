@@ -27,9 +27,14 @@ EXTRA = {
 SHEET_PROMPT = """Esta imagen es una hoja con {n} ilustraciones para un libro educativo impreso, en orden de
 lectura (izquierda a derecha, arriba a abajo). Tipo: {kind}. Lo que debe mostrar cada una:
 {subjects}
-Responde solo con json: {{"panels": [{{"ok": true|false, "has_text": true|false, "issues": "una frase o vacío"}}]}}
-con un elemento por ilustración, en el mismo orden. ok es false solo si tiene texto o letras, si no muestra lo
-pedido, si es inapropiada para niños, o si {extra}"""
+Cuando una ilustración trae «Datos», revisa como lo haría el especialista de una editorial: que el dibujo no
+contradiga esos datos (número de patas, cuernos, alas o planetas, colores, tamaños relativos, hábitat).
+Responde solo con json: {{"panels": [{{"ok": true|false, "has_text": true|false, "matches_subject": true|false,
+"fact_wrong": true|false, "defect": true|false, "issues": "una frase o vacío"}}]}}
+con un elemento por ilustración, en el mismo orden. has_text: aparecen letras, números o texto falso.
+matches_subject: muestra lo pedido. fact_wrong: el dibujo contradice un dato. defect: un error visible de imagen
+generada (manos con dedos de más o de menos, caras deformes, cuerpos o patas de más, objetos fundidos).
+ok es false si alguna de esas falla, si es inapropiada para niños, o si {extra}"""
 
 
 STYLE_PROMPT = """Eres directora de arte de una editorial de material educativo impreso. La imagen tiene {n} páginas
@@ -63,6 +68,8 @@ class Review:
     ok: bool
     has_text: bool = False
     matches_subject: bool = True
+    fact_wrong: bool = False
+    defect: bool = False
     issues: str = ""
     cost_usd: float | None = None
 
@@ -126,4 +133,5 @@ class OpenRouterVision:
 def _review(verdict: dict, cost: float | None) -> Review:
     return Review(ok=bool(verdict.get("ok")), has_text=bool(verdict.get("has_text")),
                   matches_subject=bool(verdict.get("matches_subject", True)),
+                  fact_wrong=bool(verdict.get("fact_wrong")), defect=bool(verdict.get("defect")),
                   issues=str(verdict.get("issues") or "")[:500], cost_usd=cost)
