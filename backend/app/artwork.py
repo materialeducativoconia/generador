@@ -31,6 +31,7 @@ class ImageRequest:
     size: str
     subject: str
     word: str | None = None  # a worksheet word's picture (kind "icon"), stored in the block's `pictures`
+    layout: str | None = None  # a plate's composition (app.layout): its own aspect and page area
 
 
 @dataclass
@@ -51,20 +52,29 @@ class Sheet:
         """The cheapest resolution at which every panel reaches its target dpi on the largest page size."""
         for name, scale in RESOLUTIONS.items():
             w, h = (v * scale / self.cols for v in PIXELS_1K[self.aspect])
-            if all(_dpi(w, h, r.size) >= TARGET_DPI[self.family] for r in self.requests):
+            if all(_dpi(w, h, r.size, r.layout) >= TARGET_DPI[self.family] for r in self.requests):
                 return name
         return "4K"
 
 
-def _dpi(w: float, h: float, size: str) -> float:
+def _dpi(w: float, h: float, size: str, layout: str | None = None) -> float:
     def on(paper: str) -> float:
         geo = page_geometry(paper, print_edition=False)
         if size == "icon":
             return 25.4 / min(ICON_MM / w, ICON_MM / h)
+        if size == "plate" and layout in PLATE_BOX:
+            box_w, box_h = PLATE_BOX[layout](geo)
+            return 25.4 / min(box_w / w, box_h / h)
         box_w = geo.w if size == "plate" else geo.content_w * (0.6 if size == "small" else 1)
         return 25.4 / min(box_w / w, getattr(geo, size) / h)
 
     return min(on(paper) for paper in PAPERS)
+
+
+# The page area each plate composition fills (mm), for the resolution; the full bleed is the whole page.
+PLATE_BOX = {"spread": lambda g: (2 * g.w, g.h), "band": lambda g: (g.w, g.h * 0.62),
+             "vignette": lambda g: (g.content_w, g.h * 0.5)}
+LAYOUT_ASPECT = {"spread": "3:2", "band": "4:3", "vignette": "1:1"}
 
 
 def _family(kind: str) -> str:
@@ -74,7 +84,8 @@ def _family(kind: str) -> str:
 def plan_sheets(requests: list[ImageRequest], per_sheet: int = 4) -> list[Sheet]:
     groups: dict[tuple[str, str], list[ImageRequest]] = {}
     for r in requests:
-        groups.setdefault((_family(r.kind), ASPECT.get(r.size, "3:4")), []).append(r)
+        aspect = LAYOUT_ASPECT.get(r.layout or "") or ASPECT.get(r.size, "3:4")
+        groups.setdefault((_family(r.kind), aspect), []).append(r)
     return [Sheet(family, aspect, items[i:i + n])
             for (family, aspect), items in groups.items()
             for n in [ICONS_PER_SHEET if family == "icon" else per_sheet] for i in range(0, len(items), n)]

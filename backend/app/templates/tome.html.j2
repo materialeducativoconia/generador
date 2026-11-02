@@ -311,6 +311,31 @@
   .plate .pq .pqf { margin: 2.5mm 0 0; padding: 0 0 0 4mm; font-size: {{ 9 if geo.w < 180 else 10 }}pt; line-height: 1.35; }
   .plate .pq .pqf li::marker { color: var(--accent); }
   .plate .pf b { font-family: {{ head|safe }}; color: var(--accent); margin-right: 1.5mm; }
+  /* Band: the picture above, the text on a calm band of the theme's tint below; nothing lies over the art. */
+  .plate.band > img { height: 62%; }
+  .plate .pband { position: absolute; left: 0; right: 0; bottom: 0; height: 38%; padding: 7mm 10mm 8mm; box-sizing: border-box;
+                  background: var(--soft); display: flex; gap: 7mm; }
+  .plate.band .pbq { flex: 1.15; }
+  .plate.band .pbq .k, .plate.vignette .pvh .k { font: 800 7.5pt {{ head|safe }}; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 1.5mm; }
+  .plate.band h3, .plate.vignette h3 { font: {{ th.head_weight }} {{ 19 if geo.w < 180 else 24 }}pt/1.08 {{ head|safe }}; margin: 0; color: var(--ink); }
+  .plate.band .pbq p, .plate.vignette .pvh p { margin: 2.5mm 0 0; font-size: {{ 10.5 if geo.w < 180 else 12 }}pt; line-height: 1.4; }
+  .plate .pbn, .plate .pvn { flex: 1; margin: 0; padding: 0; list-style: none; font: 600 {{ 8.5 if geo.w < 180 else 9.5 }}pt/1.32 {{ body|safe }}; }
+  .plate .pbn li, .plate .pvn li { padding: 0 0 2.2mm 3.5mm; border-left: 1.2mm solid var(--accent); margin-bottom: 2.4mm; }
+  .plate.band .pf { box-shadow: none; bottom: 5mm; background: transparent; padding: 0 10mm; left: 0; right: 0; }
+  /* Vignette: an encyclopedia page, the cut-out picture on white with the question above and the facts below. */
+  .plate.vignette { background: #fff; padding: 12mm 14mm 0; box-sizing: border-box; }
+  .plate.vignette .pvi { display: block; position: static; width: auto; max-width: 100%; height: {{ (geo.h * 0.56)|round(1) }}mm;
+                         margin: 5mm auto 4mm; object-fit: contain; }
+  .plate.vignette .pvn { column-count: 2; column-gap: 7mm; font-size: {{ 9.5 if geo.w < 180 else 11 }}pt; }
+  .plate.vignette .pvn li { break-inside: avoid; }
+  .plate.vignette .pf { box-shadow: none; border: .4mm solid var(--line); }
+  /* Spread: one wide picture across two pages; the question on the left page, the facts on the right one. */
+  .plate.spread > img { width: 200%; max-width: none; }
+  .plate.spread.sr > img { left: -100%; }
+  .plate .pn.s1 { right: 5mm; top: 27%; }
+  .plate .pn.s2 { right: 5mm; top: 50%; }
+  .plate .pn.s3 { left: 5mm; top: 58%; }
+  .plate.spread .pq { right: 30%; }
   {% if tome.mono %}
   /* Black and white for a home printer: the coloured boxes become light greys, their titles dark grey. */
   .callout.tip, .callout.warning, .callout.fun_fact { background: #f4f4f4; }
@@ -432,17 +457,51 @@
         {% for c, _ in letter_grid_cells(b) %}<span>{{ c }}</span>{% endfor %}
       </div>
     {% elif b.type == "image" and b.size == "plate" %}
+      {% set lay = b.layout or "bleed" %}
+      {% set uri = tome.image_uri(b.asset_id) %}
+      {% set placed, carded = plate_notes(b, tome.busy.get(b.asset_id), lay) %}
+      {% set kicker %}{% if loop.first %}<div class="k">{{ s.position }} · {{ s.title }}</div>{% endif %}{% endset %}
+      {% set find %}{% if b.find %}<div class="pf"><b>Observa y encuentra:</b>{{ b.find|inline }}</div>{% endif %}{% endset %}
+      {% if lay == "band" %}
+      <div class="plate band" data-block="{{ s.position ~ ':' ~ b.id }}">
+        {% if uri %}<img src="{{ uri }}" alt="{{ b.subject }}">{% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
+        <div class="pband">
+          <div class="pbq">{{ kicker }}<h3>{{ (b.question or b.caption or s.title)|inline }}</h3>{% if b.answer %}<p>{{ b.answer|inline }}</p>{% endif %}</div>
+          {% if b.notes %}<ul class="pbn">{% for n in b.notes %}<li>{{ n|inline }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+        {{ find }}
+      </div>
+      {% elif lay == "vignette" %}
+      <div class="plate vignette" data-block="{{ s.position ~ ':' ~ b.id }}">
+        <div class="pvh">{{ kicker }}<h3>{{ (b.question or b.caption or s.title)|inline }}</h3>{% if b.answer %}<p>{{ b.answer|inline }}</p>{% endif %}</div>
+        {% if uri %}<img class="pvi" src="{{ uri }}" alt="{{ b.subject }}">{% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
+        {% if b.notes %}<ul class="pvn">{% for n in b.notes %}<li>{{ n|inline }}</li>{% endfor %}</ul>{% endif %}
+        {{ find }}
+      </div>
+      {% elif lay == "spread" %}
+      <div class="plate spread sl" data-block="{{ s.position ~ ':' ~ b.id }}">
+        {% if uri %}<img src="{{ uri }}" alt="{{ b.subject }}">{% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
+        <div class="pq">{{ kicker }}<h3>{{ (b.question or b.caption or s.title)|inline }}</h3>{% if b.answer %}<p>{{ b.answer|inline }}</p>{% endif %}
+          {% if carded %}<ul class="pqf">{% for n in carded %}<li>{{ n|inline }}</li>{% endfor %}</ul>{% endif %}</div>
+        {% for spot, n in placed if spot == "s3" %}<div class="pn {{ spot }}">{{ n|inline }}</div>{% endfor %}
+      </div>
+      <div class="plate spread sr">
+        {% if uri %}<img src="{{ uri }}" alt="">{% endif %}
+        {% for spot, n in placed if spot != "s3" %}<div class="pn {{ spot }}">{{ n|inline }}</div>{% endfor %}
+        {{ find }}
+      </div>
+      {% else %}
       <div class="plate" data-block="{{ s.position ~ ':' ~ b.id }}">
-        {% if tome.image_uri(b.asset_id) %}<img src="{{ tome.image_uri(b.asset_id) }}" alt="{{ b.subject }}">
+        {% if uri %}<img src="{{ uri }}" alt="{{ b.subject }}">
         {% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
-        <div class="pq">{% if loop.first %}<div class="k">{{ s.position }} · {{ s.title }}</div>{% endif %}
-          {% set placed, carded = plate_notes(b, tome.busy.get(b.asset_id)) %}
+        <div class="pq">{{ kicker }}
           <h3>{{ (b.question or b.caption or s.title)|inline }}</h3>{% if b.answer %}<p>{{ b.answer|inline }}</p>{% endif %}
           {% if carded %}<ul class="pqf">{% for n in carded %}<li>{{ n|inline }}</li>{% endfor %}</ul>{% endif %}</div>
         {% for spot, n in placed %}<div class="pn {{ spot }}">{{ n|inline }}</div>{% endfor %}
         {% if b.inset %}<div class="pi{% if b.find %} above{% endif %}">{{ render_diagram(b.inset, c, th.head) }}{% if b.inset.caption %}<div class="pic">{{ b.inset.caption|inline }}</div>{% endif %}</div>{% endif %}
-        {% if b.find %}<div class="pf"><b>Observa y encuentra:</b>{{ b.find|inline }}</div>{% endif %}
+        {{ find }}
       </div>
+      {% endif %}
     {% elif b.type == "image" and tome.image_uri(b.asset_id) %}
       {% set key = s.position ~ ":" ~ b.id %}
       <div class="figure {{ b.size }} {{ b.kind }}" data-block="{{ key }}"{% if loop.first or loop.previtem.type == "page_break" %} data-free="1"{% endif %}><img src="{{ tome.image_uri(b.asset_id) }}" alt="{{ b.subject }}"{% if key in fit %} style="height: {{ fit[key] }}mm"{% endif %}></div>

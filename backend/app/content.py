@@ -112,6 +112,8 @@ class Image(_Block):
     caption: Short | None = None
     size: Literal["full", "half", "small", "plate"] = "half"
     asset_id: str | None = None
+    # A plate's composition, set by the Layout designer (app.layout) before it is painted; None prints as "bleed".
+    layout: Literal["bleed", "band", "vignette", "spread"] | None = None
     # A plate (picture book) is the whole page: the picture to the edges, the question, a short answer, up to four
     # stickers with facts and an "Observa y encuentra" prompt laid over it.
     question: Short | None = None

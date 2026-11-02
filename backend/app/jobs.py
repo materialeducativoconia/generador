@@ -27,6 +27,7 @@ from app.llm import LLM, UpstreamAuthError, UpstreamError
 from app.artwork import ImageRequest, plan_sheets, sheet_prompt, slice_sheet
 from app.house_styles import BY_KEY, STYLE_NOTE, finish, style_references
 from app.house_styles import apply as apply_house_style
+from app.layout import COMPOSE, lay_out
 from app.illustrator import (ASPECT, cover_jpeg, line_art_coverage, normalize_subject, prepare_image, reference_image,
                              upscale, vectorize)
 from app.references import find_covers
@@ -311,6 +312,10 @@ async def _lesson(deps: Deps, job: dict) -> None:
             edit_attempts = edited.attempts
     if result.notes:  # words with letters the child has not learnt yet, after the Writer's second try
         review = {"score": None, "issues": [], "fixed": 0, **(review or {}), "letters": result.notes[:20]}
+    if outline.genre == "picture_book":  # the Layout designer: each plate's composition, before it is painted
+        design = _json(series["design"]) or {}
+        lay_out(content, position=position, pages=outline.sections[position - 1].pages,
+                house_style=design.get("house_style"))
     async with deps.engine.begin() as conn:
         await _lock_series(conn, job)
         await _insert_logs(conn, job, "writer", result.attempts)
@@ -501,9 +506,9 @@ def _picture_requests(lessons) -> list[ImageRequest]:
             if b.get("type") == "image" and not b.get("asset_id"):
                 # A plate with an exact diagram keeps its lower third calm: the inset card sits there.
                 subject = b["subject"] + (" (keep the lower third of the picture calm: a diagram card goes there)"
-                                          if b.get("inset") else "")
+                                          if b.get("inset") else "") + COMPOSE.get(b.get("layout") or "", "")
                 images.append(ImageRequest(ref=ref, lesson_id=lesson["id"], block_id=b["id"], kind=b["kind"],
-                                           size=b.get("size", "half"), subject=subject))
+                                           size=b.get("size", "half"), subject=subject, layout=b.get("layout")))
             elif b.get("type") in PICTURED:
                 field, attr = PICTURED[b["type"]]
                 words = [i if attr is None else i.get(attr) for i in b.get(field) or []]

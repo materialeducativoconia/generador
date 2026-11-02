@@ -237,14 +237,20 @@ def age_badge(audience: str) -> str:
 
 # A plate's fact cards and the grid cells (columns A-C, rows 1-4) each spot covers; the question sits in row 1.
 NOTE_SPOTS = {"n1": ("A2",), "n2": ("C2",), "n3": ("A3",), "n4": ("C3",)}
+# On a spread the grid spans both pages: the right page's outer edge is column C, the left page's is column A.
+SPREAD_SPOTS = {"s1": ("C2",), "s2": ("C3",), "s3": ("A3",)}
 
 
-def plate_notes(block, busy: list[str] | None) -> tuple[list[tuple[str, str]], list[str]]:
+def plate_notes(block, busy: list[str] | None, layout: str = "bleed") -> tuple[list[tuple[str, str]], list[str]]:
     """Where each fact goes: (spot, text) on a calm part of the picture, the rest in the question card. Without the
-    inspector's map the spots keep their order; an inset diagram takes the lower spots."""
-    spots = ["n1", "n2"] if block.inset else list(NOTE_SPOTS)
+    inspector's map the spots keep their order; an inset diagram takes the lower spots. Band and vignette plates
+    list their facts beside the picture, never over it."""
+    if layout in ("band", "vignette"):
+        return [], []
+    table = SPREAD_SPOTS if layout == "spread" else NOTE_SPOTS
+    spots = ["n1", "n2"] if block.inset and layout != "spread" else list(table)
     if busy is not None:
-        spots = [s for s in spots if not set(NOTE_SPOTS[s]) & set(busy)]
+        spots = [s for s in spots if not set(table[s]) & set(busy)]
     placed = list(zip(spots, block.notes))
     return placed, list(block.notes[len(placed):])
 
