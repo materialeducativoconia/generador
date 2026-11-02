@@ -118,6 +118,9 @@ class Image(_Block):
     answer: Annotated[str, Field(max_length=500)] | None = None
     notes: list[Annotated[str, Field(min_length=1, max_length=140)]] = Field(default_factory=list, max_length=4)
     find: Short | None = None
+    # A plate's exact fact drawn by code over the picture (planet order, moon phases, a cycle): the painting sets
+    # the scene, the inset carries what must be right.
+    inset: "Inset | None" = None
 
 
 # Diagrams drawn exactly by code (app.diagrams): free, instant, real text, never a garbled picture.
@@ -220,7 +223,46 @@ class Clock(_Block):
     caption: Short | None = None
 
 
-DIAGRAM_TYPES = ("staff", "timeline", "cycle", "bar_chart", "number_line", "fraction", "clock")
+Hex = Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")]
+
+
+class SizeItem(BaseModel):
+    label: Annotated[str, Field(min_length=1, max_length=30)]
+    size: Annotated[float, Field(gt=0)]  # relative to the others: diameter, height or length
+    color: Hex | None = None
+
+
+class Sizes(_Block):
+    """Things side by side in their real order and to scale (the planets from the Sun, dinosaurs by length):
+    the exact fact a painted picture gets wrong."""
+
+    type: Literal["sizes"]
+    items: list[SizeItem] = Field(min_length=2, max_length=10)
+    shape: Literal["circle", "bar"] = "circle"  # circle: planets, fruit; bar: heights and lengths
+    unit: Annotated[str, Field(max_length=30)] | None = None  # shown under each label when given
+    caption: Short | None = None
+
+
+class Phase(BaseModel):
+    label: Annotated[str, Field(min_length=1, max_length=30)]
+    lit: Annotated[float, Field(ge=0, le=1)]  # 0 new moon, 0.5 a half, 1 full
+    waxing: bool = True  # lit on the right (northern hemisphere) while it grows
+
+
+class Phases(_Block):
+    """The Moon's phases (or any lit sphere) drawn exactly, in order."""
+
+    type: Literal["phases"]
+    phases: list[Phase] = Field(min_length=2, max_length=8)
+    caption: Short | None = None
+
+
+Inset = Annotated[Timeline | Cycle | BarChart | NumberLine | Fraction | Clock | Sizes | Phases,
+                  Field(discriminator="type")]
+
+Image.model_rebuild()
+
+DIAGRAM_TYPES = ("staff", "timeline", "cycle", "bar_chart", "number_line", "fraction", "clock", "sizes", "phases")
 
 
 # Literacy worksheets drawn by code (app.worksheets). The Writer picks letters, words and sentences; the code
@@ -413,7 +455,7 @@ class PageBreak(_Block):
 Block = Annotated[
     Heading | Paragraph | ListBlock | Callout | Table | Example | Activity | Exercise
     | Keyboard | Tracing | LetterGrid | Image | WritingLines | PageBreak
-    | Staff | Timeline | Cycle | BarChart | NumberLine | Fraction | Clock
+    | Staff | Timeline | Cycle | BarChart | NumberLine | Fraction | Clock | Sizes | Phases
     | SyllableChart | PictureWords | SyllableCards | Reading | Dictation | FillSentences | WordSearch | Classify
     | DrawFrames | Counting | PictureMath,
     Field(discriminator="type"),
@@ -463,7 +505,6 @@ class CoverPlan(BaseModel):
     palette: list[Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")]] = Field(min_length=3, max_length=3)
 
 
-Hex = Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")]
 
 
 Ornament = Literal["estrellas", "notas", "hojas", "puntos", "formas", "ninguno"]

@@ -30,6 +30,13 @@ export function TomePage() {
           <p className="eyebrow">{s.genre ? GENRE_LABEL[s.genre] : 'Nuevo tomo'} · {s.audience.label}</p>
           <h1 className="display sm">{s.title ?? s.topic}</h1>
           <StatusPill status={status} />
+          {s.cast?.length ? (
+            <ul className="cast-row" aria-label="Personajes del tomo">
+              {s.cast.map((c) => (
+                <li key={c.name}>{c.sheet_url && <img src={c.sheet_url} alt="" />}<span><strong>{c.name}</strong>{c.archetype}</span></li>
+              ))}
+            </ul>
+          ) : null}
           <DeleteTome id={s.id} title={s.title ?? s.topic} />
         </div>
         {s.title && <CoverPanel series={s} />}

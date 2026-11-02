@@ -105,7 +105,8 @@ def icon_sheet_prompt(sheet: Sheet, feedback: str | None = None) -> str:
     return prompt
 
 
-def sheet_prompt(sheet: Sheet, plan: ArtPlan, design: Design | None, feedback: str | None = None) -> str:
+def sheet_prompt(sheet: Sheet, plan: ArtPlan, design: Design | None, feedback: str | None = None,
+                 sheets: int = 0) -> str:
     if sheet.family == "icon":
         return icon_sheet_prompt(sheet, feedback)
     slots = _slots(sheet.cols)
@@ -126,7 +127,8 @@ def sheet_prompt(sheet: Sheet, plan: ArtPlan, design: Design | None, feedback: s
               "same characters.")
     prompt = (f"{layout} Art style: {plan.style}. {medium} "
               f"{('Recurring characters, drawn identically everywhere: ' + cast + '.') if cast else ''} "
-              f"The attached image is this book's cover: match its style and characters. "
+              f"The first attached image is this book's cover: match its style. "
+              f"{'The other attached images are the model sheets of the recurring characters: draw each exactly as on its sheet (face, hair, outfit, colours, proportions, signature detail), in this book art style. ' if sheets > 0 else 'Match the cover characters. '}"
               f"{' '.join(p + '.' for p in panels)} {NO_TEXT}")
     if feedback:
         prompt += f" Fix these problems from the previous attempt: {feedback}"

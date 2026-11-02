@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 const NAV: [string, string, ReactNode][] = [
   ['/app', 'Biblioteca', <path key="i" d="M4 5h4v14H4zM10 5h4v14h-4zM16.5 5.5l3.5 1-3 12.5-3.5-1z" />],
   ['/app/identidades', 'Identidades', <path key="i" d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z" />],
+  ['/app/personajes', 'Personajes', <path key="i" d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c.8-3.5 3.2-5.5 6-5.5s5.2 2 6 5.5M16 4.5a3 3 0 0 1 0 6M18 14.5c1.6.6 2.6 2.4 3 5.5" />],
   ['/app/estilos', 'Estilos', <path key="i" d="M12 3a9 9 0 1 0 0 18c1 0 1.5-.7 1.5-1.5 0-1.2-1-1.5-1-2.5s.8-1.5 2-1.5h2A4.5 4.5 0 0 0 21 11c0-4.4-4-8-9-8zM7.5 12h.01M10 8h.01M15 8h.01" />],
   ['/app/plan', 'Plan y créditos', <path key="i" d="M3 7h18v12H3zM3 11h18M7 15h3" />],
   ['/app/perfil', 'Perfil', <path key="i" d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" />],

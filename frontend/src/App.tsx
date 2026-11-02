@@ -7,6 +7,7 @@ import { queryClient } from './lib/queries'
 import { AuthCallback } from './routes/AuthCallback'
 import { SectionPage } from './routes/SectionPage'
 import { Studio } from './routes/Studio'
+import { Characters } from './routes/Characters'
 import { Styles } from './routes/Styles'
 import { Identities } from './routes/Identities'
 import { Plan } from './routes/Plan'
@@ -32,6 +33,7 @@ export default function App() {
             <Route path="/app/tomos/:id" element={authed(<TomePage />)} />
             <Route path="/app/secciones/:id" element={authed(<SectionPage />)} />
             <Route path="/app/estilos" element={authed(<Styles />)} />
+            <Route path="/app/personajes" element={authed(<Characters />)} />
             <Route path="/app/identidades" element={authed(<Identities />)} />
             <Route path="/app/plan" element={authed(<Plan />)} />
             <Route path="/app/perfil" element={authed(<Profile />)} />

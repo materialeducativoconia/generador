@@ -18,7 +18,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@5", "writer": "writer@7", "editor": "editor@1", "cover": "cover@3", "designer": "designer@3", "art": "art@3", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1"}
+PROMPT_VERSION = {"architect": "architect@5", "writer": "writer@8", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@4", "casting": "casting@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1"}
 
 
 @dataclass
@@ -156,8 +156,17 @@ Catálogo de bloques (usa solo estos "type"):
   frases sencillas, máximo 45 palabras), de 2 a 4 notes (datos curiosos de máximo 15 palabras, cada uno sobre
   algo que se ve en la escena) y find (reto «Observa y encuentra»: algo que el niño debe buscar en la escena).
   subject describe una escena rica y detallada que muestra la respuesta, con el sujeto principal al centro.
+  inset? (opcional): un diagrama exacto que el código dibuja sobre la lámina, en un recuadro abajo. Úsalo cuando
+  la respuesta depende de un dato que una pintura suele equivocar: orden o tamaño (sizes), fases (phases), un
+  ciclo o proceso (cycle), fechas (timeline), cantidades (bar_chart). Lleva su propio id. Con inset, el subject
+  describe la escena y los personajes, no el dato exacto (nada de «los ocho planetas en orden»).
+- sizes {items: [{label, size, color?}], shape: circle|bar, unit?, caption?}  ← cosas en su orden real y a
+  escala (size = diámetro, altura o largo reales, en la misma unidad; color hex opcional): planetas desde el Sol,
+  dinosaurios por largo, animales por altura. Datos reales, no inventados.
+- phases {phases: [{label, lit (0 a 1), waxing}], caption?}  ← fases de la Luna en orden: lit 0 nueva,
+  0.5 cuarto, 1 llena; waxing true mientras crece.
 
-Diagramas: los bloques staff, timeline, cycle, bar_chart, number_line, fraction, clock, keyboard, tracing y
+Diagramas: los bloques staff, timeline, cycle, bar_chart, number_line, fraction, clock, sizes, phases, keyboard, tracing y
 letter_grid los dibuja el código: son exactos, con texto real y gratis. Úsalos siempre que sirvan y nunca pidas
 una image para un pentagrama, una línea de tiempo, un ciclo, una gráfica, una recta, fracciones o un reloj.
 Las image nunca llevan texto ni rótulos: reserva image diagram para lo que esos bloques no cubren.
@@ -200,7 +209,8 @@ Reglas según el género:
   responde una pregunta que un niño curioso haría sobre el tema de la sección, de lo más simple a lo más
   asombroso. Si la sección tiene 3 páginas o más, la última es un «¡Pon a prueba lo que sabes!»: un heading,
   de 3 a 5 exercise (multiple_choice o true_false, con answer) y un draw_frames, precedido de un page_break.
-  Para niños de preescolar las respuestas son de 1 o 2 frases muy cortas.
+  Para niños de preescolar las respuestas son de 1 o 2 frases muy cortas. Si la lámina lleva inset, usa como
+  máximo 2 notes.
 - coloring_book: un heading con el título y un image line_art size "full" por página; texto mínimo.
 - worksheets: cada ficha empieza con heading "Ficha N"; instrucciones cortas para niños; usa tracing,
   letter_grid, image line_art, writing_lines y exercise; separa fichas con page_break.
@@ -395,7 +405,7 @@ Reglas del illustration_prompt:
 
 
 async def cover_director(llm: LLM, brief: Brief, title: str, genre: str, sections: list[str],
-                         design: Design | None = None) -> AgentResult[CoverPlan]:
+                         design: Design | None = None, cast: list[dict] | None = None) -> AgentResult[CoverPlan]:
     style = (f"\nMaqueta interior elegida: tema {design.theme}, adorno {design.ornament}. Usa exactamente esta "
              f"paleta: {', '.join(design.palette)}") if design else ""
     if design and design.art_style:
@@ -405,6 +415,9 @@ async def cover_director(llm: LLM, brief: Brief, title: str, genre: str, section
     if design and design.brand and design.brand.mascot:
         m = design.brand.mascot
         style += f"\nLa mascota de la línea editorial protagoniza la portada: {m.name}: {m.look}"
+    if cast:
+        style += ("\nPersonajes del tomo (protagonizan la portada tal como son; nómbralos en el illustration_prompt "
+                  "y no inventes otros protagonistas): " + "; ".join(f"{c['name']}: {c['look']}" for c in cast))
     messages = [
         {"role": "system", "content": COVER_SYSTEM},
         {"role": "user", "content": f"Título del tomo: {title}\nTipo: {genre}\n{brief.describe()}\n"
@@ -566,7 +579,7 @@ Reglas:
 
 
 async def art_director(llm: LLM, brief: Brief, title: str, design: Design | None, cover_concept: str | None,
-                       requests: list) -> AgentResult[ArtPlan]:
+                       requests: list, cast: list[dict] | None = None) -> AgentResult[ArtPlan]:
     lines = [f"- {r.ref} | {r.kind} | {r.size} | {r.subject}" for r in requests]
     look = f"Tema {design.theme}, paleta {', '.join(design.palette)}" if design else "Tema clásico"
     if design and design.art_style:
@@ -574,12 +587,20 @@ async def art_director(llm: LLM, brief: Brief, title: str, design: Design | None
     if design and design.brand and design.brand.mascot:
         m = design.brand.mascot
         look += f"\nMascota de la línea editorial (personaje fijo, úsalo con este nombre): {m.name}: {m.look}"
+    if cast:
+        look += ("\nElenco fijo del tomo (ya diseñado, con hoja de modelo; úsalo con estos nombres y no inventes otros "
+                 "protagonistas): " + "; ".join(f"{c['name']} ({c['role']}): {c['look']}" for c in cast))
     messages = [
         {"role": "system", "content": ART_SYSTEM},
         {"role": "user", "content": f"Título: {title}\n{brief.describe()}\n{look}\n"
                                     f"Portada: {cover_concept or '(sin portada)'}\nImágenes:\n" + "\n".join(lines)},
     ]
     result = await _json_call(llm, messages, ArtPlan, temperature=0.8, max_tokens=4000)
+    if cast:  # the cast's looks are fixed: the model only adds secondary characters
+        fixed = [Character(name=c["name"], look=(c["look"] + (f" Always: {c['signature']}." if c.get("signature") else ""))[:300])
+                 for c in cast]
+        names = {c.name.lower() for c in fixed}
+        result.value.characters = [*fixed, *(c for c in result.value.characters if c.name.lower() not in names)][:4]
     mascot = design.brand.mascot if design and design.brand else None
     if mascot and not any(c.name.lower() == mascot.name.lower() for c in result.value.characters):
         result.value.characters = [Character(name=mascot.name, look=mascot.look), *result.value.characters][:4]

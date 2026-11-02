@@ -1,4 +1,5 @@
-"""Diagrams drawn by code (no AI): staff, timeline, cycle, bar chart, number line, fractions, clock.
+"""Diagrams drawn by code (no AI): staff, timeline, cycle, bar chart, number line, fractions, clock, sizes to scale
+and phases.
 
 Each renderer returns one inline <svg> in the tome's colours and heading font. The same markup prints in
 the PDF and shows in the web preview, so the two never drift. WeasyPrint rules: sizes in px, no `opacity`
@@ -18,7 +19,8 @@ BEATS = {"whole": 4, "half": 2, "quarter": 1, "eighth": 0.5}
 
 def render_diagram(block, c: dict, font: str) -> Markup:
     draw = {"staff": staff, "timeline": timeline, "cycle": cycle, "bar_chart": bar_chart,
-            "number_line": number_line, "fraction": fraction, "clock": clock}[block.type]
+            "number_line": number_line, "fraction": fraction, "clock": clock, "sizes": sizes,
+            "phases": phases}[block.type]
     return Markup(draw(block, c, f"'{font}', Nunito, {MUSIC}, sans-serif"))
 
 
@@ -377,3 +379,75 @@ def clock(b, c, font) -> str:
         if b.show_time:
             body.append(_text(cx, cy + r + 32, f"{hh}:{mm:02d}", font, size=18, fill=c["ink"], weight=800))
     return _svg("clock", cell * len(b.times), h, body)
+
+
+def sizes(b, c, font) -> str:
+    """Items in their order and to scale: circles share one baseline (planets), bars stand on one floor (heights).
+    Something too small to see at that scale keeps a 2 px dot, so it is never left out."""
+    n = len(b.items)
+    biggest = max(i.size for i in b.items)
+    colors = [c["accent"], c["pop1"], c["pop2"]]
+    label_h = 40 if b.unit else 26
+    if b.shape == "circle":
+        # Each item gets room for its label; the biggest circle shrinks until the row fits the page.
+        max_d, room = 160.0, 76.0
+        while True:
+            ds = [max(4.0, max_d * i.size / biggest) for i in b.items]
+            slots = [max(d + 12, room) for d in ds]
+            if sum(slots) <= 700 or max_d < 60:
+                break
+            max_d *= 0.92
+        w, h = sum(slots), max_d + 16 + label_h
+        base = max_d + 8
+        body, x = [], 0.0
+        for k, (item, d, slot_w) in enumerate(zip(b.items, ds, slots)):
+            cx = x + slot_w / 2
+            body.append(f'<circle cx="{cx:.1f}" cy="{base - d / 2:.1f}" r="{d / 2:.1f}" '
+                        f'fill="{item.color or colors[k % 3]}" stroke="{c["ink"]}" stroke-width="1"/>')
+            body.append(_text(cx, base + 18, item.label, font, size=12, fill=c["ink"]))
+            if b.unit:
+                body.append(_text(cx, base + 33, f"{item.size:g} {b.unit}", font, size=10.5, fill=c["muted"], weight=500))
+            x += slot_w
+        return _svg("sizes", w, h, body)
+    plot_h, slot = 180.0, min(84.0, 620 / n)
+    w, h = slot * n + 16, plot_h + 14 + label_h
+    base = plot_h + 6
+    body = [f'<line x1="4" x2="{w - 4}" y1="{base}" y2="{base}" stroke="{c["line"]}" stroke-width="2"/>']
+    for k, item in enumerate(b.items):
+        bh = max(2.0, plot_h * item.size / biggest)
+        x = 8 + slot * k + slot * 0.18
+        body.append(f'<rect x="{x:.1f}" y="{base - bh:.1f}" width="{slot * 0.64:.1f}" height="{bh:.1f}" rx="6" '
+                    f'fill="{item.color or colors[k % 3]}"/>')
+        body.append(_text(x + slot * 0.32, base + 18, item.label, font, size=12, fill=c["ink"]))
+        if b.unit:
+            body.append(_text(x + slot * 0.32, base + 33, f"{item.size:g} {b.unit}", font, size=10.5, fill=c["muted"],
+                              weight=500))
+    return _svg("sizes", w, h, body)
+
+
+def _lit_path(cx: float, cy: float, r: float, lit: float, waxing: bool) -> str:
+    """The lit part of a sphere seen from the side: a half disc plus or minus an ellipse (the terminator)."""
+    if lit <= 0.001:
+        return ""
+    if lit >= 0.999:
+        return f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}" fill="#FFF6C8"/>'
+    side = 1 if waxing else 0  # waxing: lit on the right
+    ex = abs(1 - 2 * lit) * r  # the terminator's half width
+    sweep_t = 1 if (lit > 0.5) == waxing else 0
+    top, bottom = f"{cx:.1f} {cy - r:.1f}", f"{cx:.1f} {cy + r:.1f}"
+    return (f'<path d="M{top} A{r:.1f} {r:.1f} 0 0 {side} {bottom} A{ex:.1f} {r:.1f} 0 0 {sweep_t} {top} Z" '
+            f'fill="#FFF6C8"/>')
+
+
+def phases(b, c, font) -> str:
+    cell, r = 112, 40
+    n = len(b.phases)
+    w, h = cell * n, 2 * r + 46
+    body = []
+    for k, p in enumerate(b.phases):
+        cx, cy = cell * k + cell / 2, r + 6
+        body.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r}" fill="#2B2D42" stroke="{c["ink"]}" stroke-width="1.5"/>')
+        body.append(_lit_path(cx, cy, r, p.lit, p.waxing))
+        body.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r}" fill="none" stroke="{c["ink"]}" stroke-width="1.5"/>')
+        body.append(_lines(cx, cy + r + 20, _wrap(p.label, 14, 2), font, size=12, fill=c["ink"]))
+    return _svg("phases", w, h, body)

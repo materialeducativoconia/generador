@@ -17,9 +17,10 @@ export function Inline({ text }: { text: string }) {
 }
 
 function ImageBlock({ block }: { block: Extract<Block, { type: 'image' }> }) {
-  const { urls, credits, painting } = useContext(AssetsContext)
+  const { urls, credits, painting, diagrams } = useContext(AssetsContext)
   const url = block.asset_id ? urls[block.asset_id] : undefined
   if (block.size === 'plate') {
+    const inset = diagrams[`${block.id}:inset`]
     return (
       <figure className={`plate${url ? '' : ' empty'}${painting && !url ? ' painting' : ''}`}>
         {url ? <img src={url} alt={block.subject} loading="lazy" /> : <span className="plate-ph">{painting ? 'Ilustrando…' : block.subject}</span>}
@@ -27,7 +28,9 @@ function ImageBlock({ block }: { block: Extract<Block, { type: 'image' }> }) {
           <strong><Inline text={block.question ?? block.subject} /></strong>
           {block.answer && <p><Inline text={block.answer} /></p>}
         </div>
-        {block.notes?.map((n, i) => <span key={i} className={`pn n${i + 1}`}><Inline text={n} /></span>)}
+        {block.notes?.map((n, i) => <span key={i} className={`pn n${i + 1}${inset ? ' up' : ''}`}><Inline text={n} /></span>)}
+        {/* Static SVG drawn by our code (app.diagrams), never model markup. */}
+        {inset && <div className={`pi${block.find ? ' above' : ''}`} dangerouslySetInnerHTML={{ __html: inset }} />}
         {block.find && <div className="pf"><b>Observa y encuentra:</b> <Inline text={block.find} /></div>}
       </figure>
     )

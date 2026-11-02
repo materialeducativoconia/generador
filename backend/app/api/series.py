@@ -595,6 +595,12 @@ def _with_cover(out: dict, request: Request) -> dict:
     storage = request.app.state.storage
     out["cover_url"] = storage.public_url(key) if key and storage else None
     out["cover_palette"] = cover.get("palette")
+    cast = out.get("cast")
+    if isinstance(cast, str):
+        cast = json.loads(cast)
+    out["cast"] = [{"name": c["name"], "role": c.get("role"), "archetype": c.get("archetype"),
+                    "sheet_url": storage.public_url(c["sheet_key"], bucket="images") if c.get("sheet_key") and storage
+                    else None} for c in cast or []]
     return out
 
 
@@ -711,7 +717,7 @@ def _diagrams(lesson: dict, series, urls: dict[str, str]) -> dict[str, str]:
     """Block id -> the same SVG the PDF prints, drawn in the tome's theme, so the preview never drifts.
     Worksheets point at their word pictures by public URL instead of the PDF's embedded copies."""
     blocks = [b for b in ((lesson.get("content_json") or {}).get("blocks") or [])
-              if b.get("type") in DIAGRAM_TYPES + WORKSHEET_TYPES]
+              if b.get("type") in DIAGRAM_TYPES + WORKSHEET_TYPES or (b.get("type") == "image" and b.get("inset"))]
     if not blocks:
         return {}
     from app.render import theme_colors  # render pulls in Jinja; only pay for it when there is a diagram
@@ -722,6 +728,9 @@ def _diagrams(lesson: dict, series, urls: dict[str, str]) -> dict[str, str]:
     for b in blocks:
         try:
             block = _block.validate_python(b)
+            if block.type == "image":  # a plate's inset, keyed "<block id>:inset"
+                out[f"{b['id']}:inset"] = str(render_diagram(block.inset, colors, th.head))
+                continue
             draw = render_worksheet(block, colors, th.head, urls.get) if b["type"] in WORKSHEET_TYPES else \
                 render_diagram(block, colors, th.head)
             out[b["id"]] = str(draw)

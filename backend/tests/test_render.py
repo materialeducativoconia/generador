@@ -100,3 +100,20 @@ def test_a_picture_book_plate_fills_its_own_page_with_the_question_over_the_pict
     assert 'class="op"' not in html  # the first plate opens the section instead of a header
     assert "¿Por qué flotan?" in html and 'class="pn n1"' in html and "Observa y encuentra" in html
     assert pages == 3  # cover, the plate, the review page: no blank page after the plate
+
+
+def test_a_plate_carries_an_exact_diagram_over_its_picture():
+    from tests.test_covers import PNG
+
+    plate = {"id": "b1", "type": "image", "kind": "illustration", "size": "plate", "subject": "niños mirando la Luna",
+             "asset_id": "a1", "question": "¿Por qué cambia la Luna?", "answer": "El Sol ilumina la mitad que vemos.",
+             "find": "un búho.", "inset": {"id": "i1", "type": "phases", "phases": [
+                 {"label": "Nueva", "lit": 0}, {"label": "Cuarto", "lit": 0.5}, {"label": "Llena", "lit": 1}]}}
+    t = tome(plate, genre="picture_book")
+    t.images = {"a1": (PNG, "image/png")}
+
+    html = render_html(t, paper="17x21", include_answer_key=False)
+    _, pages = render_pdf(t, paper="17x21", include_answer_key=False)
+
+    assert 'class="pi above"' in html and "dg-phases" in html
+    assert pages == 2

@@ -2,7 +2,7 @@ import { QueryClient, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { api, type Me } from './apiClient'
 import { supabase } from './supabase'
-import type { Collection, CoverFields, Identity, Export, Lesson, Preview, Progress, Quality, Series, SeriesSummary, Style } from './types'
+import type { Character, Collection, CoverFields, Identity, Export, Lesson, Preview, Progress, Quality, Series, SeriesSummary, Style } from './types'
 
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, retry: 1, refetchOnWindowFocus: false } },
@@ -58,6 +58,9 @@ export const useBilling = () => useQuery({ queryKey: ['billing'], queryFn: () =>
 type Styles = { styles: Style[]; poll_after_ms: number | null }
 
 /** The style library; polls while a reference is being analysed (~20 s). */
+export const useCharacters = () =>
+  useQuery({ queryKey: ['characters'], queryFn: () => api.get<{ characters: Character[] }>('/api/characters') })
+
 export const useStyles = () =>
   useQuery({
     queryKey: ['styles'],

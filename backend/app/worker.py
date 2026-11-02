@@ -17,6 +17,7 @@ from app.images import OpenRouterImages
 from app.llm import DeepSeek
 from app.research import Web
 from app.vision import OpenRouterVision
+from app.casting import keep_seeded
 from app.showcase import keep_painted
 from app.storage import Storage
 
@@ -68,6 +69,8 @@ async def run(stop: asyncio.Event | None = None) -> None:
     print("worker started", flush=True)
     # The landing's example covers, painted once; a shutdown simply cancels it.
     showcase = asyncio.create_task(keep_painted(deps.images, deps.storage)) if deps.images else None
+    # The starter characters of the shared library, their model sheets painted once.
+    seeding = asyncio.create_task(keep_seeded(engine, deps.images, deps.storage)) if deps.images else None
     last_reap = 0.0
     while not stop.is_set():
         try:
@@ -91,6 +94,8 @@ async def run(stop: asyncio.Event | None = None) -> None:
 
     if showcase:
         showcase.cancel()
+    if seeding:
+        seeding.cancel()
     if running:
         # Jobs still running after the grace period stay `running`; the reaper requeues them.
         await asyncio.wait(running, timeout=SHUTDOWN_GRACE_SECONDS)

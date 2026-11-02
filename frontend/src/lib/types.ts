@@ -12,6 +12,13 @@ export type CoverFields = {
   cover_palette: [string, string, string] | null
 }
 
+/** A recurring guide of the shared library, with its model sheet (turnaround and expressions). */
+export type CastMember = { name: string; role: string | null; archetype: string | null; sheet_url: string | null }
+export type Character = {
+  id: string; name: string; role: 'guide' | 'companion'; archetype: string; personality: string; signature: string
+  palette: string[]; topics: string[]; use_count: number; mine: boolean; shared: boolean; sheet_url: string | null
+}
+
 export type Design = {
   theme: 'juego' | 'cuaderno' | 'editorial' | 'metodo' | 'ciencia' | 'clasico'
   palette: [string, string, string]
@@ -125,6 +132,7 @@ export type Level = {
 
 export type Series = CoverFields & {
   preview: boolean  // the free preview, made at our cost before any plan
+  cast?: CastMember[]  // the recurring characters, each drawn from its model sheet
   collection_id: string | null
   design: Design | null
   assets: Record<string, string>
@@ -200,13 +208,13 @@ export type Block =
   | { id: string; type: 'keyboard'; start: string; octaves: number; highlight: string[]; show_labels: boolean; caption?: string | null }
   | { id: string; type: 'tracing'; text: string; repeat: number; instruction?: string | null }
   | { id: string; type: 'letter_grid'; targets: string[]; distractors: string[]; rows: number; cols: number; instruction?: string | null }
-  | { id: string; type: 'image'; kind: 'line_art' | 'illustration' | 'photo' | 'diagram'; subject: string; caption?: string | null; size: 'full' | 'half' | 'small' | 'plate'; asset_id?: string | null; question?: string | null; answer?: string | null; notes?: string[]; find?: string | null }
+  | { id: string; type: 'image'; kind: 'line_art' | 'illustration' | 'photo' | 'diagram'; subject: string; caption?: string | null; size: 'full' | 'half' | 'small' | 'plate'; asset_id?: string | null; question?: string | null; answer?: string | null; notes?: string[]; find?: string | null; inset?: { id: string; type: string; caption?: string | null } | null }
   | { id: string; type: 'writing_lines'; lines: number; label?: string | null }
   | { id: string; type: 'page_break' }
   | { id: string; type: DiagramType; caption?: string | null }
 
 export const DIAGRAM_TYPES = [
-  'staff', 'timeline', 'cycle', 'bar_chart', 'number_line', 'fraction', 'clock',
+  'staff', 'timeline', 'cycle', 'bar_chart', 'number_line', 'fraction', 'clock', 'sizes', 'phases',
   // literacy worksheets: also drawn by the backend, with their word pictures inside the SVG
   'syllable_chart', 'picture_words', 'syllable_cards', 'reading', 'dictation', 'fill_sentences', 'word_search',
   'classify', 'draw_frames',

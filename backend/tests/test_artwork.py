@@ -139,3 +139,19 @@ def test_a_4x4_sheet_is_cut_into_sixteen_panels():
 
     assert len(panels) == 16
     assert all(130 < Image.open(io.BytesIO(p)).width < 200 for p in panels)  # each trimmed to one drawing
+
+
+async def test_the_tomes_cast_overrides_the_art_directors_characters():
+    reply = {"style": "Soft gouache", "characters": [{"name": "Lía", "look": "a girl in a red dress"},
+                                                     {"name": "Sol", "look": "a smiling sun"}],
+             "prompts": {"1:b2": "Lía looks at the Moon"}}
+    llm = ScriptedLLM(json.dumps(reply))
+    cast = [{"name": "Lía", "role": "guide", "look": "a girl with two puffy pigtails and a mustard vest",
+             "signature": "mustard vest", "sheet_key": "characters/x.jpg"}]
+
+    result = await art_director(llm, Brief(request="la luna", audience="Preescolar"), "La Luna", DESIGN,
+                                None, [req("1:b2", subject="Lía mira la Luna")], cast)
+
+    names = [c.name for c in result.value.characters]
+    assert names == ["Lía", "Sol"] and "mustard vest" in result.value.characters[0].look
+    assert "Elenco fijo" in llm.calls[0][1]["content"]

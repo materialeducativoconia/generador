@@ -392,8 +392,12 @@ async def _cover(deps: Deps, job: dict) -> None:
     free = bool(job["payload"].get("free"))
     if deps.images is None and not free:
         raise JobFailed("not_configured", "Falta OPENROUTER_API_KEY para generar portadas.")
+    from app.casting import cast_line, cast_sheets, cast_tome  # casting imports this module
+
+    # The guide comes before the cover so the cover shows it; a preview only borrows from the library.
+    cast, cast_usd = await cast_tome(deps, job, series, design, brief, paint=not free and not series["preview"])
     try:
-        result = await cover_director(deps.llm, brief, title, genre, list(sections), design)
+        result = await cover_director(deps.llm, brief, title, genre, list(sections), design, cast)
     except AgentFailed as exc:
         await _log_attempts(deps.engine, job, "cover", exc.attempts)
         raise
@@ -403,14 +407,18 @@ async def _cover(deps: Deps, job: dict) -> None:
     if free:
         await _free_cover(deps, job, plan)
         return
-    references = await deps.references(plan.search_queries, limit=4)
+    sheets = await cast_sheets(deps, cast)
+    references = await deps.references(plan.search_queries, limit=4 - len(sheets))
+    who = (f"\nThe first attached image(s) are the model sheets of this book's characters ({cast_line(cast)}): draw "
+           "them on the cover exactly as on their sheets (face, hair, outfit, colours, proportions). The other "
+           "images are only references for quality.") if sheets else ""
     image = await deps.images.generate(
-        f"{plan.illustration_prompt}\n\n{COVER_RULES.format(palette=', '.join(plan.palette))}",
-        references=[r.data for r in references], aspect_ratio="3:4", resolution="4K")  # 300+ dpi on the shelf
+        f"{plan.illustration_prompt}\n\n{COVER_RULES.format(palette=', '.join(plan.palette))}{who}",
+        references=sheets + [r.data for r in references], aspect_ratio="3:4", resolution="4K")  # 300+ dpi
     key = f"{job['user_id']}/{job['series_id']}/{job['id']}.jpg"
     await deps.storage.upload(key, await asyncio.to_thread(cover_jpeg, image.data), "image/jpeg", bucket="covers")
     prior = _json(series["cover"]) or {}  # "Otra portada" adds up: the tome paid for every cover it painted
-    spent = (prior.get("spent_usd") or prior.get("cost_usd") or 0) + (image.cost_usd or 0)
+    spent = (prior.get("spent_usd") or prior.get("cost_usd") or 0) + (image.cost_usd or 0) + cast_usd
     cover = {"concept": plan.concept, "palette": plan.palette, "model": image.model, "cost_usd": image.cost_usd,
              "spent_usd": round(spent, 4),
              "references": [{"title": r.title, "source_url": r.source_url, "image_url": r.image_url}
@@ -462,8 +470,11 @@ def _picture_requests(lessons) -> list[ImageRequest]:
         for b in (_json(lesson["content_json"]) or {}).get("blocks", []):
             ref = f"{lesson['position']}:{b['id']}"
             if b.get("type") == "image" and not b.get("asset_id"):
+                # A plate with an exact diagram keeps its lower third calm: the inset card sits there.
+                subject = b["subject"] + (" (keep the lower third of the picture calm: a diagram card goes there)"
+                                          if b.get("inset") else "")
                 images.append(ImageRequest(ref=ref, lesson_id=lesson["id"], block_id=b["id"], kind=b["kind"],
-                                           size=b.get("size", "half"), subject=b["subject"]))
+                                           size=b.get("size", "half"), subject=subject))
             elif b.get("type") in PICTURED:
                 field, attr = PICTURED[b["type"]]
                 words = [i if attr is None else i.get(attr) for i in b.get(field) or []]
@@ -604,7 +615,8 @@ async def _illustration(deps: Deps, job: dict) -> None:
         cover_concept = (_json(series["cover"]) or {}).get("concept")
         try:
             directed = await art_director(deps.llm, _brief(series, None), series["title"] or series["topic"], design,
-                                          cover_concept, [r for r in todo if r.kind != "icon"])
+                                          cover_concept, [r for r in todo if r.kind != "icon"],
+                                          _json(series["cast"]) or None)
         except AgentFailed as exc:
             await _log_attempts(deps.engine, job, "art", exc.attempts)
             raise
@@ -634,6 +646,10 @@ async def _illustration(deps: Deps, job: dict) -> None:
             references = [reference_image(await deps.storage.download(series["cover_key"]))]
         except Exception:  # the cover is a style anchor, not a requirement
             log.warning("cover %s unavailable as reference", series["cover_key"])
+    from app.casting import cast_sheets  # casting imports this module
+
+    character_sheets = await cast_sheets(deps, _json(series["cast"]) or [])  # the guide the same on every page
+    references += character_sheets
 
     feedback: dict[str, str] = {}
     for round_ in range(2):  # paint, then repaint only what failed, all together
@@ -642,7 +658,7 @@ async def _illustration(deps: Deps, job: dict) -> None:
         async def paint(sheet):
             note = "; ".join(f"{r.ref}: {feedback[r.ref]}" for r in sheet.requests if r.ref in feedback) or None
             # Worksheet pictures are shared by every tome, so they never borrow this tome's cover style.
-            image = await deps.images.generate(sheet_prompt(sheet, plan, design, note),
+            image = await deps.images.generate(sheet_prompt(sheet, plan, design, note, sheets=len(character_sheets)),
                                                references=[] if sheet.family == "icon" else references,
                                                aspect_ratio=sheet.aspect,
                                                resolution="1K" if preview else sheet.resolution)

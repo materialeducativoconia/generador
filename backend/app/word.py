@@ -72,7 +72,8 @@ def render_docx(tome: Tome, *, paper: str, include_answer_key: bool) -> bytes:
         for b in s.content.blocks:
             if b.type == "exercise":
                 n += 1
-            _block(doc, b, n, column, accent, c, drawings.get(f"{s.position}:{b.id}"), tome)
+            _block(doc, b, n, column, accent, c, drawings.get(f"{s.position}:{b.id}"), tome,
+                   drawings.get(f"{s.position}:{b.id}:inset"))
 
     answers = _answers(tome) if include_answer_key else []
     if answers:
@@ -100,7 +101,7 @@ def render_docx(tome: Tome, *, paper: str, include_answer_key: bool) -> bytes:
     return out.getvalue()
 
 
-def _block(doc, b, n, column, accent, c, drawing, tome) -> None:
+def _block(doc, b, n, column, accent, c, drawing, tome, inset=None) -> None:
     if b.type == "heading":
         doc.add_heading(_plain(b.text), level=b.level)
     elif b.type == "paragraph":
@@ -169,6 +170,18 @@ def _block(doc, b, n, column, accent, c, drawing, tome) -> None:
             doc.add_paragraph(f"[{'Dibujo para colorear' if b.kind == 'line_art' else 'Ilustración'}: {b.subject}]")
         if b.caption:
             doc.add_paragraph(b.caption).alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if b.size == "plate":  # a picture book's page: what the PDF lays over the picture, under it
+            if b.question:
+                doc.add_heading(b.question, level=2)
+            if b.answer:
+                _inline(doc.add_paragraph(), b.answer)
+            for note in b.notes:
+                _inline(doc.add_paragraph(style="List Bullet"), note)
+            if inset:
+                doc.add_picture(io.BytesIO(inset), width=int(column * 0.9))
+                doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            if b.find:
+                _inline(doc.add_paragraph(), f"**Observa y encuentra:** {b.find}")
         if tome.credits.get(b.asset_id):
             doc.add_paragraph(tome.credits[b.asset_id]).runs[0].font.size = Pt(8)
     elif b.type == "writing_lines":
@@ -202,6 +215,8 @@ def _rasterise(tome: Tome, c: dict, head: str) -> dict[str, bytes]:
                 svgs[key] = str(tracing_svg(b))
             elif b.type == "image" and b.asset_id in tome.images and tome.images[b.asset_id][1] == "image/svg+xml":
                 svgs[key] = tome.images[b.asset_id][0].decode()
+            if b.type == "image" and b.inset:
+                svgs[f"{key}:inset"] = str(render_diagram(b.inset, c, head))
     if not svgs:
         return {}
     from weasyprint import HTML

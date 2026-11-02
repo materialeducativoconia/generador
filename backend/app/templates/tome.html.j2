@@ -283,6 +283,13 @@
   .plate .pn.n4 { right: 7mm; top: 36%; transform: rotate(-1.5deg); }
   .plate .pf { position: absolute; left: 9mm; right: 9mm; bottom: 9mm; background: #fff; border-radius: 7mm; padding: 3.5mm 6mm;
                font: 600 {{ 9 if geo.w < 180 else 10.5 }}pt/1.35 {{ body|safe }}; box-shadow: 0 1.5mm 4mm rgba(0,0,0,.18); }
+  /* An exact diagram drawn by code over the picture, on a white card above the "find" strip. */
+  .plate .pi { position: absolute; left: 9mm; right: 9mm; bottom: 9mm; background: rgba(255, 255, 255, .95); border-radius: 6mm;
+               padding: 4mm 5mm 3mm; text-align: center; }
+  .plate .pi.above { bottom: 24mm; }
+  .plate .pi svg { max-width: 100%; max-height: {{ (geo.h * 0.24)|round(1) }}mm; height: auto; }
+  .plate .pi .pic { font-size: 8.5pt; color: var(--muted); margin-top: 1mm; }
+  .plate .pn.up.n1 { top: 30%; } .plate .pn.up.n2 { top: 40%; } .plate .pn.up.n3, .plate .pn.up.n4 { display: none; }
   .plate .pf b { font-family: {{ head|safe }}; color: var(--accent); margin-right: 1.5mm; }
   {% if tome.mono %}
   /* Black and white for a home printer: the coloured boxes become light greys, their titles dark grey. */
@@ -401,7 +408,8 @@
         {% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
         <div class="pq">{% if loop.first %}<div class="k">{{ s.position }} · {{ s.title }}</div>{% endif %}
           <h3>{{ (b.question or b.caption or s.title)|inline }}</h3>{% if b.answer %}<p>{{ b.answer|inline }}</p>{% endif %}</div>
-        {% for n in b.notes %}<div class="pn n{{ loop.index }}">{{ n|inline }}</div>{% endfor %}
+        {% for n in b.notes %}<div class="pn n{{ loop.index }}{% if b.inset %} up{% endif %}">{{ n|inline }}</div>{% endfor %}
+        {% if b.inset %}<div class="pi{% if b.find %} above{% endif %}">{{ render_diagram(b.inset, c, th.head) }}{% if b.inset.caption %}<div class="pic">{{ b.inset.caption|inline }}</div>{% endif %}</div>{% endif %}
         {% if b.find %}<div class="pf"><b>Observa y encuentra:</b>{{ b.find|inline }}</div>{% endif %}
       </div>
     {% elif b.type == "image" and tome.image_uri(b.asset_id) %}
