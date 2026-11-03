@@ -14,10 +14,11 @@ from uuid6 import uuid7
 from app import credits
 from app.api.deps import current_user_id
 from app.api.series import NewTome, _created, _new_tome, _own_series, _parse, _require_active
-from app.content import Design
+from app.content import PLATE_GENRES, Design, SectionContent
 from app.errors import ApiError
 from app.house_styles import apply
-from app.jobs import enqueue_cover
+from app.jobs import enqueue_cover, only_cited
+from app.layout import lay_out
 from app.plans import COVER, PAID
 
 router = APIRouter()
@@ -90,17 +91,28 @@ async def _restyle(conn, src, user_id, house: str | None, design: dict | None, c
             if b.get("type") == "image" and b.get("kind") == "illustration":
                 plates += 1
                 b.pop("asset_id", None)
+        if src["genre"] in PLATE_GENRES and any(b.get("size") == "plate" and not b.get("layout")
+                                                for b in content.get("blocks", [])):
+            # A tome from before the Layout designer: its plates get their compositions now, before painting.
+            laid = SectionContent.model_validate(content)
+            lay_out(laid, position=lesson["position"], pages=lesson["pages"], house_style=house,
+                    story=src["genre"] == "story_book")
+            content = laid.model_dump(mode="json", exclude_none=True)
         copies.append({**lesson, "content_json": content})
+    research = _parse(src["research"])
+    if research and research.get("facts") and research.get("sources"):  # sources no fact came from are dropped
+        research["facts"], research["sources"] = only_cited(research["facts"], research["sources"])
     new_id = uuid7()
     await conn.execute(text(
         """insert into public.series (id, user_id, title, topic, audience, language, lesson_count, extra_instructions,
                                       status, page_target, genre, plan, research, design, "cast", house_style,
                                       guide_id, identity_id, style_id, outline_approved_at, source_id, variant)
            select :id, user_id, title, topic, audience, language, lesson_count, extra_instructions, 'generating',
-                  page_target, genre, plan, research, cast(:design as jsonb), cast(:cast as jsonb), :house, guide_id,
+                  page_target, genre, plan, cast(:research as jsonb), cast(:design as jsonb), cast(:cast as jsonb), :house, guide_id,
                   identity_id, style_id, now(), id, 'style'
              from public.series where id = :src"""),
         {"id": new_id, "src": src["id"], "house": house, "design": json.dumps(design) if design else None,
+         "research": json.dumps(research) if research else None,
          "cast": json.dumps(cast) if cast is not None else None})
     for lesson in copies:
         await conn.execute(text(

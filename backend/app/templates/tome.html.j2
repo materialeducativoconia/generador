@@ -337,7 +337,10 @@
   .plate .pn.s3 { left: 5mm; top: 58%; }
   .plate.spread .pq { right: 30%; }
   /* A story page's text: read aloud, so larger and airy, in the theme's heading face. */
-  .plate .nar { margin: 0 !important; font: 600 {{ 13 if geo.w < 180 else 15.5 }}pt/1.45 {{ head|safe }} !important; color: var(--ink); }
+  /* A story is read aloud to a child following the words: picture-book type, not a caption. */
+  .plate .nar { margin: 0 !important; font: 600 {{ 16.5 if geo.w < 180 else 20 }}pt/1.4 {{ head|safe }} !important; color: var(--ink);
+                text-wrap: pretty; }
+  .plate.band .pbq.story { display: flex; flex-direction: column; justify-content: center; }
   {% if tome.mono %}
   /* Black and white for a home printer: the coloured boxes become light greys, their titles dark grey. */
   .callout.tip, .callout.warning, .callout.fun_fact { background: #f4f4f4; }
@@ -469,7 +472,7 @@
       <div class="plate band" data-block="{{ s.position ~ ':' ~ b.id }}">
         {% if uri %}<img src="{{ uri }}" alt="{{ b.subject }}">{% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
         <div class="pband">
-          <div class="pbq">{{ kicker }}{{ head }}</div>
+          <div class="pbq{% if b.narration %} story{% endif %}">{{ kicker }}{{ head }}</div>
           {% if b.notes %}<ul class="pbn">{% for n in b.notes %}<li>{{ n|inline }}</li>{% endfor %}</ul>{% endif %}
         </div>
         {{ find }}

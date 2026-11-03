@@ -256,13 +256,8 @@ async def _research(deps: Deps, job: dict, brief: Brief) -> dict:
             if documents:
                 sheet = await fact_sheet(deps.llm, brief, documents)
                 await _log_attempts(deps.engine, job, "facts", sheet.attempts)
-                # Only the articles a fact came from are sources: a search also brings near-misses (a Rex, a
-                # heraldic eagle) that would print as if the tome relied on them.
-                used = sorted({f.source for f in sheet.value.facts if 1 <= f.source <= len(documents)})
-                renumber = {old: new for new, old in enumerate(used, 1)}
-                research["facts"] = [{**f.model_dump(), "source": renumber[f.source]}
-                                     for f in sheet.value.facts if f.source in renumber]
-                research["sources"] = [{"title": documents[i - 1].title, "url": documents[i - 1].url} for i in used]
+                research["facts"], research["sources"] = only_cited(
+                    [f.model_dump() for f in sheet.value.facts], [{"title": d.title, "url": d.url} for d in documents])
     except AgentFailed as exc:
         await _log_attempts(deps.engine, job, "research", exc.attempts)
         log.warning("research skipped for %s: %s", job["series_id"], exc)
@@ -271,6 +266,15 @@ async def _research(deps: Deps, job: dict, brief: Brief) -> dict:
                            {"s": job["series_id"], "r": json.dumps(research)})
     return research
 
+
+
+def only_cited(facts: list[dict], sources: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Only the articles a fact came from are sources: a search also brings near-misses (a Rex, a heraldic eagle)
+    that would print as if the tome relied on them. Facts are renumbered to the kept list."""
+    used = sorted({f["source"] for f in facts if 1 <= f.get("source", 0) <= len(sources)})
+    renumber = {old: new for new, old in enumerate(used, 1)}
+    return ([{**f, "source": renumber[f["source"]]} for f in facts if f.get("source") in renumber],
+            [sources[i - 1] for i in used])
 
 async def _program_search(deps: Deps, job: dict, brief: Brief, queries: list[str]) -> dict:
     """Program searcher + Program sheet: official programs and proven methods from the web, with their links."""

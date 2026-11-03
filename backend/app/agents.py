@@ -20,7 +20,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@9", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@5", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@1"}
+PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@9", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@5", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@2"}
 
 
 @dataclass
@@ -362,7 +362,12 @@ alta que un niño pide otra vez, como los mejores álbumes ilustrados de librer�
 vez, página por página; cada sección del esquema es un acto del cuento.
 
 Cómo es un buen cuento:
-- Un protagonista (de los personajes que se te dan, si los hay) que QUIERE algo concreto desde la primera página.
+- Los protagonistas son los personajes que nombran el pedido o el título (si el título dice «Karla y…», Karla
+  está en el cuento de principio a fin y es quien actúa); los personajes ya diseñados acompañan o son el
+  protagonista si nadie más se nombra. El protagonista QUIERE algo concreto desde la primera página.
+- Aunque el cuento sea corto, tiene arco: con 3 o 4 páginas, 1) quién es y qué quiere, 2) un problema o
+  intento fallido, 3) el giro con el que lo logra gracias a lo que aprendió del tema, 4) final cálido. Nunca
+  páginas que solo describen al animal o al tema: cada una es un paso de la aventura.
 - Arco completo: inicio (quién es y qué quiere), un problema, intentos que fallan, un giro, el momento más
   emocionante (clímax) y un final cálido que cierra lo que quería. Nada de explicaciones de clase.
 - Cada página es UN momento que se puede dibujar, y empuja la historia hacia adelante: nunca dos páginas iguales.

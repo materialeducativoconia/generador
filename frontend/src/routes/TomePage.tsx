@@ -370,6 +370,8 @@ function NewVersion({ series: s }: { series: Series }) {
   const plates = s.lessons.reduce((n, l) => n + (l.content_json?.blocks ?? []).filter((b) => b.type === 'image' && b.kind === 'illustration').length, 0)
   const pages = s.lessons.reduce((n, l) => n + (l.pages ?? 0), 0) || s.lessons.length
   const cost = mode === 'style' ? 4 + Math.ceil(plates / 2) : 5 + pages
+  // A story written before the Narrator has no narration: another style keeps that text, a new story rewrites it.
+  const oldStory = s.genre === 'story_book' && !s.lessons.some((l) => (l.content_json?.blocks ?? []).some((b) => b.type === 'image' && !!b.narration))
   const create = useMutation({
     mutationFn: () => api.post<{ series: { id: string } }>(`/api/series/${s.id}/versions`, {
       mode, house_style: house, keep_cast: keepCast,
@@ -417,6 +419,9 @@ function NewVersion({ series: s }: { series: Series }) {
                 <label className="check small"><input type="checkbox" checked={keepCast} onChange={(e) => setKeepCast(e.target.checked)} /> Conservar los personajes ({s.cast.map((c) => c.name).join(', ')})</label>
               ) : null}
             </>
+          )}
+          {mode === 'style' && oldStory && (
+            <p className="notice small">Este cuento se escribió antes del Narrador y «Otro estilo» conserva su texto. Para que se reescriba como cuento, elige «Cambiar la historia o el contenido».</p>
           )}
           <StylePicker value={house} onChange={setHouse} paid />
           <p className="muted small">
