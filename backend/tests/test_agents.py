@@ -152,3 +152,13 @@ def test_a_story_page_needs_narration_and_the_find_label_is_printed_once():
     assert [p.split(":")[0] for p in check_story_book(quiz)] == ["p1"]  # a quiz page is no story page
     assert find_text("Observa y encuentra los binoculares de Karla.") == "Los binoculares de Karla."
     assert find_text("un pez cerca del águila") == "un pez cerca del águila"
+
+
+def test_the_closing_does_not_print_the_answer_again_as_a_note():
+    from app.agents import _new_notes
+
+    answer = "El águila harpía es el águila más grande del hemisferio occidental y vive en el bosque lluvioso."
+    notes = ["El águila harpía es el águila más grande del hemisferio occidental y vive en el bosque lluvioso.",
+             "Tiene una doble cresta de plumas en la cabeza."]
+
+    assert _new_notes(answer, notes) == ["Tiene una doble cresta de plumas en la cabeza."]

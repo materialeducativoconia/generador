@@ -153,6 +153,9 @@ async def _rewrite(conn, request: Request, src, user_id, body: NewVersion, house
                  f"estilo. Lo que ya cubrió: {'; '.join(sections)}.{told} No repitas esos temas: continúa desde ahí, "
                  "un paso más allá." + (f" Lo que pide el usuario para este tomo: {changes}" if changes else ""))
         collection_id = src["collection_id"] or await _start_collection(conn, src, user_id, title)
+    if cast:  # the Architect titles the acts: it must know who the drawn characters are, not guess from a name
+        extra += " Personajes ya dibujados (siguen siendo lo que son): " + "; ".join(
+            f"{c['name']} ({c.get('archetype') or 'personaje'})" for c in cast if c.get("name")) + "."
     extra = "\n".join(filter(None, [src["extra_instructions"], extra]))[:2000]
     audience = (_parse(src["audience"]) or {}).get("label", "")
     pages = src["page_target"] or max(len(sections), 1)

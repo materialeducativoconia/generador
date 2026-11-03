@@ -5,6 +5,7 @@ one repair round where the validation error goes back to the model.
 """
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Generic, TypeVar
 
@@ -20,7 +21,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@9", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@5", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@2"}
+PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@9", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@5", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@3"}
 
 
 @dataclass
@@ -383,7 +384,8 @@ Cómo es un buen cuento:
   emoción y el plano (lejano, medio o cercano), variando de una página a otra. En español, sin texto en la imagen.
 
 Al final del cuento va una página aparte, «¿Sabías que…?» (closing): answer con una o dos frases que conectan el
-cuento con lo real, 2 a 4 notes con datos reales del tema (máx. 140 caracteres cada uno) y su scene.
+cuento con lo real, 2 a 4 notes con datos reales del tema (máx. 140 caracteres cada uno) que no repiten lo que
+ya dice answer, y su scene.
 
 Responde SOLO con json:
 {"protagonist": "quién es y qué quiere", "refrain": "el estribillo",
@@ -422,9 +424,11 @@ async def narrator(llm: LLM, brief: Brief, outline: Outline, cast: list[dict] | 
     want = story_pages(outline)
     acts = "\n".join(f"{i}. {s.title} — {n} páginas" + (f" ({'; '.join(s.key_points[:6])})" if s.key_points else "")
                      for i, (s, n) in enumerate(zip(outline.sections, want), 1))
-    people = ("\nPersonajes ya diseñados (el primero es el protagonista; usa sus nombres, no inventes otros "
-              "protagonistas):\n" + "\n".join(f"- {c['name']}: {c.get('archetype') or c.get('look', '')}"
-                                                for c in cast)) if cast else ""
+    people = ("\nPersonajes ya diseñados (usa sus nombres; cada uno sigue siendo lo que es en su dibujo: un niño "
+              "no se vuelve un animal ni le das su nombre a otro ser; un nombre que pida el usuario y no esté aquí es "
+              "otro personaje):\n" + "\n".join(
+                  f"- {c['name']}: {c.get('archetype') or ''}; aspecto: {(c.get('look') or '')[:160]}"
+                  for c in cast)) if cast else ""
     kept = ("\nEstos actos ya están impresos: devuélvelos con su mismo texto y continúa la historia desde ahí:\n"
             + "\n".join(f"Sección {i}: " + " / ".join(texts) for i, texts in sorted(written.items()))) if written else ""
     messages = [
@@ -453,6 +457,12 @@ async def narrator(llm: LLM, brief: Brief, outline: Outline, cast: list[dict] | 
     return result
 
 
+def _new_notes(answer: str, notes: list[str]) -> list[str]:
+    """The closing notes the answer doesn't already say: printed twice, the same fact reads as a mistake."""
+    said = re.sub(r"\W+", " ", answer.lower())
+    return [n for n in notes if re.sub(r"\W+", " ", n.lower()).strip()[:40] not in said] or notes
+
+
 def story_section(story: Story, outline: Outline, position: int) -> SectionContent:
     """A section of the story as plates: one per page with its narration, and the closing facts on the last one."""
     acts = story.acts
@@ -462,7 +472,7 @@ def story_section(story: Story, outline: Outline, position: int) -> SectionConte
     if position == len(outline.sections):
         c = story.closing
         blocks.append(Image(id=f"s{position}fin", type="image", kind="illustration", size="plate", subject=c.scene,
-                            question="¿Sabías que…?", answer=c.answer, notes=c.notes[:4]))
+                            question="¿Sabías que…?", answer=c.answer, notes=_new_notes(c.answer, c.notes)[:4]))
     if not blocks:  # the story came back short: never an empty section
         blocks.append(Image(id=f"s{position}p1", type="image", kind="illustration", size="plate",
                             subject=outline.sections[position - 1].title, narration=outline.sections[position - 1].title))

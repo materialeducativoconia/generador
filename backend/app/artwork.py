@@ -163,7 +163,8 @@ def slice_sheet(data: bytes, cols: int, rows: int) -> list[bytes]:
 
 def _gutter(grey: Image.Image, axis: int, at: float = 0.5) -> int:
     """axis=0: x of the whitest column near `at` (a fraction of the width); axis=1: y of the whitest row.
-    The band is ±20 % around the middle of a 2x2 sheet and narrower on denser grids."""
+    The band is ±10 % around the middle (±7 % on denser grids): wider, a pale sky or a calm strip left for the text
+    (lighter than the painted gutter) cut a scene through its characters."""
     small = grey.copy()
     small.thumbnail((400, 400))
     w, h = small.size
@@ -173,7 +174,7 @@ def _gutter(grey: Image.Image, axis: int, at: float = 0.5) -> int:
     def darkness(i: int) -> int:
         return sum(255 - (px[i, j] if axis == 0 else px[j, i]) for j in range(h if axis == 0 else w))
 
-    band = 0.2 if at == 0.5 else 0.07
+    band = 0.1 if at == 0.5 else 0.07
     lo, hi = int(length * (at - band)), int(length * (at + band))
     best = min(range(lo, hi), key=lambda i: (darkness(i), abs(i - length * at)))
     return round(best * (grey.width if axis == 0 else grey.height) / length)

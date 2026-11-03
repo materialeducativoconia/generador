@@ -70,6 +70,20 @@ def test_a_2x2_sheet_is_cut_into_four_trimmed_panels():
         assert im.width < 300 and im.height < 400  # trimmed to content plus a margin
 
 
+def test_a_pale_sky_far_from_the_middle_is_not_taken_for_the_gutter():
+    sheet = Image.new("RGB", (600, 800), (120, 160, 110))  # paintings edge to edge, a thin pale gutter at 47 %
+    d = ImageDraw.Draw(sheet)
+    d.rectangle((0, 370, 600, 382), fill=(236, 236, 236))
+    d.rectangle((296, 0, 304, 800), fill=(236, 236, 236))
+    d.rectangle((0, 260, 600, 280), fill="white")  # a calm sky at a third, whiter than the gutter
+    out = io.BytesIO()
+    sheet.save(out, "PNG")
+
+    panels = [Image.open(io.BytesIO(p)) for p in slice_sheet(out.getvalue(), 2, 2)]
+
+    assert all(p.height > 330 for p in panels)
+
+
 def test_slicing_follows_gutters_that_are_not_exactly_centred():
     panels = slice_sheet(grid(2, 2, gutter_at=0.44), 2, 2)
 
