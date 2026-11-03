@@ -65,6 +65,12 @@ export function TomePage() {
       {status === 'outline_ready' && <OutlineEditor key={s.version} series={s} />}
       {['generating', 'needs_attention', 'ready'].includes(status) && progress.data && (
         <>
+          {(s.genre === 'picture_book' || s.genre === 'story_book') && !s.owner && status === 'ready' && (
+            <Link to={`/app/tomos/${s.id}/paginas`} className="panel edit-pages">
+              <span className="section-h">Editor de páginas</span>
+              <span className="muted small">Ve cada página como sale en el PDF, corrige su texto, cambia su composición o repinta una ilustración</span>
+            </Link>
+          )}
           <Sections series={s} progress={progress.data} />
           {s.research?.sources.length ? <Sources research={s.research} /> : null}
           {status === 'ready' && <QualityCard seriesId={s.id} progress={progress.data} />}
@@ -855,7 +861,7 @@ function Sections({ series, progress }: { series: Series; progress: Progress }) 
           return (
             <li key={l.id} className={`thumb-item ${l.status}`} style={{ '--i': i } as React.CSSProperties}>
               {ready && blocks ? (
-                <Link to={`/app/secciones/${l.id}`} className="thumb-link" aria-label={`Abrir sección ${l.position}: ${l.title}`}>
+                <Link to={plateOf(blocks, series) ? `/app/tomos/${series.id}/paginas?s=${l.id}&p=${blocks.find((b) => b.type === 'image' && b.size === 'plate')?.id ?? ''}` : `/app/secciones/${l.id}`} className="thumb-link" aria-label={`Abrir sección ${l.position}: ${l.title}`}>
                   {plateOf(blocks, series) ? (
                     <div className="thumb"><img className="thumb-img" src={plateOf(blocks, series)} alt="" /></div>
                   ) : <PageThumb design={series.design} position={l.position} title={l.title} blocks={blocks} assets={series.assets} credits={series.credits} diagrams={byId.get(l.id)?.diagrams} painting={progress.images.active > 0} />}

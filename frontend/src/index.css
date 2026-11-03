@@ -1193,3 +1193,29 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .version-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
 .version-links .chip { font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); text-decoration: none; max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Editor de páginas */
+.edit-pages { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; text-decoration: none; color: inherit; }
+.page-editor-head { margin-bottom: 20px; }
+.page-editor-head h1 { margin: 0; text-align: left; max-width: none; }
+.page-editor { display: grid; grid-template-columns: 96px minmax(0, 1fr) 340px; gap: 24px; align-items: start; }
+.page-strip { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-height: 80vh; overflow-y: auto; }
+.page-strip button { position: relative; display: block; width: 100%; padding: 0; border: 0; background: none; cursor: pointer;
+  border-radius: 6px; outline: 2px solid transparent; outline-offset: 2px; transition: outline-color 150ms ease; }
+.page-strip button.on { outline-color: var(--accent); }
+.page-strip img, .page-strip-wait { display: block; width: 100%; aspect-ratio: 170 / 210; object-fit: cover; border-radius: 6px; background: var(--surface-2); }
+.page-strip-n { position: absolute; left: 6px; bottom: 6px; font-size: 11px; font-weight: 700; background: rgb(255 255 255 / .9); border-radius: 4px; padding: 1px 5px; }
+.page-preview { margin: 0; position: sticky; top: 16px; }
+.page-preview img { display: block; width: 100%; height: auto; border-radius: 4px;
+  box-shadow: 0 0 0 1px rgb(12 10 9 / 0.07), 0 12px 32px -16px rgb(12 10 9 / 0.35); }
+.page-preview-wait { aspect-ratio: 170 / 210; display: grid; place-items: center; border-radius: 4px; background: var(--surface-2); color: var(--muted); }
+.page-preview figcaption { margin-top: 10px; }
+.page-form { display: grid; gap: 14px; }
+.page-form fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+.page-form .segmented { display: grid; gap: 6px; }
+.page-form hr { border: 0; border-top: 1px solid var(--border, rgb(12 10 9 / 0.08)); width: 100%; margin: 6px 0; }
+@media (max-width: 900px) {
+  .page-editor { grid-template-columns: 1fr; }
+  .page-strip { grid-auto-flow: column; grid-auto-columns: 72px; max-height: none; overflow-x: auto; padding: 4px; }
+  .page-preview { position: static; }
+}

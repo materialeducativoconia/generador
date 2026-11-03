@@ -5,6 +5,7 @@ import { AuthProvider } from './auth/AuthProvider'
 import { RequireAuth } from './auth/RequireAuth'
 import { queryClient } from './lib/queries'
 import { AuthCallback } from './routes/AuthCallback'
+import { PageEditor } from './routes/PageEditor'
 import { SectionPage } from './routes/SectionPage'
 import { Studio } from './routes/Studio'
 import { AdminTomes } from './routes/AdminTomes'
@@ -37,6 +38,7 @@ export default function App() {
             <Route path="/app/bienvenida" element={authed(<Onboarding />)} />
             <Route path="/app/tomos/:id" element={authed(<TomePage />)} />
             <Route path="/app/secciones/:id" element={authed(<SectionPage />)} />
+            <Route path="/app/tomos/:id/paginas" element={authed(<PageEditor />)} />
             <Route path="/app/estilos" element={authed(<Styles />)} />
             <Route path="/app/personajes" element={authed(<Characters />)} />
             <Route path="/app/identidades" element={authed(<Identities />)} />
