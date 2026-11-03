@@ -9,6 +9,7 @@ import { PageThumb } from '../components/Sheet'
 import { ART_LABEL, COVER_LABEL, FRAME_LABEL, GENRE_LABEL, THEME_LABEL, tomeName } from '../lib/labels'
 import { api } from '../lib/apiClient'
 import { useExport, useIdentities, useMe, usePreview, useProgress, useQuality, useSeries, useStyles } from '../lib/queries'
+import { HOUSE_STYLES, sampleOf } from '../lib/houseStyles'
 import type { Block, Design, Export, LessonSummary, Level, Preflight, Progress, Series } from '../lib/types'
 
 
@@ -48,7 +49,7 @@ export function TomePage() {
         {s.title && <CoverPanel series={s} />}
       </header>
 
-      <TomeProgress status={status} progress={progress.data} preview={s.preview} />
+      <TomeProgress series={s} status={status} progress={progress.data} preview={s.preview} />
       {s.preview && status === 'outline_ready' && <PreviewPages series={s} progress={progress.data} />}
       {s.preview && !s.owner && ['outline_ready', 'needs_attention', 'ready'].includes(status) && <MakeFullBook series={s} />}
 
@@ -61,7 +62,7 @@ export function TomePage() {
           <Sections series={s} progress={progress.data} />
           {s.research?.sources.length ? <Sources research={s.research} /> : null}
           {status === 'ready' && <QualityCard seriesId={s.id} progress={progress.data} />}
-          {status === 'ready' && <ExportPanel key={progress.data.images.done} seriesId={s.id} latest={progress.data.latest_export} images={progress.data.images} />}
+          {status === 'ready' && <ExportPanel key={progress.data.images.done} seriesId={s.id} genre={s.genre} latest={progress.data.latest_export} images={progress.data.images} />}
         </>
       )}
     </AppShell>
@@ -186,7 +187,8 @@ function CoverPanel({ series: s }: { series: Series }) {
   )
 }
 
-const STAGES = ['Diseño', 'Tu revisión', 'Escritura e ilustración', 'Listo']
+// The editorial flow, as a publisher runs it: plan, art direction, text, illustration, then the finished book.
+const STAGES = ['Plan editorial', 'Dirección de arte', 'Texto', 'Ilustración', 'Libro listo']
 const THINKING = ['Leyendo tu idea…', 'Buscando fuentes confiables…', 'Organizando las secciones…', 'Eligiendo el estilo visual…', 'Preparando tu portada…']
 
 /** One line that changes every few seconds while the agents work, so the wait reads as progress. */
@@ -200,60 +202,79 @@ function useTicker(lines: string[], on: boolean, ms = 2800) {
   return lines[i % Math.max(1, lines.length)] ?? ''
 }
 
-/** The tome's progress as one card: where it is, what is happening right now and how much is done. */
-function TomeProgress({ status, progress, preview }: { status: string; progress?: Progress; preview: boolean }) {
-  const stage = { outlining: 0, outline_failed: 0, outline_ready: 1, generating: 2, needs_attention: 2, ready: 3 }[status] ?? 0
+/** The tome's progress as one card: which step of the book it is on, what is happening now, how much is done and,
+ * while it is being illustrated, each plate as soon as it is painted. */
+function TomeProgress({ series, status, progress, preview }: { series: Series; status: string; progress?: Progress; preview: boolean }) {
   const c = progress?.counts
   const img = progress?.images
   const sections = c ? c.generated + c.edited + c.approved : 0
-  const units = (c?.total ?? 0) + (img?.total ?? 0)
-  const doneUnits = sections + (img?.done ?? 0)
-  const share = units ? doneUnits / units : 0
+  const textDone = !!c && c.total > 0 && sections + c.failed >= c.total
+  // Pictures still coming: the book is not ready while a plate is being painted, whatever the text says.
+  const painting = !!img && img.total > 0 && (img.active > 0 || img.done + img.failed < img.total)
+  const stage = status === 'outlining' || status === 'outline_failed' ? 0
+    : status === 'outline_ready' ? 1
+    : (status === 'generating' && !textDone) ? 2
+    : painting || status === 'generating' ? 3 : 4
   const writing = progress?.lessons.find((l) => l.status === 'generating')
-  const working = status === 'outlining' || status === 'generating'
+  const working = stage === 0 ? status === 'outlining' : stage === 2 || stage === 3
   const live = useTicker(status === 'outlining' ? THINKING
-    : writing ? [`Escribiendo «${writing.title}»`, ...(img?.active ? ['Pintando las ilustraciones…'] : []), 'Revisando cada página…']
-    : img?.active ? ['Pintando las ilustraciones…', 'Cuidando cada detalle…'] : ['Preparando las páginas…'], working)
-  const [title, sub] = {
-    outlining: ['Diseñando tu tomo', live],
-    outline_failed: ['No pudimos diseñar el tomo', 'Prueba de nuevo o cambia un poco la idea.'],
-    outline_ready: preview ? ['Tu vista previa', 'Mira tus páginas y, con un plan, genera el tomo completo.']
-                           : ['Revisa tu índice', 'Ajusta secciones y páginas; cuando estés listo, genera el tomo.'],
-    generating: ['Escribiendo e ilustrando', live],
-    needs_attention: ['Algunas secciones necesitan otro intento', 'Reinténtalas abajo; no se cobran dos veces.'],
-    ready: ['Tu tomo está listo', 'Descárgalo en PDF o Word cuando quieras.'],
-  }[status] ?? ['Tu tomo', '']
-  const fill = (i: number) => (i < stage || status === 'ready' ? 1 : i === stage && stage === 2 ? share : 0)
+    : stage === 2 ? [writing ? `Escribiendo «${writing.title}»` : 'Escribiendo tus páginas…', 'Revisando cada página…']
+    : ['Pintando las láminas…', 'Revisando que cada lámina diga lo que dice el texto…', 'Cuidando cada detalle…'], working)
+  const [title, sub] = stage === 0 ? (status === 'outline_failed'
+      ? ['No pudimos diseñar el tomo', 'Prueba de nuevo o cambia un poco la idea.'] : ['Planeando tu libro', live])
+    : stage === 1 ? (preview ? ['Tu vista previa', 'Mira tus páginas y, con un plan, genera el tomo completo.']
+                             : ['Revisa el plan y el arte', 'Ajusta secciones y páginas; cuando estés listo, genera el tomo.'])
+    : stage === 2 ? ['Escribiendo tu libro', live]
+    : stage === 3 ? [`Ilustrando · ${img?.done ?? 0} de ${img?.total ?? 0} láminas`, live]
+    : status === 'needs_attention' ? ['Algunas secciones necesitan otro intento', 'Reinténtalas abajo; no se cobran dos veces.']
+    : ['Tu libro está listo', 'Descárgalo en PDF o Word cuando quieras.']
+  const share = stage === 2 ? (c?.total ? sections / c.total : 0) : stage === 3 ? (img?.total ? img.done / img.total : 0) : 0
+  const fill = (i: number) => (i < stage ? 1 : i === stage && stage === 4 ? 1 : i === stage ? share : 0)
   return (
-    <section className={`run ${status}`} aria-live="polite">
+    <section className={`run ${stage === 4 ? 'ready' : status}`} aria-live="polite">
       <div className="run-top">
         <div className="run-text">
           <p className="run-k">Paso {stage + 1} de {STAGES.length} · {STAGES[stage]}</p>
           <h2 className="run-t">{title}</h2>
           <p className="run-s" key={sub}>{sub}</p>
         </div>
-        <div className="run-fig" aria-hidden={status !== 'generating'}>
-          {status === 'ready' ? <span className="run-done"><svg viewBox="0 0 16 16" width="22" height="22"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg></span>
-            : stage === 2 && units ? <span className="run-pct">{Math.round(share * 100)}<small>%</small></span>
+        <div className="run-fig" aria-hidden={!working}>
+          {stage === 4 ? <span className="run-done"><svg viewBox="0 0 16 16" width="22" height="22"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg></span>
+            : (stage === 2 || stage === 3) ? <span className="run-pct">{Math.round(share * 100)}<small>%</small></span>
             : working ? <span className="run-orb" /> : null}
         </div>
       </div>
       <ol className="run-track">
         {STAGES.map((label, i) => (
-          <li key={label} className={i < stage || status === 'ready' ? 'done' : i === stage ? 'active' : ''}>
+          <li key={label} className={i < stage || stage === 4 ? 'done' : i === stage ? 'active' : ''}>
             <span className={`run-bar${i === stage && working && stage === 0 ? ' busy' : ''}`}><i style={{ transform: `scaleX(${fill(i)})` }} /></span>
             <span className="run-l">{label}</span>
           </li>
         ))}
       </ol>
-      {stage === 2 && c && (
+      {(stage === 2 || stage === 3) && c && (
         <dl className="run-stats">
           <div><dt>Secciones</dt><dd>{sections}<span>/{c.total}</span></dd></div>
-          {img && img.total > 0 && <div><dt>Ilustraciones</dt><dd>{img.done}<span>/{img.total}</span></dd></div>}
+          {img && img.total > 0 && <div><dt>Láminas</dt><dd>{img.done}<span>/{img.total}</span></dd></div>}
           {c.failed > 0 && <div className="bad"><dt>Por reintentar</dt><dd>{c.failed}</dd></div>}
         </dl>
       )}
+      {stage === 3 && <PaintedPlates series={series} total={img?.total ?? 0} />}
     </section>
+  )
+}
+
+/** The plates painted so far, newest last, and a soft slot for each one still on the easel. */
+function PaintedPlates({ series, total }: { series: Series; total: number }) {
+  const painted = series.lessons.flatMap((l) => (l.content_json?.blocks ?? [])
+    .filter((b): b is Extract<Block, { type: 'image' }> => b.type === 'image' && b.kind === 'illustration' && !!b.asset_id && !!series.assets[b.asset_id])
+    .map((b) => ({ key: `${l.id}:${b.id}`, url: series.assets[b.asset_id!], alt: b.subject })))
+  const waiting = Math.max(0, Math.min(total, 12) - painted.length)
+  return (
+    <ul className="run-plates" aria-label="Láminas pintadas">
+      {painted.map((p) => <li key={p.key}><img src={p.url} alt={p.alt} loading="lazy" /></li>)}
+      {Array.from({ length: waiting }, (_, i) => <li key={`w${i}`} className="waiting" aria-hidden="true" />)}
+    </ul>
   )
 }
 
@@ -359,8 +380,11 @@ function LevelsPanel({ series: s, levels }: { series: Series; levels: Level[] })
   const before = levels.filter((lv) => lv.relation === 'anterior')
   const after = levels.filter((lv) => lv.relation === 'siguiente')
   return (
-    <section className="panel levels">
-      <h2 className="section-h">Niveles sugeridos para la serie</h2>
+    <details className="panel sources levels">
+      <summary>
+        <span className="section-h">Niveles sugeridos</span>
+        <span className="muted small">{before.length + after.length} niveles para hacer una serie</span>
+      </summary>
       <p className="muted small">Según los programas de estudio encontrados, este tema se trabaja así antes y después de este tomo.
         {locked && ' Crear la serie completa por niveles está incluido en los planes de pago.'}</p>
       <ol className="level-list">
@@ -371,7 +395,7 @@ function LevelsPanel({ series: s, levels }: { series: Series; levels: Level[] })
         </li>
         {after.map(card)}
       </ol>
-    </section>
+    </details>
   )
 }
 
@@ -458,12 +482,15 @@ function DesignPreview({ series }: { series: Series }) {
   })
   if (!d) return <div className="panel design-preview"><p className="muted">El diseño se elige con la portada…</p></div>
   const style = styles.find((s) => s.id === d.style_id)
+  const house = HOUSE_STYLES.find((h) => h.key === d.house_style)
+  const plates = series.genre === 'picture_book' || series.genre === 'story_book'
   const seal = identities.find((i) => i.id === d.identity_id)?.design?.mark_svg  // drawn by our server
   const value = d.identity_id ? `i:${d.identity_id}` : d.style_id ? `s:${d.style_id}` : `t:${d.theme}`
   return (
     <section className="panel design-preview">
       <div className="design-sample">
-        {preview && <PageThumb design={d} position={1} title={preview.title} blocks={preview.blocks} diagrams={preview.diagrams} />}
+        {plates ? <PlateSample series={series} />
+          : preview && <PageThumb design={d} position={1} title={preview.title} blocks={preview.blocks} diagrams={preview.diagrams} />}
       </div>
       <div className="design-info">
         <p className="eyebrow">Diseño propuesto</p>
@@ -474,7 +501,7 @@ function DesignPreview({ series }: { series: Series }) {
         </div>
         <p className="small">
           Títulos en {d.head_font ?? 'la letra del tema'} · {FRAME_LABEL[d.frame ?? 'none']}
-          {d.illustration ? ` · ilustración: ${ART_LABEL[d.illustration]}` : d.art_style ? ` · ilustración: ${d.art_style}` : ''}
+          {house ? ` · ilustración: ${house.name}` : d.illustration ? ` · ilustración: ${ART_LABEL[d.illustration]}` : ''}
           {` · ${COVER_LABEL[d.cover_layout ?? 'plate']}`}
         </p>
         <label className="field">
@@ -498,6 +525,25 @@ function DesignPreview({ series }: { series: Series }) {
         {change.error && <p className="error small" role="alert">{errorText(change.error, 'No se pudo cambiar el diseño.')}</p>}
       </div>
     </section>
+  )
+}
+
+/** A picture book's look is its plates: a sample page in the tome's illustration style (or its painted cover) with
+ * the first page's text over it, the way the book will print. */
+function PlateSample({ series: s }: { series: Series }) {
+  const house = s.design?.house_style
+  const image = house ? sampleOf(house) : s.cover_url
+  const first = s.lessons[0]
+  const story = s.genre === 'story_book'
+  return (
+    <div className="plate-sample" aria-label="Lámina de muestra">
+      {image ? <img src={image} alt="" /> : <span className="plate-sample-ph">La ilustración llega con la portada…</span>}
+      <div className="plate-sample-card">
+        <span className="eyebrow">{story ? 'Página 1' : `1 · ${first?.title ?? ''}`}</span>
+        <strong>{story ? (first?.title ?? s.title ?? '') : (first?.key_points[0] ?? first?.title ?? '')}</strong>
+      </div>
+      <span className="plate-sample-tag">Muestra</span>
+    </div>
   )
 }
 
@@ -685,11 +731,14 @@ const PAPERS: Record<Edition, { value: Paper; label: string }[]> = {
 }
 const RATING: Record<Preflight['rating'], string> = { lista: 'Lista para imprenta', aceptable: 'Aceptable', baja: 'Baja resolución' }
 
-function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: Progress['latest_export']; images: Progress['images'] }) {
+function ExportPanel({ seriesId, genre, latest, images }: { seriesId: string; genre: Series['genre']; latest: Progress['latest_export']; images: Progress['images'] }) {
   const plan = useMe().data?.plan
   const [format, setFormat] = useState<'pdf' | 'docx'>('pdf')
   const [edition, setEdition] = useState<Edition>('digital')
-  const [paper, setPaper] = useState<Paper>('A4')
+  // A picture book or a story is printed at its own trim, 17×21, like the books it sits next to.
+  const book = genre === 'picture_book' || genre === 'story_book'
+  const firstPaper = (e: Edition): Paper => (book ? '17x21' : PAPERS[e][0].value)
+  const [paper, setPaper] = useState<Paper>(firstPaper('digital'))
   const [answers, setAnswers] = useState(true)
   const [ink, setInk] = useState<'color' | 'saver'>('color')
   // A PDF made before the last pictures arrived would miss them: start a fresh one instead.
@@ -734,7 +783,7 @@ function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: P
         <div className="segmented" role="radiogroup" aria-label="Formato">
           {(['pdf', 'docx'] as const).map((f) => (
             <button key={f} role="radio" aria-checked={format === f} className={format === f ? 'on' : ''}
-              onClick={change(() => { setFormat(f); if (f === 'docx') { setEdition('digital'); setPaper(PAPERS.digital[0].value) } })}>
+              onClick={change(() => { setFormat(f); if (f === 'docx') { setEdition('digital'); setPaper(firstPaper('digital')) } })}>
               {f === 'pdf' ? 'PDF' : <>Word{plan && !plan.word && <Lock />}</>}
             </button>
           ))}
@@ -742,7 +791,7 @@ function ExportPanel({ seriesId, latest, images }: { seriesId: string; latest: P
         {format === 'pdf' && <div className="segmented" role="radiogroup" aria-label="Edición">
           {(['digital', 'print'] as const).map((e) => (
             <button key={e} role="radio" aria-checked={edition === e} className={edition === e ? 'on' : ''}
-              onClick={change(() => { setEdition(e); setPaper(PAPERS[e][0].value) })}>
+              onClick={change(() => { setEdition(e); setPaper(firstPaper(e)) })}>
               {e === 'digital' ? 'Digital' : <>Imprenta{plan && !plan.print_edition && <Lock />}</>}
             </button>
           ))}

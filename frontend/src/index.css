@@ -265,7 +265,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 @keyframes run-orb { from { transform: scale(0.88) rotate(0); background-position: 0% 50%; } to { transform: scale(1) rotate(180deg); background-position: 100% 50%; } }
 .run-done { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--ok-soft); color: var(--ok);
             animation: enter 320ms var(--ease-out) both; }
-.run-track { list-style: none; padding: 0; margin: 22px 0 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.run-track { list-style: none; padding: 0; margin: 22px 0 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .run-track li { display: grid; gap: 8px; min-width: 0; }
 .run-bar { position: relative; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
 .run-bar i { position: absolute; inset: 0; border-radius: inherit; background: var(--text); transform-origin: left; transition: transform 600ms var(--ease-out); }
@@ -1158,3 +1158,23 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 /* The crawlable copy of a public page the build puts in #root; React replaces it on start. */
 .prerender { max-width: 44rem; margin: 0 auto; padding: 48px 16px; line-height: 1.6; }
 .prerender img { max-width: 100%; height: auto; }
+
+/* The plates painted so far, appearing one by one in the progress card. */
+.run-plates { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; }
+.run-plates li { aspect-ratio: 3 / 4; border-radius: 6px; overflow: hidden; background: var(--surface); }
+.run-plates img { width: 100%; height: 100%; object-fit: cover; display: block; animation: plate-in 420ms cubic-bezier(0.23, 1, 0.32, 1); }
+.run-plates li.waiting { background: linear-gradient(110deg, var(--surface) 30%, color-mix(in srgb, var(--surface) 60%, #fff) 50%, var(--surface) 70%) 0 0 / 220% 100%; animation: plate-wait 1.6s linear infinite; }
+@keyframes plate-in { from { opacity: 0; transform: scale(0.96); } }
+@keyframes plate-wait { to { background-position: -220% 0; } }
+@media (prefers-reduced-motion: reduce) { .run-plates img, .run-plates li.waiting { animation: none; } }
+
+/* A picture book's design preview: one plate in its style with the first page's text over it. */
+.plate-sample { position: relative; aspect-ratio: 17 / 21; border-radius: 4px 10px 10px 4px; overflow: hidden; background: var(--surface);
+  box-shadow: 0 1px 2px rgb(12 10 9 / .08), 0 14px 26px -16px rgb(12 10 9 / .4); }
+.plate-sample img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.plate-sample-ph { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; text-align: center; font-size: 13px; color: var(--muted); }
+.plate-sample-card { position: absolute; left: 8%; right: 8%; top: 6%; display: grid; gap: 4px; padding: 10px 12px; border-radius: 10px;
+  background: rgb(255 255 255 / .92); box-shadow: 0 6px 18px -10px rgb(12 10 9 / .45); }
+.plate-sample-card .eyebrow { margin: 0; font-size: 10px; }
+.plate-sample-card strong { font-size: 14px; line-height: 1.25; text-wrap: balance; }
+.plate-sample-tag { position: absolute; right: 8px; bottom: 8px; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: rgb(12 10 9 / .7); color: #fff; }

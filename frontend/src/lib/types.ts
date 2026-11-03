@@ -29,6 +29,7 @@ export type Design = {
   head_font?: 'Fredoka' | 'Patrick Hand' | 'Fraunces' | 'Baloo 2' | 'Lexend' | 'Nunito' | 'Pacifico' | 'Sniglet' | null
   frame?: 'none' | 'line' | 'rounded' | 'dashed' | 'double'
   art_style?: string | null
+  house_style?: string | null  // the illustration style picked when creating the tome (lib/houseStyles)
   style_id?: string | null
   illustration?: 'acuarela' | 'crayon' | 'recorte' | 'gouache' | 'vector' | 'riso' | 'tinta' | 'plastilina' | 'grabado' | 'infografia' | null
   cover_layout?: 'plate' | 'band' | 'framed'
