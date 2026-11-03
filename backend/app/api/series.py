@@ -223,7 +223,8 @@ async def get_progress(series_id: uuid.UUID, request: Request, user_id: UserId):
         "lessons": [_jsonable(lesson) for lesson in lessons],
         "latest_export": _jsonable(export) if export else None,
         "images": images,
-        "poll_after_ms": 15000 if active else None,
+        # While plates are painted the page shows each one as it lands: a quick look; otherwise a slow safety net.
+        "poll_after_ms": 4000 if images["active"] > 0 else 15000 if active else None,
     }
 
 
