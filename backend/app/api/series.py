@@ -81,85 +81,98 @@ class Generate(BaseModel):
 async def create_series(body: NewTome, request: Request, user_id: UserId,
                         idempotency_key: Annotated[str | None, Header(max_length=100)] = None):
     async with request.app.state.engine.begin() as conn:
-        if idempotency_key:
-            existing = (await conn.execute(text(
-                "select series_id, id from public.generation_jobs where user_id = :u and idempotency_key = :k"
-            ), {"u": user_id, "k": idempotency_key})).one_or_none()
-            if existing:
-                return await _created(conn, existing.series_id, existing.id)
-        await _require_active(conn, user_id)
-        acc = await credits.account(conn, user_id)
-        if body.collection_id and acc.plan_key not in PAID:
-            raise ApiError(402, "plan_required", "Las series por niveles están incluidas en los planes de pago.",
-                           {"feature": "collections", "plan": acc.plan_key})
-        if body.page_count > acc.plan.max_pages:
-            raise ApiError(403, "plan_required", f"Tu plan {acc.plan.label} admite tomos de hasta "
-                           f"{acc.plan.max_pages} páginas.", {"feature": "max_pages", "plan": acc.plan_key})
-        busy = (await conn.execute(text(
-            """select count(*) from public.series s join public.memberships m on m.user_id = s.user_id
-                where m.org_id = :o and s.status in ('outlining', 'generating')"""), {"o": acc.org_id})).scalar_one()
-        if busy >= acc.plan.concurrent:
-            raise ApiError(429, "too_many_running", f"Tu plan {acc.plan.label} genera {acc.plan.concurrent} "
-                           f"{'tomo' if acc.plan.concurrent == 1 else 'tomos'} a la vez; espera a que termine.",
-                           {"plan": acc.plan_key})
-        ip = await _client_ip(conn, user_id, request)
-        free = acc.plan_key not in PAID and await _free_preview(conn, acc.org_id, ip)
-        if free and (body.page_count > FREE_PREVIEW_PAGES or body.section_count > FREE_PREVIEW_PAGES):
-            raise ApiError(403, "plan_required", f"La vista previa admite hasta {FREE_PREVIEW_PAGES} páginas y "
-                           f"{FREE_PREVIEW_PAGES} secciones. Elige un plan para tomos más grandes.",
-                           {"plan": acc.plan_key, "max_pages": FREE_PREVIEW_PAGES})
-        if body.house_style and body.house_style not in FREE_STYLES and acc.plan_key not in PAID:
-            raise ApiError(403, "plan_required", "Ese estilo de ilustración es de los planes de pago. Prueba gratis con "
-                           "Didáctico claro o Acuarela y tinta, o elige un plan.", {"plan": acc.plan_key})
-        if body.guide_id and acc.plan_key not in PAID:
-            raise ApiError(403, "plan_required", "Elegir el personaje guía es de los planes de pago.",
-                           {"plan": acc.plan_key})
-        series_id, job_id = uuid7(), uuid7()
-        # Identical plain requests share a preview: the first visitor's (or a buyer's) tome serves the next ones.
-        plain = not (body.extra_instructions or body.style_id or body.identity_id or body.collection_id
-                     or body.guide_id)
-        key = "|".join([normalize_subject(body.request), body.audience, body.format, str(body.page_count),
-                        str(body.section_count), body.house_style or ""]) if plain else None
-        if free and key and (donor := await _preview_donor(conn, key)):
-            await _clone_preview(conn, donor, series_id, user_id, body.request, ip)
-            return await _created(conn, series_id, None)
-        await conn.execute(text(
-            """insert into public.series (id, user_id, topic, audience, language, lesson_count,
-                                          extra_instructions, status, page_target, style_id, preview, preview_ip,
-                                          preview_key, house_style, guide_id)
-               values (:id, :u, :topic, cast(:audience as jsonb), :lang, :n, :extra, 'outlining', :pages,
-                       (select id from public.styles where id = :st and user_id = :u and status = 'ready'),
-                       :free, :ip, :key, :house,
-                       (select id from public.characters where id = :guide and status = 'ready'
-                           and (shared or user_id = :u)))"""
-        ), {"id": series_id, "u": user_id, "topic": body.request, "audience": json.dumps({"label": body.audience}),
-            "lang": body.language, "n": body.section_count, "extra": body.extra_instructions,
-            "st": body.style_id, "pages": body.page_count, "free": free, "ip": ip if free else None, "key": key,
-            "house": body.house_style, "guide": body.guide_id})
-        await conn.execute(text(
-            """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, idempotency_key)
-               values (:id, :u, :s, 'outline', 'queued', cast(:payload as jsonb), :k)"""
-        ), {"id": job_id, "u": user_id, "s": series_id, "k": idempotency_key,
-            "payload": json.dumps({"brief": {**body.model_dump(exclude={"style_id", "identity_id", "collection_id",
-                                                                       "place", "guide_id"}),
-                                             "brand_characters": not acc.plan.commercial}})})
-        if not free:  # the free preview is on us
-            await credits.charge(conn, user_id, OUTLINE, "Esquema", job_id)
-            await credits.charge(conn, user_id, COVER, "Portada", job_id)  # moves to the cover job when queued
-        identity_id = body.identity_id
-        if body.collection_id:
-            from app.api.collections import own_collection, place_in  # collections imports this module
+        return await _new_tome(conn, body, request, user_id, idempotency_key)
 
-            collection = await own_collection(conn, body.collection_id, user_id)
-            await place_in(conn, series_id, body.collection_id, body.place)
-            identity_id = collection["identity_id"] or identity_id
-        if identity_id:  # the line's look is set now, so the outline job skips the Designer
-            raw = (await conn.execute(text(
-                "select design from public.identities where id = :id and user_id = :u and status = 'ready'"),
-                {"id": identity_id, "u": user_id})).scalar_one_or_none()
-            if raw is not None:
-                await apply_design(conn, user_id, series_id, None, Design.model_validate(_parse(raw)))
-        return await _created(conn, series_id, job_id)
+
+async def _new_tome(conn, body: NewTome, request: Request, user_id, idempotency_key: str | None = None,
+                    version: dict | None = None):
+    """A new tome and its outline job, in the caller's transaction; `version` makes it another version of a tome."""
+    if idempotency_key:
+        existing = (await conn.execute(text(
+            "select series_id, id from public.generation_jobs where user_id = :u and idempotency_key = :k"
+        ), {"u": user_id, "k": idempotency_key})).one_or_none()
+        if existing:
+            return await _created(conn, existing.series_id, existing.id)
+    await _require_active(conn, user_id)
+    acc = await credits.account(conn, user_id)
+    if body.collection_id and acc.plan_key not in PAID:
+        raise ApiError(402, "plan_required", "Las series por niveles están incluidas en los planes de pago.",
+                       {"feature": "collections", "plan": acc.plan_key})
+    if body.page_count > acc.plan.max_pages:
+        raise ApiError(403, "plan_required", f"Tu plan {acc.plan.label} admite tomos de hasta "
+                       f"{acc.plan.max_pages} páginas.", {"feature": "max_pages", "plan": acc.plan_key})
+    busy = (await conn.execute(text(
+        """select count(*) from public.series s join public.memberships m on m.user_id = s.user_id
+            where m.org_id = :o and s.status in ('outlining', 'generating')"""), {"o": acc.org_id})).scalar_one()
+    if busy >= acc.plan.concurrent:
+        raise ApiError(429, "too_many_running", f"Tu plan {acc.plan.label} genera {acc.plan.concurrent} "
+                       f"{'tomo' if acc.plan.concurrent == 1 else 'tomos'} a la vez; espera a que termine.",
+                       {"plan": acc.plan_key})
+    ip = await _client_ip(conn, user_id, request)
+    free = acc.plan_key not in PAID and await _free_preview(conn, acc.org_id, ip)
+    if free and (body.page_count > FREE_PREVIEW_PAGES or body.section_count > FREE_PREVIEW_PAGES):
+        raise ApiError(403, "plan_required", f"La vista previa admite hasta {FREE_PREVIEW_PAGES} páginas y "
+                       f"{FREE_PREVIEW_PAGES} secciones. Elige un plan para tomos más grandes.",
+                       {"plan": acc.plan_key, "max_pages": FREE_PREVIEW_PAGES})
+    if body.house_style and body.house_style not in FREE_STYLES and acc.plan_key not in PAID:
+        raise ApiError(403, "plan_required", "Ese estilo de ilustración es de los planes de pago. Prueba gratis con "
+                       "Didáctico claro o Acuarela y tinta, o elige un plan.", {"plan": acc.plan_key})
+    if body.guide_id and acc.plan_key not in PAID:
+        raise ApiError(403, "plan_required", "Elegir el personaje guía es de los planes de pago.",
+                       {"plan": acc.plan_key})
+    series_id, job_id = uuid7(), uuid7()
+    # Identical plain requests share a preview: the first visitor's (or a buyer's) tome serves the next ones.
+    plain = not (body.extra_instructions or body.style_id or body.identity_id or body.collection_id
+                 or body.guide_id)
+    key = "|".join([normalize_subject(body.request), body.audience, body.format, str(body.page_count),
+                    str(body.section_count), body.house_style or ""]) if plain else None
+    if free and key and (donor := await _preview_donor(conn, key)):
+        await _clone_preview(conn, donor, series_id, user_id, body.request, ip)
+        return await _created(conn, series_id, None)
+    await conn.execute(text(
+        """insert into public.series (id, user_id, topic, audience, language, lesson_count,
+                                      extra_instructions, status, page_target, style_id, preview, preview_ip,
+                                      preview_key, house_style, guide_id)
+           values (:id, :u, :topic, cast(:audience as jsonb), :lang, :n, :extra, 'outlining', :pages,
+                   (select id from public.styles where id = :st and user_id = :u and status = 'ready'),
+                   :free, :ip, :key, :house,
+                   (select id from public.characters where id = :guide and status = 'ready'
+                       and (shared or user_id = :u)))"""
+    ), {"id": series_id, "u": user_id, "topic": body.request, "audience": json.dumps({"label": body.audience}),
+        "lang": body.language, "n": body.section_count, "extra": body.extra_instructions,
+        "st": body.style_id, "pages": body.page_count, "free": free, "ip": ip if free else None, "key": key,
+        "house": body.house_style, "guide": body.guide_id})
+    await conn.execute(text(
+        """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, idempotency_key)
+           values (:id, :u, :s, 'outline', 'queued', cast(:payload as jsonb), :k)"""
+    ), {"id": job_id, "u": user_id, "s": series_id, "k": idempotency_key,
+        "payload": json.dumps({"brief": {**body.model_dump(exclude={"style_id", "identity_id", "collection_id",
+                                                                   "place", "guide_id"}),
+                                         "brand_characters": not acc.plan.commercial}})})
+    if not free:  # the free preview is on us
+        await credits.charge(conn, user_id, OUTLINE, "Esquema", job_id)
+        await credits.charge(conn, user_id, COVER, "Portada", job_id)  # moves to the cover job when queued
+    if version:  # another version of a tome: where it came from, and the cast and look it keeps
+        await conn.execute(text(
+            """update public.series set source_id = :src, variant = :v, "cast" = cast(:cast as jsonb),
+                      design = cast(:design as jsonb) where id = :s"""),
+            {"s": series_id, "src": version["source_id"], "v": version["variant"],
+             "cast": json.dumps(version["cast"]) if version.get("cast") is not None else None,
+             "design": json.dumps(version["design"]) if version.get("design") else None})
+    identity_id = body.identity_id
+    if body.collection_id:
+        from app.api.collections import own_collection, place_in  # collections imports this module
+
+        collection = await own_collection(conn, body.collection_id, user_id)
+        await place_in(conn, series_id, body.collection_id, body.place)
+        identity_id = collection["identity_id"] or identity_id
+    if identity_id:  # the line's look is set now, so the outline job skips the Designer
+        raw = (await conn.execute(text(
+            "select design from public.identities where id = :id and user_id = :u and status = 'ready'"),
+            {"id": identity_id, "u": user_id})).scalar_one_or_none()
+        if raw is not None:
+            await apply_design(conn, user_id, series_id, None, Design.model_validate(_parse(raw)))
+    return await _created(conn, series_id, job_id)
 
 
 @router.get("/api/series")
@@ -697,6 +710,12 @@ async def _series_detail(conn, series_id, user_id, request: Request):
                                                                "review", "findings")} if program else None,
                        } if research else None
     out["outline_error"] = outline_error
+    # The tome's other versions: the one it came from, its siblings and the ones made from it.
+    root = series["source_id"] or series["id"]
+    out["versions"] = [_jsonable(v) for v in (await conn.execute(text(
+        """select id, title, topic, variant, status, created_at, house_style from public.series
+            where user_id = :u and id <> :s and (id = :root or source_id = :root or source_id = :s)
+            order by created_at"""), {"u": series["user_id"], "s": series_id, "root": root})).mappings().all()]
     out["owner"] = None
     if series["user_id"] != user_id:  # the team reviewing someone's tome: say whose it is
         owner = (await conn.execute(text("select email, display_name from public.profiles where id = :u"),

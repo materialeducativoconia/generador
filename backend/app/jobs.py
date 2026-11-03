@@ -445,12 +445,14 @@ quality, genre conventions and composition. Do NOT copy their characters, artwor
 create an original illustration that would sit proudly next to them on a bookstore shelf."""
 
 
-async def enqueue_cover(conn, user_id, series_id, free: bool = False) -> uuid.UUID:
+async def enqueue_cover(conn, user_id, series_id, free: bool = False, illustrate: bool = False) -> uuid.UUID:
+    """`illustrate`: the plates are painted after the cover (a tome redone in another style)."""
     job_id = uuid.uuid4()
     await conn.execute(text(
         """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, max_attempts)
            values (:j, :u, :s, 'cover', 'queued', cast(:p as jsonb), 3)"""),
-        {"j": job_id, "u": user_id, "s": series_id, "p": json.dumps({"free": True} if free else {})})
+        {"j": job_id, "u": user_id, "s": series_id,
+         "p": json.dumps({"free": True} if free else {"illustrate": True} if illustrate else {})})
     return job_id
 
 
@@ -554,6 +556,8 @@ async def _cover(deps: Deps, job: dict) -> None:
         await conn.execute(text(
             "update public.series set cover_key = :k, cover = cast(:c as jsonb) where id = :s"
         ), {"s": job["series_id"], "k": key, "c": json.dumps(cover)})
+        if job["payload"].get("illustrate"):  # a tome in another style: its plates after the cast is restyled
+            await _queue_artwork(conn, job)
         await _succeed(conn, job)
 
 

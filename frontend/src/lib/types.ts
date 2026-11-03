@@ -132,8 +132,15 @@ export type Level = {
   source: number | null
 }
 
+export type TomeVariant = 'style' | 'story' | 'next'
+export type TomeVersion = { id: string; title: string | null; topic: string; variant: TomeVariant | null; status: SeriesStatus; created_at: string; house_style: string | null }
+
 export type Series = CoverFields & {
   preview: boolean  // the free preview, made at our cost before any plan
+  source_id?: string | null  // the tome this one is another version of
+  variant?: TomeVariant | null
+  house_style?: string | null
+  versions?: TomeVersion[]  // the one it came from, its siblings and the ones made from it
   cast?: CastMember[]  // the recurring characters, each drawn from its model sheet
   owner?: { email: string | null; display_name: string | null } | null  // set when the team views a user's tome
   collection_id: string | null

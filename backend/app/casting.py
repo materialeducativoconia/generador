@@ -129,7 +129,10 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
     from app.jobs import _insert_logs, _json  # jobs imports this module
 
     if series["cast"] is not None:
-        return _json(series["cast"]), 0.0
+        cast = _json(series["cast"])
+        if any(c.get("restyle") for c in cast):  # another version of a tome, in another style
+            return await _restyle_cast(deps, job, cast, design, paint=paint)
+        return cast, 0.0
     if (series["genre"] or "") not in CAST_GENRES:
         return [], 0.0
     topic = normalize_subject(series["title"] or series["topic"])
@@ -217,6 +220,27 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
 
 RESTYLE = ("The attached image is this character's model sheet: draw exactly the same character (face, hair, "
            "outfit, colours, proportions, signature detail) in the new art style below, same layout. ")
+
+
+
+async def _restyle_cast(deps, job: dict, cast: list[dict], design: Design | None, *, paint: bool) -> tuple[list[dict], float]:
+    """The cast a tome's new version kept, each one redrawn in the version's house style (or found already drawn)."""
+    house = design.house_style if design else None
+    cost = 0.0
+    for c in cast:
+        if not c.pop("restyle", False) or not c.get("character_id"):
+            continue
+        async with deps.engine.connect() as conn:
+            row = (await conn.execute(text(
+                "select id::text, name, role, archetype, look, signature, sheet_key from public.characters where id = :id"),
+                {"id": c["character_id"]})).mappings().first()
+        if row:
+            c["sheet_key"], spent = await styled_sheet(deps, dict(row), house, design, paint=paint)
+            cost += spent
+    async with deps.engine.begin() as conn:
+        await conn.execute(text('update public.series set "cast" = cast(:c as jsonb) where id = :s'),
+                           {"s": job["series_id"], "c": json.dumps(cast)})
+    return cast, cost
 
 
 async def styled_sheet(deps, row: dict, house: str | None, design: Design | None, *,

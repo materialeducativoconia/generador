@@ -6,11 +6,12 @@ import { AppShell, StatusPill } from '../components/AppShell'
 import { BookCover, CoverViewer } from '../components/BookCover'
 import { errorText } from '../components/ErrorNote'
 import { PageThumb } from '../components/Sheet'
+import { StylePicker } from '../components/StylePicker'
 import { ART_LABEL, COVER_LABEL, FRAME_LABEL, GENRE_LABEL, THEME_LABEL, tomeName } from '../lib/labels'
 import { api } from '../lib/apiClient'
 import { useExport, useIdentities, useMe, usePreview, useProgress, useQuality, useSeries, useStyles } from '../lib/queries'
 import { HOUSE_STYLES, sampleOf } from '../lib/houseStyles'
-import type { Block, Design, Export, LessonSummary, Level, Preflight, Progress, Series } from '../lib/types'
+import type { Block, Design, Export, LessonSummary, Level, Preflight, Progress, Series, TomeVariant } from '../lib/types'
 
 
 export function TomePage() {
@@ -23,6 +24,9 @@ export function TomePage() {
 
   const s = series.data
   const status = progress.data?.status ?? s.status
+  const img = progress.data?.images
+  // Text done but plates still being painted: not "Listo" yet.
+  const pill = status === 'ready' && img && img.total > 0 && (img.active > 0 || img.done + img.failed < img.total) ? 'generating' : status
   return (
     <AppShell>
       {s.owner ? (
@@ -36,7 +40,7 @@ export function TomePage() {
           <p className="eyebrow">{s.genre ? GENRE_LABEL[s.genre] : 'Nuevo tomo'} · {s.audience.label}</p>
           <h1 className="display sm">{s.title ?? 'Tu nuevo tomo'}</h1>
           {!s.title && <p className="tome-request" title={s.topic}>{s.topic}</p>}
-          <StatusPill status={status} />
+          <StatusPill status={pill} />
           {s.cast?.length ? (
             <ul className="cast-row" aria-label="Personajes del tomo">
               {s.cast.map((c) => (
@@ -44,6 +48,7 @@ export function TomePage() {
               ))}
             </ul>
           ) : null}
+          {s.versions?.length ? <VersionLinks series={s} /> : null}
           {!s.owner && <DeleteTome id={s.id} title={tomeName(s)} />}
         </div>
         {s.title && <CoverPanel series={s} />}
@@ -54,6 +59,7 @@ export function TomePage() {
       {s.preview && !s.owner && ['outline_ready', 'needs_attention', 'ready'].includes(status) && <MakeFullBook series={s} />}
 
       {status === 'outline_failed' && <OutlineFailed series={s} />}
+      {!s.owner && !s.preview && ['outline_ready', 'needs_attention', 'ready'].includes(status) && <NewVersion series={s} />}
       {s.research?.levels?.length ? <LevelsPanel series={s} levels={s.research.levels} /> : null}
       {s.research?.program && <ProgramPanel program={s.research.program} />}
       {status === 'outline_ready' && <OutlineEditor key={s.version} series={s} />}
@@ -320,6 +326,108 @@ function QualityCard({ seriesId, progress }: { seriesId: string; progress: Progr
         <ul className="issues muted small">
           {t.issues.map((i, n) => <li key={n}><strong>Sección {i.section}:</strong> {i.issue}</li>)}
         </ul>
+      )}
+    </details>
+  )
+}
+
+const VARIANT_LABEL: Record<TomeVariant, string> = { style: 'Otro estilo', story: 'Otra historia', next: 'Siguiente tomo' }
+
+/** The tome's other versions, to go back and forth between them. */
+function VersionLinks({ series: s }: { series: Series }) {
+  return (
+    <nav className="version-links" aria-label="Otras versiones">
+      <span className="muted small">{s.variant ? `${VARIANT_LABEL[s.variant]} de otro tomo ·` : 'Versiones:'}</span>
+      {s.versions!.map((v) => (
+        <Link key={v.id} to={`/app/tomos/${v.id}`} className="chip">
+          {v.id === s.source_id ? 'Original' : v.variant ? VARIANT_LABEL[v.variant] : 'Versión'}
+          <span className="muted"> · {v.title ?? v.topic}</span>
+        </Link>
+      ))}
+    </nav>
+  )
+}
+
+const MODES: { key: TomeVariant; title: string; text: string }[] = [
+  { key: 'style', title: 'Otro estilo', text: 'El mismo texto y personajes, pintado de nuevo en otro estilo de ilustración.' },
+  { key: 'story', title: 'Cambiar la historia o el contenido', text: 'Un tomo nuevo a partir de tu pedido ajustado, con el mismo diseño.' },
+  { key: 'next', title: 'Siguiente tomo de la serie', text: 'Continúa este tomo con los mismos personajes y estilo, sin repetir temas.' },
+]
+
+/** Hacer otra versión: the same book in another style, its story or content changed, or the next one of its series.
+ * The original stays as it is; the new tome opens when it is created. */
+function NewVersion({ series: s }: { series: Series }) {
+  const { data: me } = useMe()
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const paid = !!me && !me.anonymous && me.plan.key !== 'prueba'
+  const ready = s.status === 'ready'
+  const [mode, setMode] = useState<TomeVariant>(ready ? 'style' : 'story')
+  const [house, setHouse] = useState<string | null>(null)
+  const [request, setRequest] = useState(s.topic)
+  const [changes, setChanges] = useState('')
+  const [keepCast, setKeepCast] = useState(true)
+  const plates = s.lessons.reduce((n, l) => n + (l.content_json?.blocks ?? []).filter((b) => b.type === 'image' && b.kind === 'illustration').length, 0)
+  const pages = s.lessons.reduce((n, l) => n + (l.pages ?? 0), 0) || s.lessons.length
+  const cost = mode === 'style' ? 4 + Math.ceil(plates / 2) : 5 + pages
+  const create = useMutation({
+    mutationFn: () => api.post<{ series: { id: string } }>(`/api/series/${s.id}/versions`, {
+      mode, house_style: house, keep_cast: keepCast,
+      ...(mode === 'style' ? {} : { request: request.trim() === s.topic.trim() ? null : request.trim(), changes: changes.trim() || null }) }),
+    onSuccess: ({ series }) => {
+      void qc.invalidateQueries({ queryKey: ['series'] })
+      navigate(`/app/tomos/${series.id}`)
+    },
+  })
+  const missing = mode === 'style' ? !house || house === s.house_style : mode === 'story' && !changes.trim() && request.trim() === s.topic.trim()
+  return (
+    <details className="panel sources new-version">
+      <summary>
+        <span className="section-h">Hacer otra versión</span>
+        <span className="muted small">Otro estilo, otra historia o el siguiente tomo; este se queda como está</span>
+      </summary>
+      {!paid ? (
+        <p className="small">Hacer otras versiones de un tomo está incluido en los planes de pago. <Link to={`/app/plan?tomo=${s.id}`}>Elegir un plan</Link></p>
+      ) : (
+        <>
+          <div className="version-modes" role="radiogroup" aria-label="Qué versión hacer">
+            {MODES.map((m) => {
+              const off = m.key === 'style' && !ready
+              return (
+                <button key={m.key} type="button" role="radio" aria-checked={mode === m.key} disabled={off}
+                  className={mode === m.key ? 'on' : undefined} onClick={() => setMode(m.key)}>
+                  <strong>{m.title}</strong>
+                  <span className="muted small">{off ? 'Cuando el tomo esté terminado.' : m.text}</span>
+                </button>
+              )
+            })}
+          </div>
+          {mode !== 'style' && (
+            <>
+              <label className="field">
+                <span>Pedido</span>
+                <textarea value={request} onChange={(e) => setRequest(e.target.value)} rows={3} maxLength={2000} />
+              </label>
+              <label className="field">
+                <span>{mode === 'next' ? '¿Qué debe tratar el siguiente tomo? (opcional)' : '¿Qué quieres cambiar?'}</span>
+                <textarea value={changes} onChange={(e) => setChanges(e.target.value)} rows={3} maxLength={2000}
+                  placeholder={mode === 'next' ? 'Ej.: ahora visitan el mar y conocen a las ballenas' : 'Ej.: que la protagonista sea una niña pirata y que el final ocurra en la playa'} />
+              </label>
+              {mode === 'story' && s.cast?.length ? (
+                <label className="check small"><input type="checkbox" checked={keepCast} onChange={(e) => setKeepCast(e.target.checked)} /> Conservar los personajes ({s.cast.map((c) => c.name).join(', ')})</label>
+              ) : null}
+            </>
+          )}
+          <StylePicker value={house} onChange={setHouse} paid />
+          <p className="muted small">
+            {mode === 'style' ? (house === s.house_style || !house ? 'Elige un estilo distinto al actual.' : `Unos ${cost} créditos: portada nueva y ${plates} láminas pintadas otra vez.`)
+              : `Unos ${cost} créditos, como un tomo nuevo. ${house ? '' : 'Mantiene el estilo de ilustración de este tomo. '}Primero revisas su plan.`}
+          </p>
+          <button className="primary" onClick={() => create.mutate()} disabled={missing || create.isPending}>
+            {create.isPending ? 'Creando…' : mode === 'style' ? 'Pintar en este estilo' : mode === 'next' ? 'Crear el siguiente tomo' : 'Crear la nueva versión'}
+          </button>
+          {create.error && <p className="error small" role="alert">{errorText(create.error, 'No se pudo crear la versión.')}</p>}
+        </>
       )}
     </details>
   )
