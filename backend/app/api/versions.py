@@ -51,6 +51,8 @@ async def new_version(series_id: uuid.UUID, body: NewVersion, request: Request, 
         cast = _cast(src, house) if body.keep_cast or body.mode == "style" else None
         if body.mode == "style":
             return await _restyle(conn, src, user_id, house, design, cast)
+        if cast:  # the characters the edited request names join them, designed like any tome's
+            cast = [{**c, "extend": True} for c in cast]
         return await _rewrite(conn, request, src, user_id, body, house, design, cast)
 
 

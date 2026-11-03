@@ -45,6 +45,11 @@ class Casting(BaseModel):
     reason: str = ""
 
 
+class Extras(BaseModel):
+    cast: list[CastMember] = Field(default_factory=list, max_length=2)  # only the characters the tome still lacks
+    reason: str = ""
+
+
 CASTING_SYSTEM = """Eres directora de casting de personajes de una editorial de libros educativos infantiles premium
 (al nivel de Larousse «Mi primer ¡Dime!», Oxford Reading Tree, Usborne o DK). Eliges el personaje guía del tomo
 y, si ayuda, un compañero. Responde solo con json:
@@ -75,22 +80,31 @@ Reglas de diseño (lo que hacen las editoriales premium):
   ojos, ropa pieza por pieza con colores, accesorios, proporciones. Nada de poses ni escenas.
 - Respeta la regla de personajes del pedido: sin personajes de películas o marcas salvo que se permitan; una
   mascota de la línea editorial indicada es obligatoria como guía.
-- Libros para colorear: diseño de contorno claro, sin texturas ni degradados que dependan del color."""
+- Libros para colorear: diseño de contorno claro, sin texturas ni degradados que dependan del color.
+- Un personaje de la biblioteca sin nombre propio (su nombre es su arquetipo) se reutiliza con un nombre propio
+  nuevo para este tomo."""
+
+EXTRAS = """Este tomo ya tiene personajes, que no cambian. Devuelve en "cast" solo los personajes que nombra o pide el
+usuario y todavía no están entre ellos (máximo 2; ninguno si ya están todos, "cast": []). Un nombre que ya está
+en el reparto no es un personaje nuevo."""
 
 
 async def casting_director(llm, brief: Brief, title: str, design: Design | None,
-                           library: list[dict]) -> AgentResult[Casting]:
+                           library: list[dict], kept: list[dict] | None = None) -> AgentResult[Casting | Extras]:
     shelf = "\n".join(
         f"- id {c['id']} | {c['name']} | {c['archetype']} | usado {c['use_count']} veces | temas: "
         f"{', '.join(c['topics'][:6]) or '—'} | {c['look']}" for c in library) or "(vacía)"
     mascot = design.brand.mascot if design and design.brand and design.brand.mascot else None
     extra = f"\nMascota de la línea editorial (úsala como guía, con este nombre): {mascot.name}: {mascot.look}" \
         if mascot else ""
+    if kept:
+        extra += "\nReparto de este tomo (ya dibujado):\n" + "\n".join(
+            f"- {c['name']} | {c.get('archetype') or ''}" for c in kept)
     messages = [
-        {"role": "system", "content": CASTING_SYSTEM},
+        {"role": "system", "content": CASTING_SYSTEM + ("\n\n" + EXTRAS if kept else "")},
         {"role": "user", "content": f"Título: {title}\n{brief.describe()}{extra}\nBiblioteca de personajes:\n{shelf}"},
     ]
-    result = await _json_call(llm, messages, Casting, temperature=0.7, max_tokens=2500)
+    result = await _json_call(llm, messages, Extras if kept else Casting, temperature=0.7, max_tokens=2500)
     known = {str(c["id"]) for c in library}
     for m in result.value.cast:  # an id the model made up is a new character, not a reuse
         m.reuse = m.reuse if m.reuse in known else None
@@ -128,16 +142,21 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
     only, no new sheet. Returns the cast and what painting new sheets cost."""
     from app.jobs import _insert_logs, _json  # jobs imports this module
 
+    kept = None
     if series["cast"] is not None:
         cast = _json(series["cast"])
-        if any(c.get("restyle") for c in cast):  # another version of a tome, in another style
-            return await _restyle_cast(deps, job, cast, design, paint=paint)
-        return cast, 0.0
+        if not any(c.get("restyle") or c.get("extend") for c in cast):
+            return cast, 0.0
+        extend = bool([c.pop("extend") for c in cast if "extend" in c])
+        cast, cost = await _restyle_cast(deps, job, cast, design, paint=paint)  # in another style: redrawn in it
+        if not extend:
+            return cast, cost
+        kept = cast  # a new story or the next tome: the characters its request names are cast too
     if (series["genre"] or "") not in CAST_GENRES:
         return [], 0.0
     topic = normalize_subject(series["title"] or series["topic"])
     house = design.house_style if design else None
-    if series.get("guide_id"):  # the user picked the guide: no casting call
+    if series.get("guide_id") and kept is None:  # the user picked the guide: no casting call
         async with deps.engine.begin() as conn:
             row = (await conn.execute(text(
                 """update public.characters set use_count = use_count + 1 where id = :id and status = 'ready'
@@ -153,18 +172,21 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
     async with deps.engine.connect() as conn:
         library = await library_for(conn, job["user_id"], topic)
     try:
-        result = await casting_director(deps.llm, brief, series["title"] or series["topic"], design, library)
+        result = await casting_director(deps.llm, brief, series["title"] or series["topic"], design, library, kept)
     except Exception as exc:  # the cast is a quality step: without it the Art director invents the guide
         log.warning("casting failed for %s: %s", job["series_id"], exc)
-        return [], 0.0
+        return kept or [], cost if kept else 0.0
     by_id = {c["id"]: c for c in library}
     mascot = bool(design and design.brand and design.brand.mascot)
     private = mascot or brief.brand_characters  # a brand's mascot or a licensed character is never lent out
     style = (design.art_style if design and design.art_style else SHEET_STYLE)
-    cast, cost = [], 0.0
+    said = _words(" ".join(filter(None, [series["topic"], series["extra_instructions"]])))  # what the user wrote
+    cast, cost = (list(kept), cost) if kept else ([], 0.0)
     for m in result.value.cast:
         if m.reuse:
             row = by_id[m.reuse]
+            if row["name"] == row["archetype"] and m.name != row["name"]:  # a library character without its name
+                row = {**row, "name": m.name}
             async with deps.engine.begin() as conn:
                 await conn.execute(text(
                     """update public.characters set use_count = use_count + 1,
@@ -194,16 +216,21 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
         cost += image.cost_usd or 0
         char_id = str(uuid.uuid4())
         key = f"characters/{char_id}.jpg"
+        # A name the user wrote (a child of their class, a relative) stays in their tome; the library shows the
+        # character by what it is, and whoever borrows it names it again.
+        personal = bool(_words(m.name) & said)
+        shelf_name = m.archetype[:1].upper() + m.archetype[1:] if personal else m.name
+        topics = [t for t in [" ".join(w for w in topic.split() if w not in _words(m.name))] if t] if personal else [topic]
         await deps.storage.upload(key, await asyncio.to_thread(_jpeg, image.data), "image/jpeg", bucket="images")
         async with deps.engine.begin() as conn:
             await conn.execute(text(
                 """insert into public.characters (id, name, role, archetype, look, personality, signature, palette,
                           style, topics, audience, sheet_key, based_on, user_id, shared, use_count)
-                   values (:id, :name, :role, :arch, :look, :pers, :sig, :pal, :style, array[:t], :aud, :key,
+                   values (:id, :name, :role, :arch, :look, :pers, :sig, :pal, :style, :t, :aud, :key,
                            :parent, :u, :shared, 1)"""),
-                {"id": char_id, "name": m.name, "role": m.role if m.role in ("guide", "companion") else "guide",
+                {"id": char_id, "name": shelf_name, "role": m.role if m.role in ("guide", "companion") else "guide",
                  "arch": m.archetype, "look": m.look, "pers": m.personality, "sig": m.signature, "pal": m.palette,
-                 "style": style, "t": topic, "aud": brief.audience, "key": key,
+                 "style": style, "t": topics, "aud": brief.audience, "key": key,
                  "parent": parent["id"] if parent else None, "u": job["user_id"],
                  "shared": not private and not series["preview"]})
             if house:
@@ -343,6 +370,11 @@ async def make_character(deps, job: dict) -> None:
                    on conflict (character_id, style) do update set sheet_key = excluded.sheet_key"""),
                 {"id": char_id, "st": house, "k": key})
         await _succeed(conn, job)
+
+
+def _words(text_: str | None) -> set[str]:
+    """Proper-name-sized words, accent- and case-blind, to tell a name the user wrote."""
+    return {w for w in normalize_subject(text_ or "").split() if len(w) > 2}
 
 
 def _entry(char_id, data: dict, sheet_key) -> dict:

@@ -120,3 +120,26 @@ async def test_a_picked_guide_is_redrawn_once_in_the_tomes_house_style(raw_db, g
     cast = json.loads(await raw_db.fetchval('select "cast" from public.series where id = $1::uuid', sid))
     assert cast[0]["name"] == "Pepa" and cast[0]["sheet_key"] == f"characters/{guide}-gouache.jpg"
     await raw_db.execute("delete from public.characters where id = $1", guide)
+
+
+async def test_a_new_story_casts_the_character_its_request_names_and_the_library_keeps_it_nameless(
+        raw_db, google_user, client, key, engine):
+    await raw_db.execute("delete from public.characters where look like 'A 8-year-old girl%'")
+    images, storage = FakeImages(), FakeStorage()
+    sid = await picture_book(raw_db, client, key, await google_user(), engine)
+    await raw_db.execute(
+        """update public.series set extra_instructions = 'Karla ayuda a Lía a volver a casa',
+                  "cast" = '[{"character_id": null, "name": "Lía", "look": "a girl", "sheet_key": null, "extend": true}]'::jsonb
+            where id = $1""", sid)
+    karla = {"cast": [{**NEW["cast"][0], "name": "Karla", "archetype": "niña exploradora",
+                       "look": "A 8-year-old girl with tan skin, two black braids, a yellow raincoat and green boots."}],
+             "reason": "la pide el usuario"}
+
+    await run_next(engine, ScriptedLLM(json.dumps(DESIGN), json.dumps(karla), json.dumps(PLAN)), covers=True,
+                   images=images, storage=storage, references=fake_references)
+
+    cast = json.loads(await raw_db.fetchval('select "cast" from public.series where id = $1', sid))
+    assert [c["name"] for c in cast] == ["Lía", "Karla"] and not any("extend" in c for c in cast)
+    row = await raw_db.fetchrow(
+        "select name, shared, topics from public.characters where look like 'A 8-year-old girl%'")
+    assert row["name"] == "Niña exploradora" and row["shared"] and not any("karla" in t for t in row["topics"])
