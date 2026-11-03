@@ -35,7 +35,7 @@ COVER_STATUS_SQL = """(select j.status::text from public.generation_jobs j where
 
 class NewTome(BaseModel):
     request: str = Field(min_length=3, max_length=2000)
-    audience: str = Field(min_length=1, max_length=200)
+    audience: str = Field(default="", max_length=200)  # empty: the Architect reads the age from the request
     language: str = Field(default="es", pattern=r"^[a-z]{2}(-[A-Z]{2})?$")
     # Both chosen by the user: pages are content pages (cover, index and answer key come free) and the sections
     # share them, so there are never more sections than pages.

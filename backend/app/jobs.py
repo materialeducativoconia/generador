@@ -171,6 +171,10 @@ async def _outline(deps: Deps, job: dict) -> None:
             ), {"s": job["series_id"], "p": position, "t": section.title, "lt": json.dumps(section.letters),
                 "pg": section.pages,
                 "o": json.dumps(section.objectives), "k": json.dumps(section.key_points)})
+        if not brief.audience and outline.audience:  # the request said who it is for; the series keeps it
+            await conn.execute(text(
+                "update public.series set audience = cast(:a as jsonb) where id = :s"),
+                {"s": job["series_id"], "a": json.dumps({"label": outline.audience})})
         await conn.execute(text(
             """update public.series set title = :t, genre = :g, plan = cast(:plan as jsonb), lesson_count = :n,
                       status = 'outline_ready', version = version + 1 where id = :s"""

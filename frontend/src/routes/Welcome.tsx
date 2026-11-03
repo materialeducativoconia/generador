@@ -86,7 +86,6 @@ export function Welcome() {
       <div className="orb" aria-hidden="true" />
       {session?.user.is_anonymous && !previewing && <ReturningVisitor />}
       <span className="brand"><Logo /><span>Jelyx Docs</span></span>
-      <p className="hero-pill"><span className="dot" />Vista previa gratis · sin tarjeta</p>
       <h1 className="display">Libros educativos ilustrados, <span className="jelly">listos en minutos</span>.</h1>
       <p className="lede">
         Escribe un tema y recibe un tomo completo: portada ilustrada, páginas con dibujos, actividades y solucionario.

@@ -37,7 +37,9 @@ class Brief:
     brand_characters: bool = False  # film or brand characters allowed: personal use only (plans that cannot sell)
 
     def describe(self) -> str:
-        lines = [f"Pedido del usuario: {self.request}", f"Público: {self.audience}", f"Idioma: {self.language}"]
+        audience = self.audience or ("no indicado: dedúcelo del pedido (edad, grado o nivel que mencione); si no lo dice, "
+                                     "niños de 6 a 8 años")
+        lines = [f"Pedido del usuario: {self.request}", f"Público: {audience}", f"Idioma: {self.language}"]
         lines.append(f"Número de secciones: {self.section_count}" if self.section_count
                      else "Número de secciones: decide tú (entre 1 y 20): un tema por cada 2 a 4 páginas"
                      + (f", al menos {n}" if (n := min_sections(self.page_count)) > 1 else ""))
@@ -124,6 +126,7 @@ contenidos y su orden (adaptados a la extensión pedida) y no añade temas ajeno
 
 Responde SOLO con un objeto json con esta forma:
 {"title": "…", "genre": "picture_book|story_book|coloring_book|worksheets|tutorial|lesson_series", "style_notes": "tono y estilo visual",
+ "audience": "el público, p. ej. «Preescolar (3–5 años)», «Primaria baja (6–8)», «Primaria alta (9–12)», «Secundaria» o «Adultos principiantes»",
  "known_letters": [], "sections": [{"title": "…", "objectives": ["…"], "key_points": ["…"], "letters": [], "pages": 2}]}"""
 
 WRITER_SYSTEM = """Eres el Redactor de un generador de material educativo imprimible. Escribes UNA sección del tomo

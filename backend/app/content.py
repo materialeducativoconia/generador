@@ -498,6 +498,7 @@ class Outline(BaseModel):
     genre: Genre
     style_notes: Annotated[str, Field(max_length=1000)] = ""
     known_letters: list[Syllable] = Field(default_factory=list, max_length=30)  # literacy: known before the tome
+    audience: Annotated[str, Field(max_length=80)] = ""  # the readers, read from the request when none was given
     sections: list[OutlineSection] = Field(min_length=1, max_length=20)
 
     @field_validator("title")

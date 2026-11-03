@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { ensureVisitorSession } from '../auth/google'
 import { api } from '../lib/apiClient'
-import { AUDIENCES, FORMATS } from '../lib/labels'
+import { AUDIENCES } from '../lib/labels'
 import { errorText } from './ErrorNote'
 import { FREE_PREVIEW_PAGES } from '../lib/pricing'
 import { HOUSE_STYLES } from '../lib/houseStyles'
@@ -17,10 +17,10 @@ export function LandingComposer({ onStart }: { onStart: (busy: boolean) => void 
   const navigate = useNavigate()
   const [params] = useSearchParams()  // a topic page's "Ver mi vista previa" arrives with the request filled in
   const [request, setRequest] = useState(params.get('pedido') ?? '')
-  const [audience, setAudience] = useState(AUDIENCES.includes(params.get('publico') ?? '') ? params.get('publico')! : AUDIENCES[0])
+  // The age comes from the request (the Architect reads it); a topic page may still bring its audience along.
+  const audience = AUDIENCES.includes(params.get('publico') ?? '') ? params.get('publico')! : ''
   const [pages, setPages] = useState<number | null>(null)
   const [sections, setSections] = useState<number | null>(null)
-  const [format, setFormat] = useState('auto')
   // The landing's style cards pick a free style with ?estilo=; the others need a plan.
   const picked = params.get('estilo')
   const [houseStyle, setHouseStyle] = useState<string | null>(null)
@@ -41,7 +41,7 @@ export function LandingComposer({ onStart }: { onStart: (busy: boolean) => void 
     try {
       await ensureVisitorSession(captcha)
       const created = await api.post<{ series: { id: string } }>('/api/series', {
-        request: request.trim(), audience, language: 'es', section_count: sections, page_count: pages, format,
+        request: request.trim(), audience, language: 'es', section_count: sections, page_count: pages, format: 'auto',
         house_style: houseStyle,
       })
       navigate(`/app/tomos/${created.series.id}`)
@@ -55,14 +55,8 @@ export function LandingComposer({ onStart }: { onStart: (busy: boolean) => void 
   return (
     <form id="crear" className="composer landing-composer" onSubmit={submit}>
       <textarea value={request} onChange={(e) => setRequest(e.target.value)} rows={3} maxLength={2000}
-                placeholder="Ej.: Cuadernillo de sumas hasta el 10 con dibujos para contar…" aria-label="Describe el material" />
+                placeholder="Ej.: Un libro ilustrado de dinosaurios para niños de 5 años, con preguntas y datos curiosos…" aria-label="Describe el material" />
       <div className="composer-bar">
-        <label className="select-pill"><span className="sr-only">Público</span>
-          <select value={audience} onChange={(e) => setAudience(e.target.value)}>{AUDIENCES.map((a) => <option key={a}>{a}</option>)}</select>
-        </label>
-        <label className="select-pill"><span className="sr-only">Formato</span>
-          <select value={format} onChange={(e) => setFormat(e.target.value)}>{FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}</select>
-        </label>
         <label className={`select-pill${pages === null ? ' needed' : ''}`}><span className="sr-only">Páginas de contenido</span>
           <select value={pages ?? ''} required onChange={(e) => {
             const n = Number(e.target.value)

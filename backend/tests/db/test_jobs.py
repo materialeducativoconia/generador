@@ -186,3 +186,16 @@ async def test_sections_finishing_at_once_still_finish_the_tome(raw_db, google_u
                            for j in jobs))
 
     assert await raw_db.fetchval("select status from public.series where id = $1", sid) == "ready"
+
+
+async def test_without_an_audience_the_architect_reads_it_from_the_request(raw_db, google_user, client, key, engine):
+    user = await google_user()
+    body = {k: v for k, v in NEW_TOME.items() if k != "audience"}
+    sid = (await client.post("/api/series", json=body, headers=bearer(key, user))).json()["series"]["id"]
+    llm = ScriptedLLM(json.dumps({**OUTLINE, "audience": "Adultos principiantes"}))
+
+    await run_next(engine, llm)
+
+    assert "dedúcelo del pedido" in llm.calls[0][1]["content"]
+    audience = await raw_db.fetchval("select audience->>'label' from public.series where id = $1::uuid", sid)
+    assert audience == "Adultos principiantes"
