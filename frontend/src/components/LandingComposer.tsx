@@ -4,11 +4,11 @@ import { ensureVisitorSession } from '../auth/google'
 import { api } from '../lib/apiClient'
 import { AUDIENCES } from '../lib/labels'
 import { errorText } from './ErrorNote'
-import { FREE_PREVIEW_PAGES } from '../lib/pricing'
 import { HOUSE_STYLES } from '../lib/houseStyles'
 import { StylePicker } from './StylePicker'
 
-const PAGES = Array.from({ length: FREE_PREVIEW_PAGES }, (_, i) => i + 1)  // the preview's longest tome
+// A visitor's preview: two pages of one section, quick and cheap; with an account and a plan the outline grows.
+const PREVIEW_PAGES = 2
 const SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined
 
 /** The landing's request box: no account needed. The visitor becomes an anonymous user and gets the free preview
@@ -19,8 +19,6 @@ export function LandingComposer({ onStart }: { onStart: (busy: boolean) => void 
   const [request, setRequest] = useState(params.get('pedido') ?? '')
   // The age comes from the request (the Architect reads it); a topic page may still bring its audience along.
   const audience = AUDIENCES.includes(params.get('publico') ?? '') ? params.get('publico')! : ''
-  const [pages, setPages] = useState<number | null>(null)
-  const [sections, setSections] = useState<number | null>(null)
   // The landing's style cards pick a free style with ?estilo=; the others need a plan.
   const picked = params.get('estilo')
   const [houseStyle, setHouseStyle] = useState<string | null>(null)
@@ -30,7 +28,7 @@ export function LandingComposer({ onStart }: { onStart: (busy: boolean) => void 
   const [captcha, setCaptcha] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>(null)
-  const ready = request.trim().length >= 3 && pages !== null && sections !== null && (!SITE_KEY || !!captcha)
+  const ready = request.trim().length >= 3 && (!SITE_KEY || !!captcha)
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -41,7 +39,7 @@ export function LandingComposer({ onStart }: { onStart: (busy: boolean) => void 
     try {
       await ensureVisitorSession(captcha)
       const created = await api.post<{ series: { id: string } }>('/api/series', {
-        request: request.trim(), audience, language: 'es', section_count: sections, page_count: pages, format: 'auto',
+        request: request.trim(), audience, language: 'es', section_count: 1, page_count: PREVIEW_PAGES, format: 'auto',
         house_style: houseStyle,
       })
       navigate(`/app/tomos/${created.series.id}`)
@@ -57,29 +55,11 @@ export function LandingComposer({ onStart }: { onStart: (busy: boolean) => void 
       <textarea value={request} onChange={(e) => setRequest(e.target.value)} rows={3} maxLength={2000}
                 placeholder="Ej.: Un libro ilustrado de dinosaurios para niños de 5 años, con preguntas y datos curiosos…" aria-label="Describe el material" />
       <div className="composer-bar">
-        <label className={`select-pill${pages === null ? ' needed' : ''}`}><span className="sr-only">Páginas de contenido</span>
-          <select value={pages ?? ''} required onChange={(e) => {
-            const n = Number(e.target.value)
-            setPages(n)
-            if (sections !== null && sections > n) setSections(n)
-          }}>
-            <option value="" disabled>Páginas…</option>
-            {PAGES.map((n) => <option key={n} value={n}>{n} {n === 1 ? 'página' : 'páginas'}</option>)}
-          </select>
-        </label>
-        <label className={`select-pill${sections === null ? ' needed' : ''}`}><span className="sr-only">Secciones</span>
-          <select value={sections ?? ''} required onChange={(e) => setSections(Number(e.target.value))}>
-            <option value="" disabled>Secciones…</option>
-            {PAGES.map((n) => (
-              <option key={n} value={n} disabled={pages !== null && n > pages}>{n} {n === 1 ? 'sección' : 'secciones'}</option>
-            ))}
-          </select>
-        </label>
+        <StylePicker value={houseStyle} onChange={setHouseStyle} paid={false} />
         <button className="primary landing-go" type="submit" disabled={!ready || busy}>
           {busy ? 'Generando…' : 'Generar'}
         </button>
       </div>
-      <StylePicker value={houseStyle} onChange={setHouseStyle} paid={false} />
       {SITE_KEY && <Turnstile siteKey={SITE_KEY} onToken={setCaptcha} />}
       {error ? <p className="error small" role="alert">{errorText(error, error instanceof Error ? error.message : 'No pudimos crear tu vista previa.')}</p> : null}
     </form>
