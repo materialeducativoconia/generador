@@ -11,27 +11,38 @@ const SITE = (process.env.SITE_URL
 const NAME = 'Jelyx Docs'
 const COVERS = `${(process.env.VITE_SUPABASE_URL ?? 'https://uryxcesvtrkwrtjmszcc.supabase.co').replace(/\/$/, '')}/storage/v1/object/public/covers/showcase`
 const DIST = new URL('../dist/', import.meta.url)
+const API = (process.env.SEO_API_URL ?? 'https://generador-oktm.onrender.com').replace(/\/$/, '')
+const OG = `${SITE}/og.jpg`
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 const studio = (t: Topic) => `/?${new URLSearchParams({ pedido: t.request, publico: t.audience })}#crear`
 const json = (data: object) => `<script type="application/ld+json">${JSON.stringify(data).replace(/</g, '\\u003c')}</script>`
 
-function head(title: string, description: string, path: string, extra = '') {
+/** Description, canonical, Open Graph and Twitter tags: what search results and shared links show. */
+function meta(title: string, description: string, path: string, image = OG) {
   const url = SITE + path
-  return `<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)}</title>
-<meta name="description" content="${esc(description)}">
+  return `<meta name="description" content="${esc(description)}">
 <link rel="canonical" href="${url}">
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="${NAME}">
 <meta property="og:locale" content="es_MX">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:url" content="${url}">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="${esc(image)}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${esc(title)}">
+<meta name="twitter:description" content="${esc(description)}">
+<meta name="twitter:image" content="${esc(image)}">`
+}
+
+function head(title: string, description: string, path: string, extra = '', image = OG) {
+  return `<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)}</title>
+${meta(title, description, path, image)}
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -41,8 +52,8 @@ ${extra}`
 
 const LOGO = `<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="13" height="18" rx="2.5" fill="currentColor" opacity=".18"/><rect x="8" y="3" width="13" height="18" rx="2.5" fill="currentColor"/><path d="M11.5 8.5h6M11.5 12h6M11.5 15.5h3.5" stroke="var(--bg)" stroke-width="1.6" stroke-linecap="round"/></svg>`
 const HEADER = `<header class="top"><a class="brand" href="/">${LOGO}<span>${NAME}</span></a>
-<nav><a href="/material-educativo">Temas</a><a href="/#planes">Planes</a><a class="btn small" href="/app">Entrar</a></nav></header>`
-const FOOTER = `<footer><p><a href="/">${NAME}</a> · <a href="/material-educativo">Material educativo por tema</a> · <a href="/#planes">Planes</a></p>
+<nav><a href="/material-educativo">Temas</a><a href="/laminas">Láminas gratis</a><a href="/#planes">Planes</a><a class="btn small" href="/app">Entrar</a></nav></header>`
+const FOOTER = `<footer><p><a href="/">${NAME}</a> · <a href="/material-educativo">Material educativo por tema</a> · <a href="/laminas">Láminas gratis</a> · <a href="/#planes">Planes</a></p>
 <p class="muted">Vista previa sin registro ni tarjeta.</p></footer>`
 
 /** The example covers drifting by, as on the home page: pure CSS, two copies of the row. */
@@ -80,7 +91,7 @@ function topicPage(t: Topic) {
       { '@type': 'ListItem', position: 2, name: 'Material educativo', item: `${SITE}/material-educativo` },
       { '@type': 'ListItem', position: 3, name: t.name, item: SITE + topicHref(t) }] },
   ]
-  return `<!doctype html><html lang="es"><head>${head(`${t.title} | ${NAME}`, t.description, topicHref(t), ld.map(json).join('\n'))}</head><body>
+  return `<!doctype html><html lang="es"><head>${head(`${t.title} | ${NAME}`, t.description, topicHref(t), ld.map(json).join('\n'), `${COVERS}/${t.cover}.webp`)}</head><body>
 ${HEADER}<main>
 <nav class="crumbs" aria-label="Ruta"><a href="/material-educativo">Material educativo</a> › ${esc(t.name)}</nav>
 <section class="hero"><p class="eyebrow">${esc(t.name)} · ${esc(t.audience)}</p><h1>${esc(t.title)}</h1><p class="lede">${esc(t.intro)}</p>
@@ -102,7 +113,7 @@ const topicGrid = (list: Topic[]) => `<ul class="covers">${list.map((t) => `<li>
 
 function hubPage() {
   const title = `Material educativo para imprimir por tema | ${NAME}`
-  const description = 'Crea material educativo para imprimir de cualquier tema: lectoescritura, matemáticas, ciencias, inglés, libros para colorear y más.'
+  const description = 'Crea material educativo para imprimir de cualquier tema: libros ilustrados, cuentos, lectoescritura, matemáticas, ciencias, inglés, libros para colorear y más.'
   const ld = { '@context': 'https://schema.org', '@type': 'CollectionPage', name: title, url: `${SITE}/material-educativo`,
     hasPart: TOPICS.map((t) => ({ '@type': 'WebPage', name: t.title, url: SITE + topicHref(t) })) }
   return `<!doctype html><html lang="es"><head>${head(title, description, '/material-educativo', json(ld))}</head><body>
@@ -116,18 +127,71 @@ ${plans()}
 ${CTA('/#crear')}</main>${FOOTER}</body></html>`
 }
 
-function homeHead() {
-  const description = 'Crea material educativo de cualquier tema listo para imprimir: libros para colorear, cuadernillos de fichas, métodos y secuencias didácticas.'
-  const ld = { '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: NAME, url: `${SITE}/`,
-    applicationCategory: 'EducationalApplication', operatingSystem: 'Web', inLanguage: 'es', description,
-    offers: PUBLIC_PLANS.map((p) => ({ '@type': 'Offer', name: p.label, price: p.price, priceCurrency: 'USD' })) }
-  return `<meta name="description" content="${esc(description)}">
-    <link rel="canonical" href="${SITE}/">
-    <meta property="og:type" content="website"><meta property="og:site_name" content="${NAME}"><meta property="og:locale" content="es_MX">
-    <meta property="og:title" content="${NAME}: material educativo listo para imprimir"><meta property="og:description" content="${esc(description)}">
-    <meta property="og:url" content="${SITE}/"><meta name="twitter:card" content="summary">
-    ${json(ld)}
-  </head>`
+const HOME_TITLE = `${NAME}: libros educativos ilustrados para imprimir, hechos con IA`
+const HOME_DESCRIPTION = 'Escribe el tema y la edad y recibe un libro ilustrado listo para imprimir: láminas a página completa, cuentos, cuadernillos y libros para colorear. Vista previa gratis.'
+
+/** The built SPA page with this route's head and a crawlable copy of its content inside #root, which React
+ * replaces when it starts: search engines and link previews read the page without running the app. */
+function shell(base: string, path: string, title: string, description: string, body: string, ld: object[], image = OG) {
+  return base
+    .replace(/<title>[^<]*<\/title>/, `<title>${esc(title)}</title>\n    ${meta(title, description, path, image)}\n    ${ld.map(json).join('\n    ')}`)
+    .replace('<div id="root"></div>', `<div id="root"><div class="prerender">${body}</div></div>`)
+}
+
+const ORG = { '@context': 'https://schema.org', '@type': 'Organization', name: NAME, url: `${SITE}/`, logo: `${SITE}/apple-touch-icon.png` }
+
+function homeShell(base: string) {
+  const ld = [ORG,
+    { '@context': 'https://schema.org', '@type': 'WebSite', name: NAME, url: `${SITE}/`, inLanguage: 'es' },
+    { '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: NAME, url: `${SITE}/`,
+      applicationCategory: 'EducationalApplication', operatingSystem: 'Web', inLanguage: 'es', description: HOME_DESCRIPTION,
+      image: OG, offers: PUBLIC_PLANS.map((p) => ({ '@type': 'Offer', name: p.label, price: p.price, priceCurrency: 'USD' })) }]
+  const body = `<h1>Libros educativos ilustrados, listos en minutos.</h1><p>${esc(HOME_DESCRIPTION)}</p>
+<h2>Material educativo por tema</h2><ul>${TOPICS.map((t) => `<li><a href="${topicHref(t)}">${esc(t.title)}</a></li>`).join('')}</ul>
+<p><a href="/laminas">Láminas gratis para imprimir</a> · <a href="/material-educativo">Todos los temas</a> · <a href="/#planes">Planes</a></p>`
+  return shell(base, '/', HOME_TITLE, HOME_DESCRIPTION, body, ld)
+}
+
+type Plate = { slug: string; title: string; answer: string; topic: string; audience: string; style_name: string; image_url: string; created_at: string }
+
+/** The published free plates, from the API; the build goes on without them when it cannot answer (a cold start). */
+async function plates(): Promise<Plate[]> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${API}/api/library`, { signal: AbortSignal.timeout(30_000) })
+      if (res.ok) return ((await res.json()) as { plates: Plate[] }).plates
+    } catch { /* asleep: try again */ }
+  }
+  console.warn('seo: the library did not answer; no plate pages this build')
+  return []
+}
+
+const plateLd = (p: Plate) => ({ '@context': 'https://schema.org', '@type': 'LearningResource', name: p.title,
+  description: p.answer || p.title, url: `${SITE}/laminas/${p.slug}`, image: p.image_url, inLanguage: 'es',
+  learningResourceType: 'Lámina ilustrada', educationalLevel: p.audience || undefined, about: p.topic,
+  isAccessibleForFree: true, publisher: { '@type': 'Organization', name: NAME } })
+
+function libraryShell(base: string, list: Plate[]) {
+  const title = `Láminas gratis para imprimir | ${NAME}`
+  const description = 'Láminas educativas ilustradas gratis: una ilustración con su pregunta y su respuesta, lista para imprimir en PDF tamaño carta.'
+  const ld = [{ '@context': 'https://schema.org', '@type': 'CollectionPage', name: title, url: `${SITE}/laminas`, description,
+    hasPart: list.map((p) => ({ '@type': 'LearningResource', name: p.title, url: `${SITE}/laminas/${p.slug}` })) }]
+  const body = `<h1>Láminas para imprimir, gratis.</h1><p>${esc(description)}</p>
+<ul>${list.map((p) => `<li><a href="/laminas/${p.slug}">${esc(p.title)}</a> · ${esc(p.topic)}</li>`).join('')}</ul>`
+  return shell(base, '/laminas', title, description, body, ld, list[0]?.image_url)
+}
+
+function plateShell(base: string, p: Plate) {
+  const title = `${p.title} — lámina gratis de ${p.topic} | ${NAME}`
+  const description = (p.answer || `Lámina ilustrada de ${p.topic} para imprimir gratis en PDF.`).slice(0, 158)
+  const crumbs = { '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [
+    { '@type': 'ListItem', position: 1, name: NAME, item: `${SITE}/` },
+    { '@type': 'ListItem', position: 2, name: 'Láminas gratis', item: `${SITE}/laminas` },
+    { '@type': 'ListItem', position: 3, name: p.title, item: `${SITE}/laminas/${p.slug}` }] }
+  const body = `<p><a href="/laminas">Láminas gratis</a> › ${esc(p.topic)}</p><h1>${esc(p.title)}</h1>
+<img src="${esc(p.image_url)}" alt="${esc(p.title)}" width="717" height="960"><p>${esc(p.answer)}</p>
+<p>Estilo ${esc(p.style_name)} · PDF tamaño carta gratis.</p>`
+  return shell(base, `/laminas/${p.slug}`, title, description, body, [plateLd(p), crumbs], p.image_url)
 }
 
 const CSS = `:root{--bg:#fff;--text:#0c0a09;--muted:#6b6864;--surface:#f7f7f6;--border:#e7e5e2;--accent:#5b4cf0;--accent-soft:#eeecfe}
@@ -173,17 +237,33 @@ h2{font-size:clamp(24px,3.6vw,34px);line-height:1.1;letter-spacing:-.03em;font-w
 .cta h2{max-width:22ch;margin:0 auto 10px}.cta p{color:rgb(255 255 255/.72);margin:0 0 24px}
 footer{border-top:1px solid var(--border);padding:24px 16px;text-align:center;font-size:14px}`
 
-const pages: string[] = ['/', '/material-educativo']
+const pages: { path: string; images?: string[] }[] = [{ path: '/' }, { path: '/material-educativo' }]
 mkdirSync(new URL('material-educativo/', DIST), { recursive: true })
 writeFileSync(new URL('material-educativo/index.html', DIST), hubPage())
 for (const t of TOPICS) {
   writeFileSync(new URL(`material-educativo/${t.slug}.html`, DIST), topicPage(t))
-  pages.push(topicHref(t))
+  pages.push({ path: topicHref(t), images: [`${COVERS}/${t.cover}.webp`] })
 }
+
+// The SPA's public pages: each at <path>/index.html, which Vercel serves before the SPA fallback.
+const index = new URL('index.html', DIST)
+const base = readFileSync(index, 'utf8')
+const library = await plates()
+mkdirSync(new URL('laminas/', DIST), { recursive: true })
+writeFileSync(new URL('laminas/index.html', DIST), libraryShell(base, library))
+pages.push({ path: '/laminas' })
+for (const p of library) {
+  mkdirSync(new URL(`laminas/${p.slug}/`, DIST), { recursive: true })
+  writeFileSync(new URL(`laminas/${p.slug}/index.html`, DIST), plateShell(base, p))
+  pages.push({ path: `/laminas/${p.slug}`, images: [p.image_url] })
+}
+writeFileSync(index, homeShell(base))
+
 const today = new Date().toISOString().slice(0, 10)
+const image = (src: string) => `<image:image><image:loc>${esc(src)}</image:loc></image:image>`
 writeFileSync(new URL('sitemap.xml', DIST), `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${pages.map((p) => `  <url><loc>${SITE}${p === '/' ? '/' : p}</loc><lastmod>${today}</lastmod></url>`).join('\n')}
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+${pages.map((p) => `  <url><loc>${SITE}${p.path}</loc><lastmod>${today}</lastmod>${(p.images ?? []).map(image).join('')}</url>`).join('\n')}
 </urlset>
 `)
 writeFileSync(new URL('robots.txt', DIST), `User-agent: *
@@ -195,6 +275,4 @@ Disallow: /api
 
 Sitemap: ${SITE}/sitemap.xml
 `)
-const index = new URL('index.html', DIST)
-writeFileSync(index, readFileSync(index, 'utf8').replace('</head>', homeHead()))
-console.log(`seo: ${pages.length} pages for ${SITE}`)
+console.log(`seo: ${pages.length} pages (${library.length} plates) for ${SITE}`)

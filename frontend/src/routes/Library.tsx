@@ -7,6 +7,7 @@ import { Logo } from '../components/AppShell'
 import { errorText } from '../components/ErrorNote'
 import { api } from '../lib/apiClient'
 import { HOUSE_STYLES } from '../lib/houseStyles'
+import { usePageTitle } from '../lib/seo'
 
 export type Plate = { id: string; slug: string; title: string; answer: string; topic: string; audience: string; style: string; style_name: string; image_url: string; downloads: number }
 
@@ -27,6 +28,7 @@ export function Library() {
   const [params, setParams] = useSearchParams()
   const topic = params.get('tema') ?? ''
   const style = params.get('estilo') ?? ''
+  usePageTitle('Láminas gratis para imprimir | Jelyx Docs')
   const { data, error } = useQuery({
     queryKey: ['library', topic, style], placeholderData: (p) => p,
     queryFn: () => api.get<{ plates: Plate[]; topics: { topic: string; n: number }[] }>(
@@ -98,6 +100,7 @@ export function LibraryPlate() {
   }
 
   const plate = data?.plate
+  usePageTitle(plate && `${plate.title} — lámina gratis de ${plate.topic} | Jelyx Docs`)
   const style = HOUSE_STYLES.find((s) => s.key === plate?.style)
   const book = plate ? `/?${new URLSearchParams({ pedido: `Libro ilustrado de ${plate.topic}`, ...(style?.free ? { estilo: style.key } : {}) })}#crear` : '/'
   return (

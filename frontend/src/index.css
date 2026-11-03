@@ -1154,3 +1154,7 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .full-book { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 16px 0; border: 1px solid var(--accent); background: var(--accent-soft); }
 .full-book > div:first-child { flex: 1 1 320px; display: grid; gap: 4px; }
 .full-book-go { display: flex; gap: 8px; align-items: center; }
+
+/* The crawlable copy of a public page the build puts in #root; React replaces it on start. */
+.prerender { max-width: 44rem; margin: 0 auto; padding: 48px 16px; line-height: 1.6; }
+.prerender img { max-width: 100%; height: auto; }

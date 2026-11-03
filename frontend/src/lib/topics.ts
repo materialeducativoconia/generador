@@ -106,6 +106,33 @@ export const TOPICS: Topic[] = [
     includes: ['Fichas cortas por día', 'Varias materias', 'Autoevaluación', 'Solucionario'],
     faq: [['¿Puedo hacer uno por grado?', 'Sí. Agrúpalos en una colección y cada grado queda como un nivel con la misma identidad.'], ['¿Cuánto cuesta uno?', 'Aproximadamente 1 crédito por página, más 5 del esquema y la portada.']],
   },
+  {
+    slug: 'libro-de-dinosaurios-para-ninos', cover: 'colorear-dinosaurios', name: 'Dinosaurios', title: 'Libro ilustrado de dinosaurios para niños',
+    description: 'Crea un libro ilustrado de dinosaurios para niños: láminas a página completa, preguntas, datos curiosos y un personaje guía. PDF listo para imprimir.',
+    intro: 'Un libro de conocimiento como los de librería: cada página es una lámina ilustrada con una pregunta, su respuesta y datos curiosos, con un personaje que acompaña la lectura de principio a fin.',
+    audience: 'Primaria baja (6–8)', request: 'Un libro ilustrado de dinosaurios para niños de 6 años, con preguntas y datos curiosos',
+    outline: ['¿Cuándo vivieron los dinosaurios?', '¿Qué comía el Tiranosaurio rex?', '¿Por qué el Triceratops tenía cuernos?', 'Gigantes de cuello largo', 'Los que volaban y los que nadaban', '¿Cómo sabemos que existieron?'],
+    includes: ['Láminas ilustradas a página completa', 'Preguntas con respuesta y datos curiosos', 'Personaje guía en todo el libro', 'Seis estilos de ilustración para elegir'],
+    faq: [['¿Los datos son correctos?', 'Un agente revisa cada lámina contra los datos del texto y vuelve a pintar las que muestran algo equivocado.'], ['¿Puedo elegir el estilo de las ilustraciones?', 'Sí: acuarela, gouache, collage, crayón, enciclopedia o didáctico.']],
+  },
+  {
+    slug: 'sistema-solar-para-ninos', cover: 'ciencias-espacio', name: 'Sistema solar', title: 'Libro del sistema solar para niños',
+    description: 'Genera un libro ilustrado del sistema solar para niños: planetas, el Sol, la Luna y los astronautas, con láminas, preguntas y datos curiosos para imprimir.',
+    intro: 'Un recorrido por el sistema solar con láminas a página completa: cada planeta con su pregunta, su respuesta y algo sorprendente que contar en clase o en casa.',
+    audience: 'Primaria baja (6–8)', request: 'Un libro ilustrado del sistema solar para niños de 7 años, un planeta por página con datos curiosos',
+    outline: ['El Sol, nuestra estrella', 'Mercurio y Venus', 'La Tierra y la Luna', 'Marte, el planeta rojo', 'Los gigantes: Júpiter y Saturno', 'Urano, Neptuno y más allá'],
+    includes: ['Una lámina ilustrada por tema', 'Preguntas y datos curiosos', 'Personaje guía', 'PDF a color o para imprenta'],
+    faq: [['¿Para qué edad sirve?', 'Escribe la edad en tu pedido y el texto se ajusta a ese lector, de preescolar a secundaria.'], ['¿Puedo ver ejemplos gratis?', 'Sí, en la biblioteca de láminas gratis hay ilustraciones del sistema solar en seis estilos.']],
+  },
+  {
+    slug: 'cuentos-ilustrados-para-ninos', cover: 'lectura-cuentos', name: 'Cuentos ilustrados', title: 'Cuentos ilustrados para niños, hechos a tu medida',
+    description: 'Crea cuentos ilustrados para niños sobre cualquier tema: una historia para leer en voz alta, con ilustración en cada página y datos reales dentro de la aventura.',
+    intro: 'Cuentos para leer en voz alta con un protagonista que vive una aventura de principio a fin, ilustrados página a página y con datos reales del tema escondidos en la historia.',
+    audience: 'Preescolar (3–5 años)', request: 'Un cuento ilustrado para niños de 4 años sobre una gotita de agua que viaja por el ciclo del agua',
+    outline: ['Había una vez una gotita', 'El calor del Sol', 'Arriba, en la nube', '¡Llueve!', 'El viaje por el río', '¿Sabías que…?'],
+    includes: ['Historia con inicio, nudo y desenlace', 'Ilustración en cada página', 'Protagonista que se repite', 'Página final de datos curiosos'],
+    faq: [['¿Puedo usar mi propio personaje?', 'Sí, desde el plan Creador diseñas personajes y aparecen en todos tus libros.'], ['¿Sirve para fomentar la lectura?', 'Está escrito para leerse en voz alta, con ritmo y una frase que se repite.']],
+  },
 ]
 
 export const topicHref = (t: Topic) => `/material-educativo/${t.slug}`

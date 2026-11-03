@@ -10,6 +10,7 @@ import { PUBLIC_PLAN_INFO } from '../lib/pricing'
 import { PlanCards } from '../components/PlanCards'
 import { TOPICS, topicHref } from '../lib/topics'
 import { HOUSE_STYLES, sampleOf } from '../lib/houseStyles'
+import { usePageTitle } from '../lib/seo'
 
 const ERRORS: Record<string, string> = {
   cancelled: 'No se completó el inicio de sesión.',
@@ -22,6 +23,7 @@ function ReturningVisitor() {
 }
 
 export function Welcome() {
+  usePageTitle('Jelyx Docs: libros educativos ilustrados para imprimir, hechos con IA')
   const { session, loading } = useAuth()
   const [params, setParams] = useSearchParams()
   const [starting, setStarting] = useState(false)
