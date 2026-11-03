@@ -121,6 +121,9 @@ async def process_job(deps: Deps, job: dict) -> None:
 async def _outline(deps: Deps, job: dict) -> None:
     async with deps.engine.connect() as conn:
         series = await _series(conn, job["series_id"])
+    if job["payload"].get("extend"):
+        await _extend_outline(deps, job, series)
+        return
     brief = _brief(series, job["payload"].get("brief"))
     if (deps.web is not None or deps.search is not None) and series["research"] is None:
         research = await _research(deps, job, brief)
@@ -188,6 +191,44 @@ async def _outline(deps: Deps, job: dict) -> None:
         # (the job that carries the request): a redone outline is not another free tome.
         if series["preview"] and job["payload"].get("brief"):
             await _queue_preview(conn, job)
+        await _succeed(conn, job)
+
+
+async def _extend_outline(deps: Deps, job: dict, series) -> None:
+    """Convertir en libro completo: new sections after the written ones, up to the pages asked for. The written
+    sections, the cover and the design stay; the user reviews the longer outline and approves it."""
+    target = int(job["payload"]["extend"])
+    async with deps.engine.connect() as conn:
+        lessons = (await conn.execute(text(
+            "select position, title, objectives, pages from public.lessons where series_id = :s order by position"),
+            {"s": job["series_id"]})).mappings().all()
+    have = sum(lesson["pages"] or 1 for lesson in lessons)
+    brief = _brief(series, None)
+    brief.page_count, brief.section_count = max(1, target - have), None
+    written = "; ".join(f"{lesson['position']}. {lesson['title']}" for lesson in lessons)
+    brief.extra_instructions = "\n".join(filter(None, [brief.extra_instructions, (
+        f"El tomo «{series['title'] or series['topic']}» ya tiene estas secciones escritas: {written}. Diseña SOLO las "
+        f"secciones nuevas que lo continúan hasta completar el libro (no repitas esas, sigue después de ellas), con "
+        f"el mismo género y público.")]))
+    try:
+        result = await architect(deps.llm, brief)
+    except AgentFailed as exc:
+        await _log_attempts(deps.engine, job, "architect", exc.attempts)
+        raise
+    added = result.value.sections[:max(0, 20 - len(lessons))]
+    async with deps.engine.begin() as conn:
+        await _insert_logs(conn, job, "architect", result.attempts)
+        for position, section in enumerate(added, len(lessons) + 1):
+            await conn.execute(text(
+                """insert into public.lessons (series_id, position, title, objectives, key_points, letters, pages,
+                                               status)
+                   values (:s, :p, :t, cast(:o as jsonb), cast(:k as jsonb), cast(:lt as jsonb), :pg, 'pending')"""
+            ), {"s": job["series_id"], "p": position, "t": section.title, "lt": json.dumps(section.letters),
+                "pg": section.pages, "o": json.dumps(section.objectives), "k": json.dumps(section.key_points)})
+        await conn.execute(text(
+            """update public.series set lesson_count = :n, page_target = :pages, status = 'outline_ready',
+                      version = version + 1 where id = :s"""),
+            {"s": job["series_id"], "n": len(lessons) + len(added), "pages": target})
         await _succeed(conn, job)
 
 
@@ -1021,9 +1062,10 @@ async def _fail(engine: AsyncEngine, job: dict, code: str, message: str) -> None
         await conn.execute(text(
             """update public.generation_jobs set status = 'failed', finished_at = now(), error = cast(:e as jsonb),
                       locked_at = null, locked_by = null where id = :j"""), {"j": job["id"], "e": error})
-        if job["kind"] == "outline":
-            await conn.execute(text("update public.series set status = 'outline_failed' where id = :s"),
-                               {"s": job["series_id"]})
+        if job["kind"] == "outline":  # a failed extension leaves the tome as it was, its sections written
+            await conn.execute(text("update public.series set status = :st where id = :s"),
+                               {"s": job["series_id"],
+                                "st": "outline_ready" if job["payload"].get("extend") else "outline_failed"})
         elif job["kind"] == "lesson":
             await _lock_series(conn, job)
             await conn.execute(text(

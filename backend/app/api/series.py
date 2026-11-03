@@ -360,6 +360,40 @@ async def regenerate_outline(series_id: uuid.UUID, body: Regenerate, request: Re
         return await _created(conn, series_id, job_id)
 
 
+class Expand(BaseModel):
+    pages: int = Field(ge=4, le=200)  # the whole tome's content pages, the preview's included
+
+
+@router.post("/api/series/{series_id}/expand", status_code=202)
+async def expand_tome(series_id: uuid.UUID, body: Expand, request: Request, user_id: UserId):
+    """Convertir en libro completo: the Architect adds the sections the tome still needs to reach `pages`, after the
+    ones already written (the preview's pages stay as they are); the user reviews the outline and approves it."""
+    async with request.app.state.engine.begin() as conn:
+        series = await _own_series(conn, series_id, user_id, lock=True)
+        acc = await credits.account(conn, user_id)
+        if acc.plan_key not in PAID:
+            raise ApiError(402, "plan_required", "Elige un plan para convertir tu vista previa en un libro completo.",
+                           {"feature": "expand", "plan": acc.plan_key})
+        if series["status"] not in ("outline_ready", "needs_attention", "ready"):
+            raise ApiError(409, "invalid_state", "Espera a que el tomo termine lo que está haciendo.")
+        if body.pages > acc.plan.max_pages:
+            raise ApiError(403, "plan_required", f"Tu plan {acc.plan.label} admite tomos de hasta "
+                           f"{acc.plan.max_pages} páginas.", {"feature": "max_pages", "plan": acc.plan_key})
+        have = (await conn.execute(text(
+            "select coalesce(sum(coalesce(pages, 1)), 0) from public.lessons where series_id = :s"),
+            {"s": series_id})).scalar_one()
+        if body.pages <= have:
+            raise ApiError(422, "validation_error", f"El tomo ya tiene {have} páginas: elige más.")
+        job_id = uuid7()
+        await conn.execute(text("update public.series set status = 'outlining' where id = :s"), {"s": series_id})
+        await conn.execute(text(
+            """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload)
+               values (:id, :u, :s, 'outline', 'queued', cast(:p as jsonb))"""),
+            {"id": job_id, "u": user_id, "s": series_id, "p": json.dumps({"extend": body.pages})})
+        await credits.charge(conn, user_id, OUTLINE, "Ampliar esquema", job_id)
+        return await _created(conn, series_id, job_id)
+
+
 @router.post("/api/series/{series_id}/cover", status_code=202)
 async def request_cover(series_id: uuid.UUID, request: Request, user_id: UserId):
     async with request.app.state.engine.begin() as conn:

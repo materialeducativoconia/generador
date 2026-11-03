@@ -50,6 +50,7 @@ export function TomePage() {
 
       <TomeProgress status={status} progress={progress.data} preview={s.preview} />
       {s.preview && status === 'outline_ready' && <PreviewPages series={s} progress={progress.data} />}
+      {s.preview && !s.owner && ['outline_ready', 'needs_attention', 'ready'].includes(status) && <MakeFullBook series={s} />}
 
       {status === 'outline_failed' && <OutlineFailed series={s} />}
       {s.research?.levels?.length ? <LevelsPanel series={s} levels={s.research.levels} /> : null}
@@ -64,6 +65,46 @@ export function TomePage() {
         </>
       )}
     </AppShell>
+  )
+}
+
+const FULL_SIZES = [8, 12, 16, 24, 32, 48]
+
+/** Convertir en libro completo: the Architect adds the sections the preview still needs, after its written pages,
+ *  and the outline opens for review; without a plan the button leads to the plans. */
+function MakeFullBook({ series: s }: { series: Series }) {
+  const qc = useQueryClient()
+  const { data: me } = useMe()
+  const navigate = useNavigate()
+  const have = s.lessons.reduce((n, l) => n + (l.pages ?? 1), 0)
+  const sizes = FULL_SIZES.filter((n) => n > have && (!me || n <= me.plan.max_pages))
+  const [pages, setPages] = useState(sizes[1] ?? sizes[0] ?? 0)
+  const needsPlan = !!me && (me.anonymous || me.plan.key === 'prueba')
+  const expand = useMutation({
+    mutationFn: () => api.post(`/api/series/${s.id}/expand`, { pages }),
+    onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: ['series', s.id] }), qc.invalidateQueries({ queryKey: ['me'] })]),
+  })
+  if (!needsPlan && !sizes.length) return null
+  return (
+    <section className="panel full-book">
+      <div>
+        <strong>Convertir en libro completo</strong>
+        <p className="muted small">Tus {have} {have === 1 ? 'página' : 'páginas'} se quedan como están. El arquitecto añade las secciones que faltan para completar el libro y tú revisas el esquema antes de generarlo.</p>
+      </div>
+      {needsPlan ? (
+        <button className="primary" onClick={() => (me?.anonymous ? saveWithGoogle(`/app/plan?tomo=${s.id}`) : navigate(`/app/plan?tomo=${s.id}`))}>Elegir un plan</button>
+      ) : (
+        <div className="full-book-go">
+          <label className="select-pill"><span className="sr-only">Páginas del libro completo</span>
+            <select value={pages} onChange={(e) => setPages(Number(e.target.value))}>
+              {sizes.map((n) => <option key={n} value={n}>{n} páginas</option>)}
+            </select>
+          </label>
+          <button className="primary" onClick={() => expand.mutate()} disabled={expand.isPending || !pages}>{expand.isPending ? 'Preparando…' : 'Convertir en libro completo'}</button>
+        </div>
+      )}
+      {expand.error && <p className="error small" role="alert">{errorText(expand.error, 'No se pudo ampliar el tomo.')}</p>}
+    </section>
   )
 }
 

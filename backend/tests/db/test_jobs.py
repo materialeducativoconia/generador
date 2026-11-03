@@ -199,3 +199,30 @@ async def test_without_an_audience_the_architect_reads_it_from_the_request(raw_d
     assert "dedúcelo del pedido" in llm.calls[0][1]["content"]
     audience = await raw_db.fetchval("select audience->>'label' from public.series where id = $1::uuid", sid)
     assert audience == "Adultos principiantes"
+
+
+async def test_convertir_en_libro_completo_adds_sections_after_the_written_ones(raw_db, google_user, client, key,
+                                                                               engine):
+    user = await google_user()
+    sid = await new_tome(client, key, user)
+    await run_next(engine, ScriptedLLM(json.dumps(OUTLINE)))
+    first = await raw_db.fetch("select id, title from public.lessons where series_id = $1 order by position", sid)
+    await raw_db.execute("update public.lessons set status = 'generated' where series_id = $1", sid)
+    more = {**OUTLINE, "sections": [{"title": t, "objectives": ["Tocar"], "key_points": ["do mayor"], "letters": [],
+                                     "pages": n} for t, n in (("Ritmo", 5), ("Acordes", 4))]}
+
+    await raw_db.execute("update public.generation_jobs set status = 'cancelled' where status = 'queued'")
+    response = await client.post(f"/api/series/{sid}/expand", json={"pages": 12}, headers=bearer(key, user))
+    assert response.status_code == 202
+    llm = ScriptedLLM(json.dumps(more))
+    await run_next(engine, llm)
+
+    assert "ya tiene estas secciones escritas" in llm.calls[0][1]["content"]
+    rows = await raw_db.fetch("select id, title, status from public.lessons where series_id = $1 order by position", sid)
+    assert [r["id"] for r in rows[:len(first)]] == [r["id"] for r in first]  # the written ones are kept as they are
+    assert rows[-1]["title"] == "Acordes" and rows[-1]["status"] == "pending"
+    series = await raw_db.fetchrow("select status, page_target from public.series where id = $1", sid)
+    assert series["status"] == "outline_ready" and series["page_target"] == 12
+
+    fewer = await client.post(f"/api/series/{sid}/expand", json={"pages": 10}, headers=bearer(key, user))
+    assert fewer.status_code == 422  # it already has 12

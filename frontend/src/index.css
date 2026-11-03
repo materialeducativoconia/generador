@@ -1151,3 +1151,6 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .character-actions .ghost { color: #fff; border-color: rgb(255 255 255 / 0.4); }
 .plan-note { margin: 8px 0 24px; padding: 12px 16px; border-radius: 12px; background: var(--accent-soft); font-size: 14px; }
 .landing-composer .composer-bar .style-picker { flex: 1; min-width: 0; padding: 0; }
+.full-book { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 16px 0; border: 1px solid var(--accent); background: var(--accent-soft); }
+.full-book > div:first-child { flex: 1 1 320px; display: grid; gap: 4px; }
+.full-book-go { display: flex; gap: 8px; align-items: center; }
