@@ -38,7 +38,7 @@ export function TomePage() {
       <header className="tome-h with-cover">
         <div className="tome-h-text">
           <p className="eyebrow">{s.genre ? GENRE_LABEL[s.genre] : 'Nuevo tomo'} · {s.audience.label}</p>
-          <h1 className="display sm">{s.title ?? 'Tu nuevo tomo'}</h1>
+          {s.title && !s.owner && !s.preview && status !== 'outline_ready' ? <TomeTitle series={s} /> : <h1 className="display sm">{s.title ?? 'Tu nuevo tomo'}</h1>}
           {!s.title && <p className="tome-request" title={s.topic}>{s.topic}</p>}
           <StatusPill status={pill} />
           {s.cast?.length ? (
@@ -670,6 +670,44 @@ function PlateSample({ series: s }: { series: Series }) {
   )
 }
 
+/** An illustrated book's section shows its first painted plate: a miniature of the page in HTML can't match the
+ * printed composition. Undefined for other books and while nothing is painted. */
+function plateOf(blocks: Block[], series: Series): string | undefined {
+  if (series.genre !== 'picture_book' && series.genre !== 'story_book') return undefined
+  const plate = blocks.find((b) => b.type === 'image' && b.size === 'plate' && b.asset_id && series.assets?.[b.asset_id])
+  return plate && plate.type === 'image' && plate.asset_id ? series.assets[plate.asset_id] : undefined
+}
+
+/** The title, editable once the tome has its plan: the cover prints it as text, so nothing is repainted. */
+function TomeTitle({ series: s }: { series: Series }) {
+  const qc = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [title, setTitle] = useState(s.title ?? '')
+  const rename = useMutation({
+    mutationFn: () => api.patch(`/api/series/${s.id}/title`, { title: title.trim() }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['series', s.id] })
+      setEditing(false)
+    },
+  })
+  if (!editing) {
+    return (
+      <div className="tome-title">
+        <h1 className="display sm">{s.title}</h1>
+        <button type="button" className="link-button small" onClick={() => { setTitle(s.title ?? ''); setEditing(true) }}>Cambiar título</button>
+      </div>
+    )
+  }
+  return (
+    <form className="tome-title editing" onSubmit={(e) => { e.preventDefault(); rename.mutate() }}>
+      <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={300} autoFocus aria-label="Título del tomo" />
+      <button className="primary" disabled={title.trim().length < 2 || rename.isPending}>{rename.isPending ? 'Guardando…' : 'Guardar'}</button>
+      <button type="button" className="ghost" onClick={() => setEditing(false)}>Cancelar</button>
+      {rename.error && <p className="error small" role="alert">{errorText(rename.error, 'No se pudo cambiar el título.')}</p>}
+    </form>
+  )
+}
+
 function OutlineEditor({ series }: { series: Series }) {
   const qc = useQueryClient()
   const [title, setTitle] = useState(series.title ?? '')
@@ -818,7 +856,9 @@ function Sections({ series, progress }: { series: Series; progress: Progress }) 
             <li key={l.id} className={`thumb-item ${l.status}`} style={{ '--i': i } as React.CSSProperties}>
               {ready && blocks ? (
                 <Link to={`/app/secciones/${l.id}`} className="thumb-link" aria-label={`Abrir sección ${l.position}: ${l.title}`}>
-                  <PageThumb design={series.design} position={l.position} title={l.title} blocks={blocks} assets={series.assets} credits={series.credits} diagrams={byId.get(l.id)?.diagrams} painting={progress.images.active > 0} />
+                  {plateOf(blocks, series) ? (
+                    <div className="thumb"><img className="thumb-img" src={plateOf(blocks, series)} alt="" /></div>
+                  ) : <PageThumb design={series.design} position={l.position} title={l.title} blocks={blocks} assets={series.assets} credits={series.credits} diagrams={byId.get(l.id)?.diagrams} painting={progress.images.active > 0} />}
                   {caption}
                 </Link>
               ) : (

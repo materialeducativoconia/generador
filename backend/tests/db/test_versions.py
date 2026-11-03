@@ -116,3 +116,14 @@ async def test_rewriting_the_text_keeps_every_picture_and_paints_nothing(raw_db,
     assert block["asset_id"] == PLATE["asset_id"]
     original = json.loads(await raw_db.fetchval("select content_json from public.lessons where series_id = $1", sid))
     assert original["blocks"][0]["narration"] == "Lía vio un águila."
+
+
+async def test_a_finished_tome_can_be_renamed(raw_db, google_user, client, key, engine):  # noqa: F811
+    user = await google_user()
+    sid = await _written(raw_db, client, key, engine, user)
+
+    response = await client.patch(f"/api/series/{sid}/title", json={"title": "  Karla y el  pichón "},
+                                  headers=bearer(key, user))
+
+    assert response.status_code == 200
+    assert await raw_db.fetchval("select title from public.series where id = $1", sid) == "Karla y el pichón"

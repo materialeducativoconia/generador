@@ -312,6 +312,23 @@ async def _cost(conn, series) -> dict:
     return out
 
 
+class Rename(BaseModel):
+    title: str = Field(min_length=2, max_length=300)
+
+
+@router.patch("/api/series/{series_id}/title")
+async def rename_series(series_id: uuid.UUID, body: Rename, request: Request, user_id: UserId):
+    """The title, any time after the plan: the cover prints it as text, so nothing is painted again and the next
+    export carries it."""
+    async with request.app.state.engine.begin() as conn:
+        series = await _own_series(conn, series_id, user_id, lock=True)
+        if series["status"] in ("outlining", "outline_failed"):
+            raise ApiError(409, "invalid_state", "Espera a que el tomo tenga su plan para cambiar el título.")
+        await conn.execute(text("update public.series set title = :t where id = :s"),
+                           {"t": " ".join(body.title.split()), "s": series_id})
+    return {"title": " ".join(body.title.split())}
+
+
 @router.patch("/api/series/{series_id}/outline")
 async def edit_outline(series_id: uuid.UUID, body: OutlineEdit, request: Request, user_id: UserId):
     async with request.app.state.engine.begin() as conn:

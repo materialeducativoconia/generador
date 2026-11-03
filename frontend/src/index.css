@@ -549,6 +549,9 @@ a.sec-row { transition: background-color 160ms ease; }
     box-shadow: 0 0 0 1px rgb(12 10 9 / 0.08), 0 4px 8px rgb(12 10 9 / 0.06), 0 22px 36px -18px rgb(12 10 9 / 0.4); }
 }
 .thumb-page { transform-origin: 0 0; pointer-events: none; }
+.thumb-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.tome-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.tome-title.editing input { flex: 1 1 280px; font: inherit; font-size: 1.25rem; padding: 8px 12px; }
 .thumb-page .sheet.paper { border: 0; border-radius: 0; box-shadow: none; padding: 64px 60px; min-height: 1123px; }
 .thumb.placeholder { display: grid; align-content: start; gap: 9%; padding: 16% 14%; }
 .thumb.placeholder span { height: 7px; border-radius: 4px; background: var(--surface-2); }
