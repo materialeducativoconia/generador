@@ -28,7 +28,7 @@ FORMATS = ("picture_book", "story_book", "coloring_book", "worksheets", "tutoria
 
 
 class NewVersion(BaseModel):
-    mode: Literal["style", "story", "next"]
+    mode: Literal["style", "story", "next", "text"]
     request: str | None = Field(default=None, min_length=3, max_length=2000)  # the request, edited
     changes: str | None = Field(default=None, max_length=2000)  # what to change, for the Architect and the Narrator
     house_style: HouseKey | None = None
@@ -51,6 +51,8 @@ async def new_version(series_id: uuid.UUID, body: NewVersion, request: Request, 
         cast = _cast(src, house) if body.keep_cast or body.mode == "style" else None
         if body.mode == "style":
             return await _restyle(conn, src, user_id, house, design, cast)
+        if body.mode == "text":
+            return await _retext(conn, src, user_id, (body.changes or "").strip())
         if cast:  # the characters the edited request names join them, designed like any tome's
             cast = [{**c, "extend": True} for c in cast]
         return await _rewrite(conn, request, src, user_id, body, house, design, cast)
@@ -73,6 +75,42 @@ def _cast(src, house: str | None) -> list[dict] | None:
         return None
     restyle = bool(house) and house != src["house_style"]
     return [{**c, "restyle": True} if restyle and c.get("character_id") else c for c in cast]
+
+
+async def _retext(conn, src, user_id, changes: str):
+    """Reescribir el texto: the same book, pictures and cover, its words rewritten from what the user asks. Only
+    an illustrated book: its pictures are what is kept."""
+    if src["genre"] not in PLATE_GENRES:
+        raise ApiError(422, "invalid_request", "Reescribir el texto conservando las ilustraciones es para libros ilustrados.")
+    if src["status"] != "ready":
+        raise ApiError(409, "not_ready", "Termina de generar este tomo antes de reescribir su texto.")
+    if len(changes) < 3:
+        raise ApiError(422, "invalid_request", "Cuéntanos qué quieres cambiar del texto.")
+    plates = sum(1 for lesson in (await conn.execute(text(
+        "select content_json from public.lessons where series_id = :s"), {"s": src["id"]})).scalars()
+                 for b in (_parse(lesson) or {}).get("blocks", []) if b.get("size") == "plate")
+    new_id = uuid7()
+    await conn.execute(text(
+        """insert into public.series (id, user_id, title, topic, audience, language, lesson_count, extra_instructions,
+                                      status, page_target, genre, plan, research, design, "cast", house_style,
+                                      guide_id, identity_id, style_id, outline_approved_at, cover_key, cover, art,
+                                      source_id, variant)
+           select :id, user_id, title, topic, audience, language, lesson_count, extra_instructions, 'generating',
+                  page_target, genre, plan, research, design, "cast", house_style, guide_id, identity_id, style_id,
+                  now(), cover_key, cover, art, id, 'text'
+             from public.series where id = :src"""), {"id": new_id, "src": src["id"]})
+    await conn.execute(text(
+        """insert into public.lessons (series_id, position, title, objectives, key_points, letters, pages,
+                                       content_json, review, status)
+           select :id, position, title, objectives, key_points, letters, pages, content_json, review, 'generated'
+             from public.lessons where series_id = :src"""), {"id": new_id, "src": src["id"]})
+    job_id = uuid7()
+    await conn.execute(text(
+        """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, max_attempts)
+           values (:j, :u, :s, 'rewrite', 'queued', cast(:p as jsonb), 3)"""),
+        {"j": job_id, "u": user_id, "s": new_id, "p": json.dumps({"changes": changes})})
+    await credits.charge(conn, user_id, max(math.ceil(plates / 4), 1), "Reescribir el texto", job_id)
+    return await _created(conn, new_id, job_id)
 
 
 async def _restyle(conn, src, user_id, house: str | None, design: dict | None, cast: list[dict] | None):

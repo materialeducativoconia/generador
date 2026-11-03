@@ -331,7 +331,7 @@ function QualityCard({ seriesId, progress }: { seriesId: string; progress: Progr
   )
 }
 
-const VARIANT_LABEL: Record<TomeVariant, string> = { style: 'Otro estilo', story: 'Otra historia', next: 'Siguiente tomo' }
+const VARIANT_LABEL: Record<TomeVariant, string> = { style: 'Otro estilo', text: 'Texto reescrito', story: 'Otra historia', next: 'Siguiente tomo' }
 
 /** The tome's other versions, to go back and forth between them. */
 function VersionLinks({ series: s }: { series: Series }) {
@@ -350,6 +350,7 @@ function VersionLinks({ series: s }: { series: Series }) {
 
 const MODES: { key: TomeVariant; title: string; text: string }[] = [
   { key: 'style', title: 'Otro estilo', text: 'El mismo texto y personajes, pintado de nuevo en otro estilo de ilustración.' },
+  { key: 'text', title: 'Reescribir el texto', text: 'Las mismas ilustraciones y portada; solo cambia la redacción. No se pinta nada.' },
   { key: 'story', title: 'Cambiar la historia o el contenido', text: 'Un tomo nuevo a partir de tu pedido ajustado, con el mismo diseño.' },
   { key: 'next', title: 'Siguiente tomo de la serie', text: 'Continúa este tomo con los mismos personajes y estilo, sin repetir temas.' },
 ]
@@ -369,19 +370,20 @@ function NewVersion({ series: s }: { series: Series }) {
   const [keepCast, setKeepCast] = useState(true)
   const plates = s.lessons.reduce((n, l) => n + (l.content_json?.blocks ?? []).filter((b) => b.type === 'image' && b.kind === 'illustration').length, 0)
   const pages = s.lessons.reduce((n, l) => n + (l.pages ?? 0), 0) || s.lessons.length
-  const cost = mode === 'style' ? 4 + Math.ceil(plates / 2) : 5 + pages
+  const illustrated = s.genre === 'picture_book' || s.genre === 'story_book'
+  const cost = mode === 'style' ? 4 + Math.ceil(plates / 2) : mode === 'text' ? Math.max(Math.ceil(plates / 4), 1) : 5 + pages
   // A story written before the Narrator has no narration: another style keeps that text, a new story rewrites it.
   const oldStory = s.genre === 'story_book' && !s.lessons.some((l) => (l.content_json?.blocks ?? []).some((b) => b.type === 'image' && !!b.narration))
   const create = useMutation({
     mutationFn: () => api.post<{ series: { id: string } }>(`/api/series/${s.id}/versions`, {
       mode, house_style: house, keep_cast: keepCast,
-      ...(mode === 'style' ? {} : { request: request.trim() === s.topic.trim() ? null : request.trim(), changes: changes.trim() || null }) }),
+      ...(mode === 'style' ? {} : mode === 'text' ? { changes: changes.trim() } : { request: request.trim() === s.topic.trim() ? null : request.trim(), changes: changes.trim() || null }) }),
     onSuccess: ({ series }) => {
       void qc.invalidateQueries({ queryKey: ['series'] })
       navigate(`/app/tomos/${series.id}`)
     },
   })
-  const missing = mode === 'style' ? !house || house === s.house_style : mode === 'story' && !changes.trim() && request.trim() === s.topic.trim()
+  const missing = mode === 'style' ? !house || house === s.house_style : mode === 'text' ? changes.trim().length < 3 : mode === 'story' && !changes.trim() && request.trim() === s.topic.trim()
   return (
     <details className="panel sources new-version">
       <summary>
@@ -393,8 +395,8 @@ function NewVersion({ series: s }: { series: Series }) {
       ) : (
         <>
           <div className="version-modes" role="radiogroup" aria-label="Qué versión hacer">
-            {MODES.map((m) => {
-              const off = m.key === 'style' && !ready
+            {MODES.filter((m) => m.key !== 'text' || illustrated).map((m) => {
+              const off = (m.key === 'style' || m.key === 'text') && !ready
               return (
                 <button key={m.key} type="button" role="radio" aria-checked={mode === m.key} disabled={off}
                   className={mode === m.key ? 'on' : undefined} onClick={() => setMode(m.key)}>
@@ -404,7 +406,14 @@ function NewVersion({ series: s }: { series: Series }) {
               )
             })}
           </div>
-          {mode !== 'style' && (
+          {mode === 'text' && (
+            <label className="field">
+              <span>¿Qué quieres cambiar del texto?</span>
+              <textarea value={changes} onChange={(e) => setChanges(e.target.value)} rows={3} maxLength={2000}
+                placeholder="Ej.: que suene más a cuento, frases más cortas para 4 años, que Karla hable más" />
+            </label>
+          )}
+          {(mode === 'story' || mode === 'next') && (
             <>
               <label className="field">
                 <span>Pedido</span>
@@ -421,15 +430,16 @@ function NewVersion({ series: s }: { series: Series }) {
             </>
           )}
           {mode === 'style' && oldStory && (
-            <p className="notice small">Este cuento se escribió antes del Narrador y «Otro estilo» conserva su texto. Para que se reescriba como cuento, elige «Cambiar la historia o el contenido».</p>
+            <p className="notice small">Este cuento se escribió antes del Narrador y «Otro estilo» conserva su texto. Para que se reescriba como cuento sin pintar de nuevo, elige «Reescribir el texto».</p>
           )}
-          <StylePicker value={house} onChange={setHouse} paid />
+          {mode !== 'text' && <StylePicker value={house} onChange={setHouse} paid />}
           <p className="muted small">
             {mode === 'style' ? (house === s.house_style || !house ? 'Elige un estilo distinto al actual.' : `Unos ${cost} créditos: portada nueva y ${plates} láminas pintadas otra vez.`)
+              : mode === 'text' ? `${cost} ${cost === 1 ? 'crédito' : 'créditos'}: se conservan las ${plates} ilustraciones y la portada. Sirve para mejorar la redacción; para cambiar de qué trata la historia, elige «Cambiar la historia».`
               : `Unos ${cost} créditos, como un tomo nuevo. ${house ? '' : 'Mantiene el estilo de ilustración de este tomo. '}Primero revisas su plan.`}
           </p>
           <button className="primary" onClick={() => create.mutate()} disabled={missing || create.isPending}>
-            {create.isPending ? 'Creando…' : mode === 'style' ? 'Pintar en este estilo' : mode === 'next' ? 'Crear el siguiente tomo' : 'Crear la nueva versión'}
+            {create.isPending ? 'Creando…' : mode === 'style' ? 'Pintar en este estilo' : mode === 'text' ? 'Reescribir el texto' : mode === 'next' ? 'Crear el siguiente tomo' : 'Crear la nueva versión'}
           </button>
           {create.error && <p className="error small" role="alert">{errorText(create.error, 'No se pudo crear la versión.')}</p>}
         </>

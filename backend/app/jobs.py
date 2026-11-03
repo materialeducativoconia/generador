@@ -91,7 +91,7 @@ async def reap_stale_jobs(engine: AsyncEngine, lease_seconds: int = 600) -> int:
 async def process_job(deps: Deps, job: dict) -> None:
     handler = {"outline": _outline, "lesson": _lesson, "pdf_export": _pdf_export, "cover": _cover,
                "illustration": _illustration, "style": _style, "identity": _identity,
-               "character": _character}[job["kind"]]
+               "character": _character, "rewrite": _rewrite_text}[job["kind"]]
     try:
         await handler(deps, job)
     except UpstreamError as exc:
@@ -983,6 +983,53 @@ async def _attach_image(conn, lesson_id: str, block_id: str, asset_id, word: str
                 """update public.lessons set content_json = cast(:c as jsonb), content_version = content_version + 1
                     where id = :l"""), {"l": lesson_id, "c": json.dumps(content)})
             return
+
+
+TEXT_FIELDS = ("narration", "question", "answer", "notes", "find")
+
+
+async def _rewrite_text(deps: Deps, job: dict) -> None:
+    """Reescribir el texto: the plates' words rewritten over the pictures the tome already has. If it can't be done
+    the copy keeps the original text and asks for attention; nothing is painted."""
+    from app.agents import rewriter
+
+    async with deps.engine.connect() as conn:
+        series = await _series(conn, job["series_id"])
+        lessons = (await conn.execute(text(
+            "select id, content_json from public.lessons where series_id = :s order by position"),
+            {"s": job["series_id"]})).mappings().all()
+    contents = {row["id"]: _json(row["content_json"]) or {"blocks": []} for row in lessons}
+    pages = [{"id": b["id"], "escena": b.get("subject", ""), **{f: b[f] for f in TEXT_FIELDS if b.get(f)}}
+             for c in contents.values() for b in c.get("blocks", []) if b.get("size") == "plate"]
+    try:
+        result = await rewriter(deps.llm, _brief(series, None), series["title"] or series["topic"], pages,
+                                job["payload"]["changes"], _json(series["cast"]))
+    except Exception as exc:
+        retry = isinstance(exc, UpstreamError) and job["attempts"] < job["max_attempts"]
+        if not retry and not isinstance(exc, UpstreamAuthError):
+            if isinstance(exc, AgentFailed):
+                await _log_attempts(deps.engine, job, "rewriter", exc.attempts)
+            async with deps.engine.begin() as conn:
+                await conn.execute(text("update public.series set status = 'needs_attention' where id = :s"),
+                                   {"s": job["series_id"]})
+        raise
+    new = {p.id: p for p in result.value.pages}
+    for content in contents.values():
+        for b in content.get("blocks", []):
+            page = new.get(b.get("id"))
+            if page is None:
+                continue
+            for f in TEXT_FIELDS:  # only the fields the page had: a story page doesn't turn into a quiz
+                value = getattr(page, f)
+                if b.get(f) and value:
+                    b[f] = value
+    async with deps.engine.begin() as conn:
+        await _insert_logs(conn, job, "rewriter", result.attempts)
+        for lesson_id, content in contents.items():
+            await conn.execute(text("update public.lessons set content_json = cast(:c as jsonb) where id = :id"),
+                               {"id": lesson_id, "c": json.dumps(content)})
+        await conn.execute(text("update public.series set status = 'ready' where id = :s"), {"s": job["series_id"]})
+        await _succeed(conn, job)
 
 
 async def _character(deps: Deps, job: dict) -> None:

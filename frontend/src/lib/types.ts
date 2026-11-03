@@ -132,7 +132,7 @@ export type Level = {
   source: number | null
 }
 
-export type TomeVariant = 'style' | 'story' | 'next'
+export type TomeVariant = 'style' | 'text' | 'story' | 'next'
 export type TomeVersion = { id: string; title: string | null; topic: string; variant: TomeVariant | null; status: SeriesStatus; created_at: string; house_style: string | null }
 
 export type Series = CoverFields & {

@@ -91,3 +91,28 @@ async def test_a_new_story_version_needs_a_paid_plan(raw_db, google_user, client
     locked = await client.post(f"/api/series/{sid}/versions", json={"mode": "story", "changes": "Otra"},
                                headers=bearer(key, user))
     assert locked.status_code == 402
+
+
+async def test_rewriting_the_text_keeps_every_picture_and_paints_nothing(raw_db, google_user, client, key,
+                                                                         engine):  # noqa: F811
+    user = await google_user()
+    sid = await _written(raw_db, client, key, engine, user)
+    await raw_db.execute("update public.series set cover_key = 'covers/x.png' where id = $1", sid)
+
+    response = await client.post(f"/api/series/{sid}/versions",
+                                 json={"mode": "text", "changes": "Que suene más a cuento"}, headers=bearer(key, user))
+
+    assert response.status_code == 202
+    new = response.json()["series"]["id"]
+    rewrite = {"pages": [{"id": "p1", "narration": "Una mañana, Lía miró al cielo y vio un águila enorme.",
+                          "question": "¿Qué?"}]}
+    await run_next(engine, ScriptedLLM(json.dumps(rewrite)))
+
+    row = await raw_db.fetchrow("select status, variant, cover_key from public.series where id = $1::uuid", new)
+    assert dict(row) == {"status": "ready", "variant": "text", "cover_key": "covers/x.png"}
+    block = json.loads(await raw_db.fetchval(
+        "select content_json from public.lessons where series_id = $1::uuid", new))["blocks"][0]
+    assert block["narration"].startswith("Una mañana") and "question" not in block  # no field the page didn't have
+    assert block["asset_id"] == PLATE["asset_id"]
+    original = json.loads(await raw_db.fetchval("select content_json from public.lessons where series_id = $1", sid))
+    assert original["blocks"][0]["narration"] == "Lía vio un águila."

@@ -7,9 +7,9 @@ one repair round where the validation error goes back to the model.
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Generic, TypeVar
+from typing import Annotated, Generic, TypeVar
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from app.content import (ArtPlan, BrandDirections, Character, CoverPlan, Design, EditReview, FactSheet, Fix,
                          IdentityLooks, Image, Outline, ProgramReview, ProgramSheet, ResearchPlan, SectionContent,
@@ -21,7 +21,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@9", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@5", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@3"}
+PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@9", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@5", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@3", "rewriter": "rewriter@1"}
 
 
 @dataclass
@@ -461,6 +461,53 @@ def _new_notes(answer: str, notes: list[str]) -> list[str]:
     """The closing notes the answer doesn't already say: printed twice, the same fact reads as a mistake."""
     said = re.sub(r"\W+", " ", answer.lower())
     return [n for n in notes if re.sub(r"\W+", " ", n.lower()).strip()[:40] not in said] or notes
+
+
+class PageText(BaseModel):
+    """A plate's words, rewritten over the picture it already has."""
+    id: str
+    narration: Annotated[str, Field(max_length=700)] | None = None
+    question: Annotated[str, Field(max_length=300)] | None = None
+    answer: Annotated[str, Field(max_length=500)] | None = None
+    notes: list[Annotated[str, Field(min_length=1, max_length=140)]] = Field(default_factory=list, max_length=4)
+    find: Annotated[str, Field(max_length=300)] | None = None
+
+
+class Rewrite(BaseModel):
+    pages: list[PageText]
+
+
+REWRITER_SYSTEM = """Eres editora de libros infantiles ilustrados premium. Reescribes el texto de un libro que ya está
+ilustrado: cada página tiene su ilustración pintada (su escena) y no se va a pintar de nuevo.
+
+Reglas:
+- Aplica los cambios que pide el usuario (tono, redacción, nombres, edad del lector, más cuento, menos datos…).
+- Cada página sigue contando lo que muestra su escena: no agregues personajes, lugares ni acciones que no se ven.
+- Si es un cuento, que se lea como uno solo de principio a fin: una voz, el estribillo si lo hay, un final cálido.
+- Los datos reales siguen siendo exactos; no inventes cifras.
+- Devuelve los mismos campos que trae cada página (si una página no trae "question", no la agregues) y el mismo id.
+- Mismo idioma; nada de instrucciones para el adulto («lee en voz alta», «muestra la imagen»).
+
+Responde SOLO con json: {"pages": [{"id": "…", "narration": "…", "question": "…", "answer": "…", "notes": ["…"],
+"find": "…"}]} con solo los campos que traía cada página."""
+
+
+async def rewriter(llm: LLM, brief: Brief, title: str, pages: list[dict], changes: str,
+                   cast: list[dict] | None = None) -> AgentResult[Rewrite]:
+    """The words of an illustrated book rewritten over the pictures it has: nothing is painted again."""
+    people = ("\nPersonajes dibujados: " + "; ".join(f"{c['name']} ({c.get('archetype') or ''})" for c in cast)
+              if cast else "")
+    messages = [
+        {"role": "system", "content": REWRITER_SYSTEM},
+        {"role": "user", "content": f"{brief.describe()}\n\nTítulo: {title}{people}\nCambios que pide el usuario: "
+                                    f"{changes}\n\nPáginas (escena pintada y texto actual):\n"
+                                    f"{json.dumps(pages, ensure_ascii=False)}"},
+    ]
+    result = await _json_call(llm, messages, Rewrite, temperature=0.7, max_tokens=8000)
+    missing = {p["id"] for p in pages} - {p.id for p in result.value.pages}
+    if missing:
+        raise AgentFailed("rewrite_incomplete", f"Faltó reescribir {len(missing)} páginas.", result.attempts)
+    return result
 
 
 def story_section(story: Story, outline: Outline, position: int) -> SectionContent:
