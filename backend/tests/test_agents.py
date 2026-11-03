@@ -138,3 +138,17 @@ async def test_a_story_book_prints_pages_with_narration_and_lays_them_out():
     assert all(b.size == "plate" and b.narration and not b.question for b in content.blocks)
     lay_out(content, position=1, pages=3, house_style="enciclopedia", story=True)
     assert [b.layout for b in content.blocks] == ["band", "spread"]
+
+
+def test_a_story_page_needs_narration_and_the_find_label_is_printed_once():
+    from app.content import SectionContent
+    from app.literacy import check_story_book, find_text
+
+    quiz = SectionContent.model_validate({"blocks": [
+        {"id": "p1", "type": "image", "kind": "illustration", "size": "plate", "subject": "Un águila",
+         "question": "¿Cómo es el águila?", "answer": "Grande.", "notes": ["Tiene cresta"]},
+        {"id": "p2", "type": "image", "kind": "illustration", "size": "plate", "subject": "Datos",
+         "question": "¿Sabías que…?", "answer": "Es real.", "notes": ["Vive en la selva"]}]})
+    assert [p.split(":")[0] for p in check_story_book(quiz)] == ["p1"]  # a quiz page is no story page
+    assert find_text("Observa y encuentra los binoculares de Karla.") == "Los binoculares de Karla."
+    assert find_text("un pez cerca del águila") == "un pez cerca del águila"

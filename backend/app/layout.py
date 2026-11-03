@@ -20,9 +20,13 @@ DEFAULT = ["bleed", "band", "vignette"]
 STORY = ["band", "bleed"]  # a story reads best with its text beside the picture, never a cut-out encyclopedia page
 # What the painting must leave room for, by composition (the plate's subject is extended with it).
 COMPOSE = {
-    "bleed": "",
-    "band": " (composition for the upper part of a page: characters and subject in the middle, nothing important "
-            "touching the bottom edge)",
+    # Where the page's text will sit, so the painting leaves it calm instead of the Inspector having to dodge faces.
+    "bleed": " (the page's text card covers the top quarter and a strip runs along the bottom edge: keep the top "
+             "quarter as calm, simple background such as sky or foliage, and every face, head and the main subject "
+             "fully inside the middle half of the picture, never cut by an edge)",
+    "band": " (composition for the upper part of a page, its text goes below it: characters and subject whole and "
+            "in the middle, heads and faces in the upper two thirds, a calm strip of ground along the bottom edge, "
+            "nothing cut by any edge)",
     "vignette": " (a cut-out vignette: the subject and characters isolated on a pure white background, no scenery, "
                 "no frame, no border, only a soft shadow on the ground, like an encyclopedia illustration)",
     "spread": " (a wide panoramic double-page scene: keep the vertical strip in the very centre, the book's fold, "

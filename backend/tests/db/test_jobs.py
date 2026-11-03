@@ -226,3 +226,34 @@ async def test_convertir_en_libro_completo_adds_sections_after_the_written_ones(
 
     fewer = await client.post(f"/api/series/{sid}/expand", json={"pages": 10}, headers=bearer(key, user))
     assert fewer.status_code == 422  # it already has 12
+
+
+async def test_the_narrator_writes_the_whole_story_once_and_each_act_takes_its_pages(raw_db, google_user, client, key,
+                                                                                        engine):
+    user = await google_user()
+    sid = await new_tome(client, key, user)
+    await run_next(engine, ScriptedLLM(json.dumps(OUTLINE)))
+    async with engine.begin() as conn:  # a two-act story: 2 pages, then 2 (the last one is «¿Sabías que…?»)
+        await conn.execute(text("update public.series set genre = 'story_book' where id = :s"), {"s": sid})
+        await conn.execute(text("delete from public.lessons where series_id = :s and position = 3"), {"s": sid})
+        await conn.execute(text("update public.lessons set pages = 2 where series_id = :s"), {"s": sid})
+        await conn.execute(text("update public.series set lesson_count = 2 where id = :s"), {"s": sid})
+    await client.post(f"/api/series/{sid}/lessons/generate", json={}, headers=bearer(key, user))
+    page = lambda n: {"narration": f"Página {n}: «¡Crac!», dijo Lía.", "scene": f"Lía en el bosque, momento {n}"}
+    story = {"protagonist": "Lía quiere ver un águila", "refrain": "¡Arriba, más arriba!",
+             "acts": [[page(1), page(2)], [page(3)]],
+             "closing": {"answer": "El águila harpía es real.", "notes": ["Vive en la selva", "Come monos"],
+                         "scene": "Un águila harpía en su nido"}}
+
+    llm = ScriptedLLM(json.dumps(story))
+    await run_next(engine, llm)
+    await run_next(engine, ScriptedLLM())  # the second act reads the stored story: no call to the model
+
+    assert "EXACTAMENTE" in llm.calls[0][0]["content"] and "Postura — 2 páginas" in llm.calls[0][-1]["content"]
+    rows = await raw_db.fetch("select content_json from public.lessons where series_id = $1 order by position", sid)
+    first, last = (json.loads(r["content_json"])["blocks"] for r in rows)
+    assert [b["narration"] for b in first] == ["Página 1: «¡Crac!», dijo Lía.", "Página 2: «¡Crac!», dijo Lía."]
+    assert all(b["size"] == "plate" and not b.get("question") for b in first)
+    assert last[0]["narration"].startswith("Página 3") and last[1]["question"] == "¿Sabías que…?"
+    assert await raw_db.fetchval(
+        "select count(*) from public.generation_logs where series_id = $1 and prompt_version = 'narrator@1'", sid) == 1

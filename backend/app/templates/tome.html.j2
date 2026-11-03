@@ -464,7 +464,7 @@
       {% set placed, carded = plate_notes(b, tome.busy.get(b.asset_id), lay) %}
       {% set kicker %}{% if loop.first %}<div class="k">{{ s.position }} · {{ s.title }}</div>{% endif %}{% endset %}
       {% set head %}{% if b.narration %}<p class="nar">{{ b.narration|inline }}</p>{% else %}<h3>{{ (b.question or b.caption or s.title)|inline }}</h3>{% if b.answer %}<p>{{ b.answer|inline }}</p>{% endif %}{% endif %}{% endset %}
-      {% set find %}{% if b.find %}<div class="pf"><b>Observa y encuentra:</b>{{ b.find|inline }}</div>{% endif %}{% endset %}
+      {% set find %}{% if b.find %}<div class="pf"><b>Observa y encuentra:</b> {{ b.find|find|inline }}</div>{% endif %}{% endset %}
       {% if lay == "band" %}
       <div class="plate band" data-block="{{ s.position ~ ':' ~ b.id }}">
         {% if uri %}<img src="{{ uri }}" alt="{{ b.subject }}">{% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}

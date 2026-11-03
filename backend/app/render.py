@@ -21,6 +21,7 @@ from app.printing import BLEED_MM, PAPERS, SPINE_TEXT_PAGES, is_color, page_geom
 from app.themes import DEFAULT_PALETTE, FRAMES, ORNAMENTS, THEMES, mix, pops, theme_for
 from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Design, Keyboard, LetterGrid, SectionContent, Tracing
 from app.diagrams import render_diagram
+from app.literacy import find_text
 from app.identity import mark_svg
 from app.worksheets import answers as worksheet_answers, render_worksheet
 
@@ -171,6 +172,7 @@ def letter_grid_cells(block: LetterGrid) -> list[tuple[str, bool]]:
 _env = Environment(loader=FileSystemLoader(TEMPLATES), autoescape=select_autoescape(["j2"]),
                    trim_blocks=True, lstrip_blocks=True)
 _env.filters["inline"] = inline
+_env.filters["find"] = find_text  # tomes written before the label was taken out of the text
 _env.globals.update(keyboard_svg=keyboard_svg, tracing_svg=tracing_svg, letter_grid_cells=letter_grid_cells,
                     GENRE_LABEL=GENRE_LABEL, render_diagram=render_diagram, DIAGRAM_TYPES=DIAGRAM_TYPES,
                     render_worksheet=render_worksheet, WORKSHEET_TYPES=WORKSHEET_TYPES)

@@ -16,10 +16,11 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.agents import (PROMPT_VERSION, AgentFailed, Attempt, Brief, apply_fixes, architect, art_director,
-                        brand_strategist, cover_director, designer, editor, fact_sheet, identity_designer,
-                        program_review, program_sheet, research_planner, writer)
-from app.content import ArtPlan, Brand, Design, Outline, OutlineSection
+from app.agents import (PROMPT_VERSION, AgentFailed, AgentResult, Attempt, Brief, apply_fixes, architect,
+                        art_director, brand_strategist, cover_director, designer, editor, fact_sheet,
+                        identity_designer, narrator, program_review, program_sheet, research_planner, story_section,
+                        writer)
+from app.content import ArtPlan, Brand, Design, Outline, OutlineSection, Story
 from app.identity import describe, guard, initials, look_key
 from app import credits
 from app.free_images import FREE_STYLE
@@ -255,8 +256,13 @@ async def _research(deps: Deps, job: dict, brief: Brief) -> dict:
             if documents:
                 sheet = await fact_sheet(deps.llm, brief, documents)
                 await _log_attempts(deps.engine, job, "facts", sheet.attempts)
-                research["facts"] = [f.model_dump() for f in sheet.value.facts]
-                research["sources"] = [{"title": d.title, "url": d.url} for d in documents]
+                # Only the articles a fact came from are sources: a search also brings near-misses (a Rex, a
+                # heraldic eagle) that would print as if the tome relied on them.
+                used = sorted({f.source for f in sheet.value.facts if 1 <= f.source <= len(documents)})
+                renumber = {old: new for new, old in enumerate(used, 1)}
+                research["facts"] = [{**f.model_dump(), "source": renumber[f.source]}
+                                     for f in sheet.value.facts if f.source in renumber]
+                research["sources"] = [{"title": documents[i - 1].title, "url": documents[i - 1].url} for i in used]
     except AgentFailed as exc:
         await _log_attempts(deps.engine, job, "research", exc.attempts)
         log.warning("research skipped for %s: %s", job["series_id"], exc)
@@ -341,9 +347,12 @@ async def _lesson(deps: Deps, job: dict) -> None:
         brief.extra_instructions = "\n".join(filter(None, [brief.extra_instructions,
                                                            f"Para esta sección: {job['payload']['instructions']}"]))
     try:
-        result = await writer(deps.llm, brief, outline, position)
+        if outline.genre == "story_book":  # the Narrator wrote the whole story once; this act takes its pages
+            result = await _story(deps, job, series, outline, brief, lessons)
+        else:
+            result = await writer(deps.llm, brief, outline, position)
     except AgentFailed as exc:
-        await _log_attempts(deps.engine, job, "writer", exc.attempts)
+        await _log_attempts(deps.engine, job, "narrator" if outline.genre == "story_book" else "writer", exc.attempts)
         raise
     content, review, edit_attempts = result.value, None, []
     if deps.edit:
@@ -374,6 +383,57 @@ async def _lesson(deps: Deps, job: dict) -> None:
         await conn.execute(text("select public.refresh_series_status(:s)"), {"s": job["series_id"]})
         await _queue_artwork(conn, job, sample=bool(sample))
         await _succeed(conn, job)
+
+
+
+async def _story(deps: Deps, job: dict, series, outline: Outline, brief: Brief, lessons) -> AgentResult:
+    """This act of the story. The Narrator writes the whole story once per outline (one arc, one voice, one refrain)
+    and the tome keeps it; the acts are written in parallel, so the first one to arrive writes it while the others
+    wait on the series' lock, then all take their pages from the same story."""
+    key = [[s.title, s.pages] for s in outline.sections]
+    position = next(lesson["position"] for lesson in lessons if lesson["id"] == job["lesson_id"])
+    attempts: list = []
+    async with deps.engine.connect() as lock:
+        await lock.execute(text("select pg_advisory_lock(hashtext(:s))"), {"s": f"story:{job['series_id']}"})
+        await lock.commit()
+        try:
+            async with deps.engine.connect() as conn:
+                row = (await conn.execute(text(
+                    "select plan->'story' as story, plan->'story_key' as story_key from public.series where id = :s"),
+                    {"s": job["series_id"]})).mappings().one()
+            story = Story.model_validate(_json(row["story"])) if row["story"] and _json(row["story_key"]) == key \
+                else None
+            if story is None:
+                written = await _written_acts(deps, job["series_id"], job["lesson_id"])
+                result = await narrator(deps.llm, brief, outline, _json(series["cast"]) or None, written)
+                story, attempts = result.value, result.attempts
+                async with deps.engine.begin() as conn:
+                    await conn.execute(text(
+                        """update public.series set plan = coalesce(plan, '{}'::jsonb)
+                                  || jsonb_build_object('story', cast(:story as jsonb), 'story_key', cast(:k as jsonb))
+                            where id = :s"""), {"story": story.model_dump_json(), "k": json.dumps(key),
+                                               "s": job["series_id"]})
+                    await _insert_logs(conn, job, "narrator", attempts)
+        finally:
+            await lock.execute(text("select pg_advisory_unlock(hashtext(:s))"), {"s": f"story:{job['series_id']}"})
+            await lock.commit()
+    return AgentResult(value=story_section(story, outline, position), attempts=[])
+
+
+async def _written_acts(deps: Deps, series_id, lesson_id) -> dict[int, list[str]]:
+    """The narration of acts already written (a preview being made into the whole book): the story continues them."""
+    async with deps.engine.connect() as conn:
+        rows = (await conn.execute(text(
+            """select position, content_json from public.lessons
+                where series_id = :s and id <> :l and status in ('generated', 'edited', 'approved')
+                order by position"""), {"s": series_id, "l": lesson_id})).mappings().all()
+    acts = {}
+    for r in rows:
+        blocks = (_json(r["content_json"]) or {}).get("blocks", [])
+        texts = [b["narration"] for b in blocks if b.get("type") == "image" and b.get("narration")]
+        if texts:
+            acts[r["position"]] = texts
+    return acts
 
 
 COVER_RULES = """Book cover illustration for a printed educational workbook, portrait 3:4, full bleed.

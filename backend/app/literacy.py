@@ -150,16 +150,24 @@ def check_story_book(content: SectionContent) -> list[str]:
     for b in content.blocks:
         if b.type == "image" and b.kind == "illustration" and b.size != "plate":
             problems.append(f"{b.id}: en un cuento cada página es una lámina: size \"plate\" con narration")
-        elif b.type == "image" and b.size == "plate" and not (b.narration or (b.question and b.notes)):
+        elif b.type == "image" and b.size == "plate" and not (b.narration or "sabías" in (b.question or "").lower()):
             problems.append(f"{b.id}: la página del cuento necesita narration (el texto que se lee en esa página)")
         elif b.type in ("exercise", "heading", "paragraph"):
             problems.append(f"{b.id}: un cuento solo tiene láminas (el texto va en narration de cada lámina)")
     return problems
 
 
+def find_text(find: str) -> str:
+    """A plate's «Observa y encuentra» challenge without the label, which the page prints itself."""
+    rest = re.sub(r"^\s*observa\s+y\s+encuentra\s*[:,.]?\s*", "", find, flags=re.I)
+    return rest[:1].upper() + rest[1:] if rest != find else find
+
+
 def plate_up(content: SectionContent) -> None:
     """Last resort when the Writer still drew loose pictures in a picture book: they print as plates anyway."""
     for b in content.blocks:
+        if b.type == "image" and b.find:  # the template prints the label: the Writer's own copy would double it
+            b.find = find_text(b.find) or None
         if b.type == "image" and b.kind == "illustration" and b.size != "plate":
             b.size = "plate"
             if not (b.question or b.narration):  # a story page keeps its narration and needs no question

@@ -11,7 +11,8 @@ from typing import Generic, TypeVar
 from pydantic import BaseModel, ValidationError
 
 from app.content import (ArtPlan, BrandDirections, Character, CoverPlan, Design, EditReview, FactSheet, Fix,
-                         IdentityLooks, Outline, ProgramReview, ProgramSheet, ResearchPlan, SectionContent)
+                         IdentityLooks, Image, Outline, ProgramReview, ProgramSheet, ResearchPlan, SectionContent,
+                         Story)
 from app.literacy import (allowed_letters, check_blocks, check_picture_book, check_section, check_story_book, plate_up,
                            tidy)
 from app.themes import ART_STYLES, COVER_LAYOUTS, FONTS, FRAMES, THEMES
@@ -19,7 +20,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@9", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@5", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1"}
+PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@9", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@5", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@1"}
 
 
 @dataclass
@@ -354,6 +355,113 @@ async def writer(llm: LLM, brief: Brief, outline: Outline, position: int) -> Age
         plate_up(result.value)
     tidy(result.value, section.title)
     return result
+
+
+NARRATOR_SYSTEM = """Eres el Narrador de una editorial de libros infantiles ilustrados: escribes cuentos para leer en voz
+alta que un niño pide otra vez, como los mejores álbumes ilustrados de librería. Escribes el cuento COMPLETO de una
+vez, página por página; cada sección del esquema es un acto del cuento.
+
+Cómo es un buen cuento:
+- Un protagonista (de los personajes que se te dan, si los hay) que QUIERE algo concreto desde la primera página.
+- Arco completo: inicio (quién es y qué quiere), un problema, intentos que fallan, un giro, el momento más
+  emocionante (clímax) y un final cálido que cierra lo que quería. Nada de explicaciones de clase.
+- Cada página es UN momento que se puede dibujar, y empuja la historia hacia adelante: nunca dos páginas iguales.
+- Voz de cuento: frases con ritmo, verbos de acción, sonidos («¡Crac!», «Fiuuu»), diálogos cortos entre «», y un
+  estribillo (una frase breve que se repite 3 o 4 veces a lo largo del cuento y que el niño espera).
+- Lo que el niño aprende (el tema del pedido) va DENTRO de la aventura, con datos reales y exactos de los datos
+  verificados: el personaje lo descubre, lo ve o lo usa para resolver el problema. Nunca preguntas de examen,
+  nunca «¿Sabías que…?» en medio del cuento, nunca listas de datos.
+- Nunca instrucciones para el adulto («lee en voz alta», «muestra la imagen», «pregunta al niño»).
+- Extensión por página según la edad: preescolar 1 o 2 frases cortas (máx. 25 palabras); primaria baja 2 o 3
+  frases; primaria alta hasta 4.
+- "scene" describe para el ilustrador el momento exacto de esa página: quién aparece, qué hace, dónde, su
+  emoción y el plano (lejano, medio o cercano), variando de una página a otra. En español, sin texto en la imagen.
+
+Al final del cuento va una página aparte, «¿Sabías que…?» (closing): answer con una o dos frases que conectan el
+cuento con lo real, 2 a 4 notes con datos reales del tema (máx. 140 caracteres cada uno) y su scene.
+
+Responde SOLO con json:
+{"protagonist": "quién es y qué quiere", "refrain": "el estribillo",
+ "acts": [[{"narration": "…", "scene": "…"}, …], …],
+ "closing": {"answer": "…", "notes": ["…"], "scene": "…"}}
+"acts" tiene una lista por sección del esquema, en orden, con EXACTAMENTE las páginas que se piden para cada una."""
+
+
+def story_pages(outline: Outline) -> list[int]:
+    """Pages of story per act: each section's pages, the last one minus the «¿Sabías que…?» plate."""
+    pages = [max(1, s.pages or 2) for s in outline.sections]
+    if pages[-1] > 1:
+        pages[-1] -= 1
+    return pages
+
+
+def _story_problems(story: Story, want: list[int]) -> list[str]:
+    problems = []
+    if len(story.acts) != len(want):
+        problems.append(f"acts debe tener {len(want)} listas (una por sección), no {len(story.acts)}")
+    for i, (act, n) in enumerate(zip(story.acts, want), 1):
+        if len(act) != n:
+            problems.append(f"la sección {i} debe tener exactamente {n} páginas, no {len(act)}")
+    for i, act in enumerate(story.acts, 1):
+        for j, page in enumerate(act, 1):
+            low = page.narration.lower()
+            if "voz alta" in low or "muestra la imagen" in low or "sabías que" in low:
+                problems.append(f"sección {i}, página {j}: solo cuento, sin instrucciones ni «¿Sabías que…?»")
+    return problems
+
+
+async def narrator(llm: LLM, brief: Brief, outline: Outline, cast: list[dict] | None = None,
+                   written: dict[int, list[str]] | None = None) -> AgentResult[Story]:
+    """The whole story in one pass, so its arc, voice and refrain run from the first page to the last.
+    `written` holds the narration of acts already printed (a preview that grows): the story continues them."""
+    want = story_pages(outline)
+    acts = "\n".join(f"{i}. {s.title} — {n} páginas" + (f" ({'; '.join(s.key_points[:6])})" if s.key_points else "")
+                     for i, (s, n) in enumerate(zip(outline.sections, want), 1))
+    people = ("\nPersonajes ya diseñados (el primero es el protagonista; usa sus nombres, no inventes otros "
+              "protagonistas):\n" + "\n".join(f"- {c['name']}: {c.get('archetype') or c.get('look', '')}"
+                                                for c in cast)) if cast else ""
+    kept = ("\nEstos actos ya están impresos: devuélvelos con su mismo texto y continúa la historia desde ahí:\n"
+            + "\n".join(f"Sección {i}: " + " / ".join(texts) for i, texts in sorted(written.items()))) if written else ""
+    messages = [
+        {"role": "system", "content": NARRATOR_SYSTEM},
+        {"role": "user", "content": f"{brief.describe()}\n\nTítulo del cuento: {outline.title}\n"
+                                    f"Actos (secciones) y páginas de cada uno:\n{acts}{people}{kept}"},
+    ]
+    result = await _json_call(llm, messages, Story, temperature=0.9, max_tokens=8000)
+    problems = _story_problems(result.value, want)
+    if problems:
+        last = result.attempts[-1]
+        try:
+            retry = await _json_call(llm, [*last.messages, {"role": "assistant", "content": last.completion.text},
+                                           {"role": "user", "content": "Corrige esto y responde solo con el json "
+                                            "completo:\n" + "\n".join(f"- {p}" for p in problems)}],
+                                     Story, temperature=0.7, max_tokens=8000)
+        except AgentFailed as exc:
+            result.attempts += exc.attempts
+        else:
+            if len(_story_problems(retry.value, want)) < len(problems):
+                retry.attempts = result.attempts + retry.attempts
+                result = retry
+            else:
+                result.attempts += retry.attempts
+        result.notes = _story_problems(result.value, want)
+    return result
+
+
+def story_section(story: Story, outline: Outline, position: int) -> SectionContent:
+    """A section of the story as plates: one per page with its narration, and the closing facts on the last one."""
+    acts = story.acts
+    act = acts[position - 1] if position <= len(acts) else []
+    blocks = [Image(id=f"s{position}p{i}", type="image", kind="illustration", size="plate", subject=p.scene,
+                    narration=p.narration) for i, p in enumerate(act, 1)]
+    if position == len(outline.sections):
+        c = story.closing
+        blocks.append(Image(id=f"s{position}fin", type="image", kind="illustration", size="plate", subject=c.scene,
+                            question="¿Sabías que…?", answer=c.answer, notes=c.notes[:4]))
+    if not blocks:  # the story came back short: never an empty section
+        blocks.append(Image(id=f"s{position}p1", type="image", kind="illustration", size="plate",
+                            subject=outline.sections[position - 1].title, narration=outline.sections[position - 1].title))
+    return SectionContent(summary=story.protagonist[:1000], blocks=blocks)
 
 
 EDITOR_SYSTEM = """Eres el Editor de una editorial de material educativo que se vende impreso. Revisas UNA sección ya

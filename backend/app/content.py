@@ -672,3 +672,28 @@ class EditReview(BaseModel):
     score: int = Field(ge=1, le=5)  # 5 = ready to sell as is
     issues: list[Annotated[str, Field(max_length=300)]] = Field(default_factory=list, max_length=8)
     fixes: list[Fix] = Field(default_factory=list, max_length=25)
+
+
+class StoryPage(BaseModel):
+    """One page of a story as the Narrator wrote it: what is read aloud and the exact moment to paint."""
+
+    narration: Annotated[str, Field(min_length=1, max_length=700)]
+    scene: Annotated[str, Field(min_length=1, max_length=700)]
+
+
+class StoryClosing(BaseModel):
+    """The story's last plate, «¿Sabías que…?»: the real facts the adventure was about."""
+
+    answer: Annotated[str, Field(min_length=1, max_length=500)]
+    notes: list[Annotated[str, Field(min_length=1, max_length=140)]] = Field(min_length=2, max_length=4)
+    scene: Annotated[str, Field(min_length=1, max_length=700)]
+
+
+class Story(BaseModel):
+    """The whole story, written in one go so it has one arc, one voice and one refrain from the first page to the
+    last; each section of the outline is an act and takes its pages from here."""
+
+    protagonist: Annotated[str, Field(max_length=300)] = ""
+    refrain: Annotated[str, Field(max_length=200)] = ""
+    acts: list[list[StoryPage]] = Field(min_length=1, max_length=20)
+    closing: StoryClosing

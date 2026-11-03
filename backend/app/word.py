@@ -19,6 +19,7 @@ from PIL import Image
 
 from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES
 from app.diagrams import render_diagram
+from app.literacy import find_text
 from app.printing import PAPERS
 from app.render import ASSETS, GENRE_LABEL, Tome, keyboard_svg, letter_grid_cells, theme_colors, tracing_svg
 from app.themes import FONTS
@@ -183,7 +184,7 @@ def _block(doc, b, n, column, accent, c, drawing, tome, inset=None) -> None:
                 doc.add_picture(io.BytesIO(inset), width=int(column * 0.9))
                 doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
             if b.find:
-                _inline(doc.add_paragraph(), f"**Observa y encuentra:** {b.find}")
+                _inline(doc.add_paragraph(), f"**Observa y encuentra:** {find_text(b.find)}")
         if tome.credits.get(b.asset_id):
             doc.add_paragraph(tome.credits[b.asset_id]).runs[0].font.size = Pt(8)
     elif b.type == "writing_lines":
