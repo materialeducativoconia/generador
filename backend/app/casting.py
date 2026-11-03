@@ -120,7 +120,9 @@ def sheet_prompt(m: CastMember | dict, style: str, derived: bool) -> str:
             f"{get('look')} Signature detail always visible: {get('signature') or 'as described'}. "
             f"Top row: full body turnaround, front view, three-quarter view, side view and back view, standing in a "
             f"neutral pose, same size and evenly spaced. Bottom row: four head close-ups with different expressions "
-            f"(happy, surprised, thinking, proud). Art style: {style}. Identity colours: "
+            f"(happy, surprised, thinking, proud). Every figure is the same single character with exactly one head "
+            f"and one face (the side view shows one profile, the back view no face); no extra eyes, snouts, limbs "
+            f"or tails. Art style: {style}. Identity colours: "
             f"{', '.join(get('palette') or []) or 'as described'}. Plain pure white background, no scenery, no props "
             f"other than the character's own accessories, soft even light. {NO_TEXT}")
 
@@ -207,13 +209,13 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
             except Exception:
                 log.warning("sheet %s unavailable", parent["sheet_key"])
         try:
-            image = await deps.images.generate(sheet_prompt(m, style, bool(refs)), references=refs,
-                                               aspect_ratio="4:3", resolution="2K")
+            image, spent = await paint_sheet(deps.images, getattr(deps, "vision", None),
+                                             sheet_prompt(m, style, bool(refs)), refs, m.name)
         except Exception as exc:
             log.warning("model sheet failed for %s: %s", m.name, exc)
             cast.append(_entry(None, m.model_dump(), None))
             continue
-        cost += image.cost_usd or 0
+        cost += spent
         char_id = str(uuid.uuid4())
         key = f"characters/{char_id}.jpg"
         # A name the user wrote (a child of their class, a relative) stays in their tome; the library shows the
@@ -243,6 +245,33 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
         await conn.execute(text('update public.series set "cast" = cast(:c as jsonb) where id = :s'),
                            {"s": job["series_id"], "c": json.dumps(cast)})
     return cast, cost
+
+
+SHEET_CHECK = ("Hoja de modelo de un solo personaje, {name}: vistas de cuerpo entero y cuatro cabezas con "
+               "expresiones. Cada figura tiene una sola cabeza con una sola cara (de perfil, un solo perfil); es un "
+               "defecto una cabeza con dos caras, ojos, hocicos, patas, brazos o colas de más.")
+
+
+async def paint_sheet(images, vision, prompt: str, references: list[bytes], name: str):
+    """A model sheet, checked by the image Reviewer: a sheet is the reference for every page, so a two-faced head
+    on it repeats through the book. One repaint with the defect named; returns the image and what it all cost."""
+    image = await images.generate(prompt, references=references, aspect_ratio="4:3", resolution="2K")
+    cost = image.cost_usd or 0.0
+    if vision is None:
+        return image, cost
+    try:
+        verdict = (await vision.review_sheet(image.data, [SHEET_CHECK.format(name=name)], kind="illustration"))[0]
+    except Exception as exc:  # the review is a safeguard, not a gate
+        log.warning("sheet review of %s failed: %s", name, exc)
+        return image, cost
+    cost += verdict.cost_usd or 0.0
+    if verdict.ok:
+        return image, cost
+    log.info("sheet of %s repainted: %s", name, verdict.issues)
+    retry = await images.generate(f"{prompt} Fix these problems from the previous attempt: "
+                                  f"{verdict.issues or 'a deformed head'}.", references=references,
+                                  aspect_ratio="4:3", resolution="2K")
+    return retry, cost + (retry.cost_usd or 0.0)
 
 
 RESTYLE = ("The attached image is this character's model sheet: draw exactly the same character (face, hair, "
@@ -284,8 +313,9 @@ async def styled_sheet(deps, row: dict, house: str | None, design: Design | None
         return kept or row["sheet_key"], 0.0
     try:
         base = reference_image(await deps.storage.download(row["sheet_key"], bucket="images"))
-        image = await deps.images.generate(RESTYLE + sheet_prompt(row, design.art_style or SHEET_STYLE, False),
-                                           references=[base], aspect_ratio="4:3", resolution="2K")
+        image, spent = await paint_sheet(deps.images, getattr(deps, "vision", None),
+                                         RESTYLE + sheet_prompt(row, design.art_style or SHEET_STYLE, False), [base],
+                                         row["name"])
     except Exception as exc:  # the base sheet still keeps the character recognisable
         log.warning("restyle of %s failed: %s", row["name"], exc)
         return row["sheet_key"], 0.0
@@ -296,7 +326,7 @@ async def styled_sheet(deps, row: dict, house: str | None, design: Design | None
             """insert into public.character_sheets (character_id, style, sheet_key) values (:id, :st, :k)
                on conflict (character_id, style) do update set sheet_key = excluded.sheet_key"""),
             {"id": row["id"], "st": house, "k": key})
-    return key, image.cost_usd or 0.0
+    return key, spent
 
 
 MAKER_SYSTEM = """Eres diseñadora de personajes de una editorial de libros educativos infantiles premium (al nivel de
@@ -351,8 +381,8 @@ async def make_character(deps, job: dict) -> None:
             refs = [reference_image(await deps.storage.download(parent["sheet_key"], bucket="images"))]
         except Exception:
             log.warning("sheet %s unavailable", parent["sheet_key"])
-    image = await deps.images.generate(sheet_prompt(m, style, bool(refs)), references=refs, aspect_ratio="4:3",
-                                       resolution="2K")
+    image, _ = await paint_sheet(deps.images, getattr(deps, "vision", None), sheet_prompt(m, style, bool(refs)), refs,
+                                 m.name)
     key = f"characters/{char_id}.jpg"
     await deps.storage.upload(key, await asyncio.to_thread(_jpeg, image.data), "image/jpeg", bucket="images")
     async with deps.engine.begin() as conn:
@@ -448,7 +478,8 @@ SEED = [
          signature="a blue neckerchief and a brown patch over the left eye",
          personality="Juguetón y leal; siempre encuentra algo.",
          look="A small fluffy white puppy with floppy ears, a brown patch over the left eye, a black button nose, a "
-              "short wagging tail, a blue neckerchief. Round body, short legs, big head."),
+              "short wagging tail, a blue neckerchief. Round body, short legs, big head; one head with one face, "
+              "drawn simply."),
     dict(name="Chispa", role="companion", archetype="robot amigable", palette=["#26C6DA", "#FFB300", "#ECEFF1"],
          signature="a light-bulb antenna that glows yellow",
          personality="Entusiasta; se ilumina cuando aprende algo.",
@@ -465,16 +496,18 @@ SEED = [
 PAUSE_SECONDS = 75
 
 
-async def keep_seeded(engine, images, storage) -> None:
-    """The worker's background task: the starter characters and their sheets, painted once (8 × ~$0.07)."""
+async def keep_seeded(engine, images, storage, vision=None) -> None:
+    """The worker's background task: the starter characters and their sheets, painted once (8 × ~$0.07). A starter
+    whose description changed (a sheet that came out wrong) is painted again, and its sheets in the house styles,
+    drawn from the old one, are dropped so each is redrawn the next time a tome asks for it."""
     for c in SEED:
         async with engine.begin() as conn:
-            row = (await conn.execute(text("select id, sheet_key from public.characters where seed and name = :n"),
+            row = (await conn.execute(text("select id, sheet_key, look from public.characters where seed and name = :n"),
                                       {"n": c["name"]})).one_or_none()
-        if row and row.sheet_key:
+        if row and row.sheet_key and row.look == c["look"]:
             continue
         try:
-            image = await images.generate(sheet_prompt(c, SHEET_STYLE, False), aspect_ratio="4:3", resolution="2K")
+            image, _ = await paint_sheet(images, vision, sheet_prompt(c, SHEET_STYLE, False), [], c["name"])
         except Exception as exc:
             log.warning("seed sheet %s failed: %s", c["name"], exc)
             await asyncio.sleep(PAUSE_SECONDS)
@@ -488,7 +521,9 @@ async def keep_seeded(engine, images, storage) -> None:
                           style, sheet_key, shared, seed)
                    values (:id, :name, :role, :archetype, :look, :personality, :signature, :palette, :style, :key,
                            true, true)
-                   on conflict (id) do update set sheet_key = excluded.sheet_key"""),
+                   on conflict (id) do update set sheet_key = excluded.sheet_key, look = excluded.look,
+                                                  signature = excluded.signature"""),
                 {"id": char_id, **c, "style": SHEET_STYLE, "key": key})
+            await conn.execute(text("delete from public.character_sheets where character_id = :id"), {"id": char_id})
         log.info("seeded character %s", c["name"])
         await asyncio.sleep(PAUSE_SECONDS)

@@ -70,7 +70,7 @@ async def run(stop: asyncio.Event | None = None) -> None:
     # The landing's example covers, painted once; a shutdown simply cancels it.
     showcase = asyncio.create_task(keep_painted(deps.images, deps.storage)) if deps.images else None
     # The starter characters of the shared library, their model sheets painted once.
-    seeding = asyncio.create_task(keep_seeded(engine, deps.images, deps.storage)) if deps.images else None
+    seeding = asyncio.create_task(keep_seeded(engine, deps.images, deps.storage, deps.vision)) if deps.images else None
     last_reap = 0.0
     while not stop.is_set():
         try:
