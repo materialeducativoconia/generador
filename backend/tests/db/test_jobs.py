@@ -257,3 +257,17 @@ async def test_the_narrator_writes_the_whole_story_once_and_each_act_takes_its_p
     assert last[0]["narration"].startswith("Página 3") and last[1]["question"] == "¿Sabías que…?"
     assert await raw_db.fetchval(
         "select count(*) from public.generation_logs where series_id = $1 and prompt_version = 'narrator@4'", sid) == 1
+
+
+async def test_without_sections_the_architect_splits_the_pages(raw_db, google_user, client, key, engine):
+    user = await google_user()
+    response = await client.post("/api/series", json={k: v for k, v in NEW_TOME.items() if k != "section_count"},
+                                 headers=bearer(key, user))
+    assert response.status_code == 202
+    sid = uuid.UUID(response.json()["series"]["id"])
+
+    llm = ScriptedLLM(json.dumps(OUTLINE))
+    await run_next(engine, llm)
+
+    assert "Número de secciones: decide tú" in llm.calls[0][1]["content"]
+    assert await raw_db.fetchval("select lesson_count from public.series where id = $1", sid) == len(OUTLINE["sections"])

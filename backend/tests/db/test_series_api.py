@@ -153,11 +153,10 @@ async def test_approve_beyond_daily_quota_is_429(raw_db, google_user, client, ke
     assert response.json()["error"]["code"] == "quota_exceeded"
 
 
-async def test_sections_and_pages_are_always_chosen_and_sections_share_the_pages(google_user, client, key):
+async def test_pages_are_always_chosen_and_sections_share_them(google_user, client, key):
     user = await google_user()
 
-    for body in ({"section_count": 3, "page_count": None}, {"section_count": None, "page_count": 6},
-                 {"section_count": 4, "page_count": 3}):
+    for body in ({"section_count": 3, "page_count": None}, {"section_count": 4, "page_count": 3}):
         response = await client.post("/api/series", json={**NEW_TOME, **body}, headers=bearer(key, user))
         assert response.status_code == 422, body
 

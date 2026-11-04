@@ -37,9 +37,9 @@ class NewTome(BaseModel):
     request: str = Field(min_length=3, max_length=2000)
     audience: str = Field(default="", max_length=200)  # empty: the Architect reads the age from the request
     language: str = Field(default="es", pattern=r"^[a-z]{2}(-[A-Z]{2})?$")
-    # Both chosen by the user: pages are content pages (cover, index and answer key come free) and the sections
-    # share them, so there are never more sections than pages.
-    section_count: int = Field(ge=1, le=20)
+    # Pages are the user's (content pages: cover and answer key come free, and they set the cost); the sections
+    # share them, so there are never more sections than pages. No sections: the Architect splits the pages.
+    section_count: int | None = Field(default=None, ge=1, le=20)
     page_count: int = Field(ge=1, le=200)
     extra_instructions: str | None = Field(default=None, max_length=2000)
     style_id: uuid.UUID | None = None  # a ready style from the user's library; None lets the Designer choose
@@ -54,7 +54,7 @@ class NewTome(BaseModel):
 
     @model_validator(mode="after")
     def _sections_fit(self):
-        if self.section_count > self.page_count:
+        if self.section_count and self.section_count > self.page_count:
             raise ValueError("Cada sección necesita al menos una página: elige menos secciones o más páginas.")
         return self
 
@@ -110,7 +110,7 @@ async def _new_tome(conn, body: NewTome, request: Request, user_id, idempotency_
                        {"plan": acc.plan_key})
     ip = await _client_ip(conn, user_id, request)
     free = acc.plan_key not in PAID and await _free_preview(conn, acc.org_id, ip)
-    if free and (body.page_count > FREE_PREVIEW_PAGES or body.section_count > FREE_PREVIEW_PAGES):
+    if free and (body.page_count > FREE_PREVIEW_PAGES or (body.section_count or 0) > FREE_PREVIEW_PAGES):
         raise ApiError(403, "plan_required", f"La vista previa admite hasta {FREE_PREVIEW_PAGES} páginas y "
                        f"{FREE_PREVIEW_PAGES} secciones. Elige un plan para tomos más grandes.",
                        {"plan": acc.plan_key, "max_pages": FREE_PREVIEW_PAGES})
@@ -125,7 +125,7 @@ async def _new_tome(conn, body: NewTome, request: Request, user_id, idempotency_
     plain = not (body.extra_instructions or body.style_id or body.identity_id or body.collection_id
                  or body.guide_id)
     key = "|".join([normalize_subject(body.request), body.audience, body.format, str(body.page_count),
-                    str(body.section_count), body.house_style or ""]) if plain else None
+                    str(body.section_count or "auto"), body.house_style or ""]) if plain else None
     if free and key and (donor := await _preview_donor(conn, key)):
         await _clone_preview(conn, donor, series_id, user_id, body.request, ip)
         return await _created(conn, series_id, None)
@@ -139,7 +139,8 @@ async def _new_tome(conn, body: NewTome, request: Request, user_id, idempotency_
                    (select id from public.characters where id = :guide and status = 'ready'
                        and (shared or user_id = :u)))"""
     ), {"id": series_id, "u": user_id, "topic": body.request, "audience": json.dumps({"label": body.audience}),
-        "lang": body.language, "n": body.section_count, "extra": body.extra_instructions,
+        # lesson_count is the outline's: until the Architect plans the sections, a placeholder
+        "lang": body.language, "n": body.section_count or 1, "extra": body.extra_instructions,
         "st": body.style_id, "pages": body.page_count, "free": free, "ip": ip if free else None, "key": key,
         "house": body.house_style, "guide": body.guide_id})
     await conn.execute(text(

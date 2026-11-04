@@ -33,13 +33,14 @@ export function Studio() {
   const audiences = AUDIENCES.includes(audience) ? AUDIENCES : [audience, ...AUDIENCES]
   const collectionId = params.get('coleccion')
   const collection = useCollections().data?.find((c) => c.id === collectionId)
-  // Both chosen by the user, never automatic: pages are content pages (cover, index and answer key come free) and
-  // the sections share them, so a section never brings pages of its own.
+  // Pages are the user's choice (content pages: cover and answer key come free); the sections share them and are
+  // planned by the Architect unless the user picks how many.
   const [sections, setSections] = useState<number | null>(null)
   const [pages, setPages] = useState<number | null>(null)
   // The free preview (outline, cover and a sample) needs no credits; after it, the outline and cover take 5.
   const affordable = !me ? Infinity : me.free_preview ? FREE_PREVIEW_PAGES : Math.min(me.plan.max_pages, Math.max(0, me.credits - 5))
-  const sized = sections !== null && pages !== null
+  const sized = pages !== null
+  const [more, setMore] = useState(false)  // «Más opciones»: sections, guide and identity
   const [quoting, setQuoting] = useState(false)  // the cost window, shown before anything is created
   const [style, setStyle] = useState('auto')
   const [format, setFormat] = useState('auto')
@@ -90,6 +91,9 @@ export function Studio() {
   }
 
   const firstName = me?.display_name?.split(' ')[0]
+  const illustrated = ['auto', 'picture_book', 'story_book', 'coloring_book'].includes(format)  // the guide shows there
+  const extras = [sections ? `${sections} ${sections === 1 ? 'sección' : 'secciones'}` : '',
+    guide ? 'guía elegido' : '', identity ? 'identidad' : ''].filter(Boolean).join(', ')
 
   return (
     <AppShell>
@@ -138,49 +142,52 @@ export function Studio() {
                   {n} {n === 1 ? 'página' : 'páginas'}{me && (n > me.plan.max_pages || (me.free_preview && n > affordable)) ? ' · con plan' : n > affordable ? ' · sin créditos' : ''}</option>)}
               </select>
             </label>
-            <label className={`select-pill${sections === null ? ' needed' : ''}`}>
-              <span className="sr-only">Secciones</span>
-              <select value={sections ?? ''} required onChange={(e) => setSections(Number(e.target.value))}>
-                <option value="" disabled>Secciones…</option>
-                {Array.from({ length: me?.free_preview ? FREE_PREVIEW_PAGES : 20 }, (_, i) => i + 1).map((n) => (
-                  <option key={n} value={n} disabled={pages !== null && n > pages}>{n} {n === 1 ? 'sección' : 'secciones'}</option>
-                ))}
-              </select>
-            </label>
-            {identities.length > 0 && !lineOf && (
-              <label className="select-pill">
-                <span className="sr-only">Identidad</span>
-                <select value={identity} onChange={(e) => setIdentity(e.target.value)}>
-                  <option value="">Identidad: ninguna</option>
-                  {identities.map((i) => <option key={i.id} value={i.id}>{i.design!.brand!.name}</option>)}
-                </select>
-              </label>
-            )}
-            {paid && guides.length > 0 && (
-              <label className="select-pill">
-                <span className="sr-only">Personaje guía</span>
-                <select value={guide} onChange={(e) => setGuide(e.target.value)} title="Para libros ilustrados y para colorear">
-                  <option value="">Guía: automático</option>
-                  {guides.filter((c) => c.mine).length > 0 && <optgroup label="Tus personajes">{guides.filter((c) => c.mine).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>}
-                  <optgroup label="Biblioteca">{guides.filter((c) => !c.mine).map((c) => <option key={c.id} value={c.id}>{c.name} · {c.archetype}</option>)}</optgroup>
-                </select>
-              </label>
-            )}
-            {ready.length > 0 && !identity && !lineOf && (
-              <label className="select-pill">
-                <span className="sr-only">Estilo</span>
-                <select value={style} onChange={(e) => setStyle(e.target.value)}>
-                  <option value="auto">Estilo: automático</option>
-                  {ready.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </label>
-            )}
+            <button type="button" className={`select-pill more-pill${more ? ' on' : ''}`} aria-expanded={more} onClick={() => setMore(!more)}>
+              Más opciones{extras ? ` · ${extras}` : ''}
+            </button>
             <button className="send" type="submit" disabled={request.trim().length < 3 || !sized || create.isPending} aria-label="Crear tomo"
-                    title={sized ? undefined : 'Elige las páginas y las secciones'}>
+                    title={sized ? undefined : 'Elige las páginas'}>
               {create.isPending ? <span className="spinner" /> : <ArrowUp />}
             </button>
           </div>
-          <StylePicker value={houseStyle} onChange={setHouseStyle} paid={paid} />
+          {more && (
+            <div className="composer-more">
+              <label className="select-pill">
+                <span className="sr-only">Secciones</span>
+                <select value={sections ?? ''} onChange={(e) => setSections(e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">Secciones: automático</option>
+                  {Array.from({ length: me?.free_preview ? FREE_PREVIEW_PAGES : 20 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n} disabled={pages !== null && n > pages}>{n} {n === 1 ? 'sección' : 'secciones'}</option>
+                  ))}
+                </select>
+              </label>
+              {paid && guides.length > 0 && illustrated && (
+                <label className="select-pill">
+                  <span className="sr-only">Personaje guía</span>
+                  <select value={guide} onChange={(e) => setGuide(e.target.value)}>
+                    <option value="">Guía: automático</option>
+                    {guides.filter((c) => c.mine).length > 0 && <optgroup label="Tus personajes">{guides.filter((c) => c.mine).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>}
+                    <optgroup label="Biblioteca">{guides.filter((c) => !c.mine).map((c) => <option key={c.id} value={c.id}>{c.name} · {c.archetype}</option>)}</optgroup>
+                  </select>
+                </label>
+              )}
+              {identities.length > 0 && !lineOf && (
+                <label className="select-pill">
+                  <span className="sr-only">Identidad</span>
+                  <select value={identity} onChange={(e) => { setIdentity(e.target.value); if (e.target.value) setStyle('auto') }}>
+                    <option value="">Identidad: ninguna</option>
+                    {identities.map((i) => <option key={i.id} value={i.id}>{i.design!.brand!.name}</option>)}
+                  </select>
+                </label>
+              )}
+            </div>
+          )}
+          <StylePicker value={style !== 'auto' ? `mine:${style}` : houseStyle} paid={paid}
+            mine={!identity && !lineOf ? ready.map((r) => ({ key: `mine:${r.id}`, name: r.name })) : []}
+            onChange={(key) => {
+              if (key?.startsWith('mine:')) { setStyle(key.slice(5)); setHouseStyle(null) }
+              else { setStyle('auto'); setHouseStyle(key) }
+            }} />
         </form>
         {quoting && (
           <CostDialog sections={sections} pages={pages} pending={create.isPending}
@@ -190,7 +197,7 @@ export function Studio() {
           <p className="notice small composer-hint">Ya usaste tu vista previa y no tienes créditos.{' '}
             <Link to="/app/plan">Elige un plan</Link> para crear tu material.</p>
         )}
-        {request.trim().length >= 3 && !sized && <p className="muted small composer-hint">Elige cuántas páginas de contenido y en cuántas secciones repartirlas. La portada, el índice y el solucionario no cuentan.</p>}
+        {request.trim().length >= 3 && !sized && <p className="muted small composer-hint">Elige cuántas páginas de contenido tendrá. La portada y el solucionario no cuentan.</p>}
         {create.error && <p className="error" role="alert">{errorText(create.error, 'No pudimos crear el tomo.')}</p>}
 
         <div className="examples">

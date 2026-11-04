@@ -3,7 +3,10 @@ import { HOUSE_STYLES, sampleOf } from '../lib/houseStyles'
 
 /** The illustration style of a new tome: automatic (the Designer picks) or one of the house styles. Without a
  * plan the free ones come first and the others show what a plan unlocks. */
-export function StylePicker({ value, onChange, paid }: { value: string | null; onChange: (key: string | null) => void; paid: boolean }) {
+/** The illustration style: Automático, the house styles and, when given, the user's own library styles. */
+export function StylePicker({ value, onChange, paid, mine = [] }: {
+  value: string | null; onChange: (key: string | null) => void; paid: boolean; mine?: { key: string; name: string }[]
+}) {
   const row = useRef<HTMLDivElement>(null)
   const styles = paid ? HOUSE_STYLES : [...HOUSE_STYLES.filter((s) => s.free), ...HOUSE_STYLES.filter((s) => !s.free)]
   useEffect(() => {  // a style picked from the landing's cards must be visible in the scrolling row
@@ -29,6 +32,12 @@ export function StylePicker({ value, onChange, paid }: { value: string | null; o
           </button>
         )
       })}
+      {mine.map((s) => (
+        <button key={s.key} type="button" role="radio" aria-checked={value === s.key} className={value === s.key ? 'on' : undefined}
+                title="Estilo de tu biblioteca" onClick={() => onChange(s.key)}>
+          <span className="style-auto" aria-hidden="true">★</span>{s.name}<span className="style-lock">Tuyo</span>
+        </button>
+      ))}
     </div>
   )
 }
