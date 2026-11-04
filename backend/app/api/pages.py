@@ -3,9 +3,11 @@ edited in place, and its picture painted again from an instruction."""
 
 import asyncio
 import base64
+import hashlib
 import io
 import json
 import uuid
+from collections import OrderedDict
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Request
@@ -23,6 +25,9 @@ router = APIRouter()
 UserId = Annotated[uuid.UUID, Depends(current_user_id)]
 EDITABLE = ("generated", "edited", "approved")
 REPAINT = 1  # credits: one picture, painted again
+SCREEN_PX = 1400  # the longest side of a picture in the preview: sharp at 110 dpi on a spread
+RENDERED = 64  # pages kept rendered in memory, about 200 KB each
+_rendered: OrderedDict[str, str] = OrderedDict()
 PAPERS = Literal["17x21", "8x10", "A4", "Letter", "6x9"]
 
 
@@ -61,6 +66,13 @@ async def page_preview(lesson_id: uuid.UUID, block_id: str, request: Request, us
         asset = (await conn.execute(text(
             "select storage_key, review->'busy' as busy from public.assets where id = cast(:a as uuid)"),
             {"a": block["asset_id"]})).mappings().one_or_none() if block.get("asset_id") else None
+    # Everything the printed page depends on: the same page asked again (going back and forth) is not rendered again.
+    key = hashlib.sha256(json.dumps([block, paper, lesson["position"], lesson["title"], str(asset and asset["busy"])] +
+                                    [str(series[c]) for c in ("title", "topic", "genre", "audience", "cover", "design")],
+                                    sort_keys=True, default=str).encode()).hexdigest()
+    if key in _rendered:
+        _rendered.move_to_end(key)
+        return {"image": _rendered[key]}
     images, busy = {}, {}
     if asset:
         try:
@@ -70,8 +82,11 @@ async def page_preview(lesson_id: uuid.UUID, block_id: str, request: Request, us
             pass
         if asset["busy"]:
             busy[block["asset_id"]] = _parse(asset["busy"])
-    png = await asyncio.wait_for(asyncio.to_thread(_render_page, series, lesson, block, images, busy, paper), 60)
-    return {"image": "data:image/png;base64," + base64.b64encode(png).decode()}
+    jpeg = await asyncio.wait_for(asyncio.to_thread(_render_page, series, lesson, block, images, busy, paper), 60)
+    _rendered[key] = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
+    while len(_rendered) > RENDERED:
+        _rendered.popitem(last=False)
+    return {"image": _rendered[key]}
 
 
 def _render_page(series, lesson, block: dict, images: dict, busy: dict, paper: str) -> bytes:
@@ -80,6 +95,8 @@ def _render_page(series, lesson, block: dict, images: dict, busy: dict, paper: s
 
     from app.render import Tome, TomeSection, _document, _pages, render_html
 
+    # The screen needs a fraction of a 4K painting: shrunk first, the page renders in a second or two, not thirty.
+    images = {k: _screen_size(data) for k, (data, _) in images.items()}
     design = Design.model_validate(_parse(series["design"])) if series["design"] else None
     tome = Tome(title=series["title"] or series["topic"], genre=series["genre"],
                 audience=(_parse(series["audience"]) or {}).get("label", ""), author=None,
@@ -98,8 +115,20 @@ def _render_page(series, lesson, block: dict, images: dict, busy: dict, paper: s
         out.paste(pages[0], (0, 0))
         out.paste(pages[1], (pages[0].width, 0))
     buffer = io.BytesIO()
-    out.save(buffer, "PNG", optimize=True)
+    out.convert("RGB").save(buffer, "JPEG", quality=85)
     return buffer.getvalue()
+
+
+def _screen_size(data: bytes) -> tuple[bytes, str]:
+    from PIL import Image as Picture
+
+    picture = Picture.open(io.BytesIO(data))
+    picture.draft("RGB", (SCREEN_PX, SCREEN_PX))  # a JPEG decodes straight at a smaller scale
+    picture = picture.convert("RGB")
+    picture.thumbnail((SCREEN_PX, SCREEN_PX))
+    buffer = io.BytesIO()
+    picture.save(buffer, "JPEG", quality=85)
+    return buffer.getvalue(), "image/jpeg"
 
 
 @router.patch("/api/lessons/{lesson_id}/pages/{block_id}")

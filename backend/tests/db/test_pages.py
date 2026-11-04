@@ -1,6 +1,7 @@
 """Editor de páginas: a page seen as the PDF prints it, its words edited by hand, its picture painted again."""
 
 import json
+from unittest.mock import patch
 
 from tests.db.test_jobs import engine  # noqa: F401 - a fixture
 from tests.db.test_me import bearer
@@ -54,4 +55,8 @@ async def test_the_preview_is_the_printed_page(raw_db, google_user, client, key,
 
     response = await client.get(f"/api/lessons/{lid}/pages/p1/preview", headers=bearer(key, user))
 
-    assert response.status_code == 200 and response.json()["image"].startswith("data:image/png;base64,")
+    assert response.status_code == 200 and response.json()["image"].startswith("data:image/jpeg;base64,")
+    # Coming back to the same page does not lay it out again.
+    with patch("app.api.pages._render_page", side_effect=AssertionError("rendered twice")):
+        again = await client.get(f"/api/lessons/{lid}/pages/p1/preview", headers=bearer(key, user))
+    assert again.json() == response.json()

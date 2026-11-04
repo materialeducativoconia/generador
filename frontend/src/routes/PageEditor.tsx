@@ -28,6 +28,8 @@ export function PageEditor() {
     (l.content_json?.blocks ?? []).filter((b): b is Plate => b.type === 'image' && b.size === 'plate')
       .map((block) => ({ lessonId: l.id, position: l.position, section: l.title, block }))), [s])
   const current = pages.find((p) => p.block.id === params.get('p') && p.lessonId === params.get('s')) ?? pages[0]
+  const next = current && pages[pages.indexOf(current) + 1]
+  const paper = s?.genre === 'story_book' || s?.genre === 'picture_book' ? '17x21' : 'A4'
   const painting = pages.some((p) => !p.block.asset_id)
   const { refetch } = series
 
@@ -65,15 +67,35 @@ export function PageEditor() {
               )
             })}
           </ol>
-          <PageView key={`${current.lessonId}:${current.block.id}`} seriesId={id} page={current}
-            paper={s.genre === 'story_book' || s.genre === 'picture_book' ? '17x21' : 'A4'} story={s.genre === 'story_book'} />
+          <PageView key={`${current.lessonId}:${current.block.id}`} seriesId={id} page={current} paper={paper}
+            picture={current.block.asset_id ? s.assets[current.block.asset_id] : undefined} story={s.genre === 'story_book'} />
+          {next && <Prefetch page={next} paper={paper} />}
         </div>
       )}
     </AppShell>
   )
 }
 
-function PageView({ seriesId, page, paper, story }: { seriesId: string; page: Page; paper: string; story: boolean }) {
+// The picture of the page as printed; it follows the saved page (its asset and words), not the form.
+function previewQuery(page: Page, paper: string) {
+  const b = page.block
+  const stamp = `${b.asset_id ?? 'none'}:${b.layout ?? ''}:${b.narration ?? ''}:${b.question ?? ''}:${b.answer ?? ''}:${(b.notes ?? []).join('|')}:${b.find ?? ''}`
+  return {
+    queryKey: ['page-preview', page.lessonId, b.id, stamp, paper],
+    queryFn: () => api.get<{ image: string }>(`/api/lessons/${page.lessonId}/pages/${b.id}/preview?paper=${paper}`),
+    staleTime: Infinity,
+  }
+}
+
+/** The next page, rendered while the user looks at this one, so moving forward opens it at once. */
+function Prefetch({ page, paper }: { page: Page; paper: string }) {
+  const qc = useQueryClient()
+  const options = previewQuery(page, paper)
+  useEffect(() => { void qc.prefetchQuery(options) }, [qc, options.queryKey.join('/')])  // eslint-disable-line react-hooks/exhaustive-deps
+  return null
+}
+
+function PageView({ seriesId, page, paper, picture, story }: { seriesId: string; page: Page; paper: string; picture?: string; story: boolean }) {
   const qc = useQueryClient()
   const b = page.block
   const [narration, setNarration] = useState(b.narration ?? '')
@@ -84,13 +106,7 @@ function PageView({ seriesId, page, paper, story }: { seriesId: string; page: Pa
   const [layout, setLayout] = useState(b.layout ?? 'bleed')
   const [ask, setAsk] = useState('')
   const base = `/api/lessons/${page.lessonId}/pages/${b.id}`
-  // The picture of the page as printed; it follows the saved page (its asset and words), not the form.
-  const stamp = `${b.asset_id ?? 'none'}:${b.layout ?? ''}:${b.narration ?? ''}:${b.question ?? ''}:${b.answer ?? ''}:${(b.notes ?? []).join('|')}:${b.find ?? ''}`
-  const preview = useQuery({
-    queryKey: ['page-preview', page.lessonId, b.id, stamp, paper],
-    queryFn: () => api.get<{ image: string }>(`${base}/preview?paper=${paper}`),
-    staleTime: Infinity,
-  })
+  const preview = useQuery(previewQuery(page, paper))
   const refresh = () => qc.invalidateQueries({ queryKey: ['series', seriesId] })
   const save = useMutation({
     mutationFn: () => api.patch(base, {
@@ -119,7 +135,9 @@ function PageView({ seriesId, page, paper, story }: { seriesId: string; page: Pa
     <>
       <figure className="page-preview">
         {preview.data ? <img src={preview.data.image} alt={`Página: ${b.narration ?? b.question ?? b.subject}`} />
-          : <div className="page-preview-wait">{preview.isError ? 'No se pudo mostrar la página.' : 'Preparando la página…'}</div>}
+          : picture && !preview.isError ? (  // the painting itself, at once, while the printed page is laid out
+            <div className="page-preview-draft"><img src={picture} alt="" /><span className="notice small">Preparando la página…</span></div>
+          ) : <div className="page-preview-wait">{preview.isError ? 'No se pudo mostrar la página.' : 'Preparando la página…'}</div>}
         {!b.asset_id && <figcaption className="notice small">Pintando la ilustración de nuevo… aparecerá aquí en uno o dos minutos.</figcaption>}
       </figure>
       <aside className="page-form">
