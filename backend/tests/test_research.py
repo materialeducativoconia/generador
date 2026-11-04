@@ -102,3 +102,18 @@ def test_pdf_ends_with_sources_and_credits_photos():
     assert 'id="fuentes"' in html and "https://es.wikipedia.org/wiki/Vulpes_vulpes" in html
     assert "Foto: Uoaei1, CC BY-SA 4.0, Wikimedia Commons" in html
     assert "fuentes publicadas" in html and "CC BY-SA" in html  # the photo credit keeps its licence
+
+
+def test_a_classroom_copy_carries_the_copyright_on_every_page_even_over_a_plate():
+    content = SectionContent.model_validate({"schema_version": 1, "summary": "", "blocks": [
+        {"id": "b1", "type": "image", "kind": "illustration", "size": "plate", "layout": "vignette", "subject": "x",
+         "asset_id": "a1", "question": "¿Qué va después?", "answer": "Una tarjeta roja.",
+         "notes": ["Uno.", "Dos.", "Predecir es adivinar lo que viene después usando lo que ya viste."],
+         "find": "¿dónde está la tarjeta roja?"}]})
+    t = Tome(title="IA", genre="picture_book", audience="Niños (4–7 años)", author=None,
+             sections=[TomeSection(1, "Patrones", content)], images={"a1": (PNG, "image/png")}, watermark=True)
+
+    html = render_html(t, paper="17x21", include_answer_key=False)
+
+    assert html.count("Jelyx Docs · uso en el aula") == 2  # the page foot and the plate's lower edge
+    assert "©" in html and 'class="pvi"' in html

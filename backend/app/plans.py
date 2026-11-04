@@ -14,7 +14,7 @@ class Plan:
     label: str
     price_usd: int
     credits: int  # per month; they do not roll over
-    watermark: bool  # "Hecho con…" at the foot of the PDF: classroom use only
+    watermark: bool  # "© Jelyx Docs" at the foot of every page: classroom use only
     commercial: bool  # the user may sell what they make
     word: bool  # editable Word download
     print_edition: bool  # KDP-ready interior and cover wrap
@@ -25,13 +25,14 @@ class Plan:
     max_pages: int  # per tome
     concurrent: int  # tomes generating at once
     seats: int
+    sources: bool = True  # the sources page at the end; a tome for sale ends with its own pages
 
 
 PLANS: dict[str, Plan] = {
     "prueba": Plan("Prueba", 0, 0, True, False, False, False, 0, 0, False, False, 24, 1, 1),
     "docente": Plan("Docente", 9, 150, True, False, False, False, 0, 0, False, False, 24, 1, 1),
-    "creador": Plan("Creador", 24, 500, False, True, True, True, 5, 1, True, False, 100, 3, 1),
-    "editorial": Plan("Editorial", 69, 1500, False, True, True, True, 30, 20, True, True, 200, 10, 3),
+    "creador": Plan("Creador", 24, 500, False, True, True, True, 5, 1, True, False, 100, 3, 1, False),
+    "editorial": Plan("Editorial", 69, 1500, False, True, True, True, 30, 20, True, True, 200, 10, 3, False),
 }
 PAID = ("docente", "creador", "editorial")
 TRIAL_CREDITS = 0  # replaced by the free preview; organizations from before keep what they were given

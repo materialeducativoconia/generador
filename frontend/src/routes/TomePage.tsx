@@ -341,6 +341,7 @@ function QualityCard({ seriesId, progress }: { seriesId: string; progress: Progr
       <summary>
         <span className="section-h">Calidad</span>
         <span className={`pill ${v.pill}`}>{v.label}</span>
+        {staff && <span className="pill idle" title="Lo que costó el tomo en IA (solo lo ve el equipo)">Costó {usd(q.cost.total_usd)} USD</span>}
       </summary>
       <dl>
         {rows.map(([k, val]) => (

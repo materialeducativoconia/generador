@@ -22,7 +22,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@9", "editor": "editor@1", "cover": "cover@6", "designer": "designer@4", "art": "art@5", "casting": "casting@2", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@4", "rewriter": "rewriter@1"}
+PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@10", "editor": "editor@2", "cover": "cover@6", "designer": "designer@4", "art": "art@5", "casting": "casting@2", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@4", "rewriter": "rewriter@1"}
 
 
 @dataclass
@@ -164,7 +164,8 @@ Catálogo de bloques (usa solo estos "type"):
 - image lámina {kind: illustration, size: "plate", subject, question, answer, notes: [..], find?}  ← una página
   entera: la ilustración a sangre y encima la pregunta (question, corta, con ¿?), la respuesta (answer, 2 o 3
   frases sencillas, máximo 45 palabras), de 2 a 4 notes (datos curiosos de máximo 15 palabras, cada uno sobre
-  algo que se ve en la escena) y find (reto «Observa y encuentra»: algo que el niño debe buscar en la escena).
+  algo que se ve en la escena) y find (reto «Observa y encuentra»: una pregunta corta con ¿? sobre algo que el
+  subject pide pintar; nunca pidas contar cosas cuyo número el subject no fija: mejor «¿dónde está…?»).
   subject describe una escena rica y detallada que muestra la respuesta, con el sujeto principal al centro
   (máximo 500 caracteres).
   inset? (opcional): un diagrama exacto que el código dibuja sobre la lámina, en un recuadro abajo. Úsalo cuando
@@ -537,13 +538,19 @@ escrita (lista de bloques json) antes de imprenta y corriges solo lo necesario, 
    necesita, corrígela. Que las opciones de multiple_choice incluyan la correcta.
 4. Claridad para el público indicado: instrucciones que un niño o un adulto de ese nivel entienda a la primera.
 5. Que la sección cumpla sus objetivos y no repita lo mismo dos veces.
+En un libro ilustrado (láminas: image con size "plate") cada lámina es una pregunta con su respuesta, sus notas y
+su reto; ese es el formato: no pidas instrucciones, actividades, más láminas ni reparto de páginas. El campo
+"subject" es la orden para el ilustrador y no se imprime: no lo revises. Revisa question, answer, notes y find:
+que las notas no contradigan la respuesta, que la respuesta use las mismas palabras que la escena, y que find
+pregunte por algo que el subject pide pintar (nada de contar lo que el subject no fija). Tras dos puntos va
+minúscula («Observa y encuentra: ¿dónde…?» es correcto).
 Mantén **negrita** y *cursiva*. No cambies ids, tipos de bloque ni datos de diagramas.
 
 Responde solo con json:
 {"score": 1-5 (5 = lista para vender tal cual, 3 = aceptable, 1 = mala),
  "issues": ["hasta 8 problemas, breves, en español, los que quedan o los que corregiste"],
- "fixes": [{"block_id": "b3", "field": "text|title|prompt|answer|explanation|caption|label|instruction|items|options|steps",
-            "index": 0 (solo para items, options o steps: la posición, desde 0), "text": "el texto corregido completo"}]}
+ "fixes": [{"block_id": "b3", "field": "text|title|prompt|answer|explanation|caption|label|instruction|question|find|items|options|steps|notes",
+            "index": 0 (solo para items, options, steps o notes: la posición, desde 0), "text": "el texto corregido completo"}]}
 Si todo está bien: {"score": 5, "issues": [], "fixes": []}."""
 
 

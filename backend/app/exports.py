@@ -108,7 +108,8 @@ async def run_export(deps, job: dict) -> None:
         cover_lettered=bool(cover_image) and (_json(series["cover"]) or {}).get("lettered") == (series["title"] or series["topic"]),
         palette=palette, design=design,
         images=images, credits=credits,
-        sources=[src for src in (_json(series["research"]) or {}).get("sources") or [] if reliable(src.get("url", ""))],
+        sources=[src for src in (_json(series["research"]) or {}).get("sources") or [] if reliable(src.get("url", ""))]
+        if job["payload"].get("sources", True) else [],
         collection=shelf.name if shelf else None, level=shelf.level if shelf else None,
         watermark=job["payload"].get("watermark", False), mono=saver, busy=busy,
     )

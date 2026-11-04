@@ -163,3 +163,13 @@ async def test_pages_are_always_chosen_and_sections_share_them(google_user, clie
     response = await client.post("/api/series", json={**NEW_TOME, "section_count": 3, "page_count": 3},
                                  headers=bearer(key, user))
     assert response.status_code == 202
+
+
+async def test_the_age_in_the_request_wins_over_the_audience_picked(raw_db, google_user, client, key):
+    user = await google_user()
+
+    body = await create_tome(client, key, user, request="Libro ilustrado sobre la IA para niños de 4 a 7 años",
+                             audience="Preescolar (3–5 años)")
+
+    assert json.loads(await raw_db.fetchval("select audience from public.series where id = $1",
+                                            uuid.UUID(body["series"]["id"])))["label"] == "Niños (4–7 años)"

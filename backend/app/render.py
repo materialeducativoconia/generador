@@ -10,6 +10,7 @@ import random
 import re
 import textwrap
 from dataclasses import dataclass, field
+from datetime import date
 from types import SimpleNamespace
 from pathlib import Path
 from urllib.parse import quote
@@ -58,7 +59,7 @@ class Tome:
     sources: list[dict] = field(default_factory=list)  # the Researcher's documents: {title, url}
     collection: str | None = None  # the collection's name and the tome's level in it, printed on the cover
     level: int | None = None
-    watermark: bool = False  # Prueba and Docente plans: classroom use only
+    watermark: bool = False  # Prueba and Docente plans: classroom use only, "© Jelyx Docs" on every page
     mono: bool = False  # the black-and-white edition: grey pictures and theme, light fills
     busy: dict[str, list[str]] = field(default_factory=dict)  # asset id -> grid cells the Design inspector marked
     school: str | None = None  # printed after the author: "Elaborado por Ana Ruiz · Colegio Montessori"
@@ -258,7 +259,28 @@ def plate_notes(block, busy: list[str] | None, layout: str = "bleed") -> tuple[l
     return placed, list(block.notes[len(placed):])
 
 
-_env.globals.update(poster_title=poster_title, poster_subtitle=poster_subtitle, age_badge=age_badge,
+def vignette_height(block, w: float, h: float, first: bool) -> float:
+    """The picture's height on a vignette plate (mm): what the question, answer, facts and the find strip leave, at
+    most 56% of the page, so a long question or a third fact never runs under the find strip."""
+    small = w < 180
+    text_w = w - 28
+
+    def lines(t: str, pt: float, width: float) -> int:
+        return max(1, -(-len(t or "") // max(1, int(width / (pt * 0.5 * 0.3528)))))
+
+    head = (5 if first else 0) + lines(block.question or block.caption or "", 19 if small else 24, text_w) * (
+        (19 if small else 24) * 1.08 * 0.3528)
+    body = 10.5 if small else 12
+    head += lines(block.answer or "", body, text_w) * body * 1.4 * 0.3528 + 2.5 if block.answer else 0
+    note = 9.5 if small else 11
+    col = (text_w - 7) / 2
+    heights = sorted((lines(n, note, col - 4) * note * 1.32 * 0.3528 + 4.6 for n in block.notes), reverse=True)
+    notes = sum(heights[: (len(heights) + 1) // 2])  # two columns: the taller half sets the height
+    strip = 24 if block.find else 6
+    return round(max(h * 0.3, min(h * 0.56, h - 12 - head - 9 - notes - strip)), 1)
+
+
+_env.globals.update(vignette_height=vignette_height, poster_title=poster_title, poster_subtitle=poster_subtitle, age_badge=age_badge,
                     plate_notes=plate_notes)
 
 
@@ -271,7 +293,8 @@ def _look(tome: Tome) -> dict:
     brand = tome.brand
     seal = Markup(mark_svg(brand, colors["accent"], th.head)) if brand else ""
     imprint = brand.name.replace("\\", "\\\\").replace('"', '\\"') if brand else ""  # for CSS content strings
-    return {"th": th, "c": colors, "seal": seal, "confetti": confetti(colors) if th.kids else None, "imprint": imprint, "head": f'"{th.head}"', "body": f'"{th.body}"', "theme_fonts": theme_fonts,
+    return {"th": th, "c": colors, "seal": seal, "confetti": confetti(colors) if th.kids else None, "imprint": imprint,
+            "copyright": f"© {date.today().year} Jelyx Docs · uso en el aula", "head": f'"{th.head}"', "body": f'"{th.body}"', "theme_fonts": theme_fonts,
             "fonts": (ASSETS / "fonts").as_uri(), "frame": {"border": border, "radius": radius,
                                                          "pad": 0 if border == "none" else 4}}
 

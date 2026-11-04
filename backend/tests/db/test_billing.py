@@ -74,12 +74,16 @@ async def test_each_plan_unlocks_its_features(raw_db, google_user, client, key):
     word = await client.post(f"/api/series/{sid}/exports", json={"format": "docx"}, headers=h)
     assert word.status_code == 403
     pdf = await client.post(f"/api/series/{sid}/exports", json={}, headers=h)
-    job = await raw_db.fetchval("select payload->>'watermark' from public.generation_jobs where id = "
+    job = await raw_db.fetchval("select payload from public.generation_jobs where id = "
                                 "(select job_id from public.exports where id = $1)", pdf.json()["export"]["id"])
-    assert job == "true"
+    assert json.loads(job)["watermark"] is True and json.loads(job)["sources"] is True  # the classroom copy cites
 
     await subscribe(raw_db, user, "creador")
-    assert (await client.post(f"/api/series/{sid}/exports", json={"format": "docx"}, headers=h)).status_code == 202
+    word = await client.post(f"/api/series/{sid}/exports", json={"format": "docx"}, headers=h)
+    assert word.status_code == 202
+    job = await raw_db.fetchval("select payload from public.generation_jobs where id = "
+                                "(select job_id from public.exports where id = $1)", word.json()["export"]["id"])
+    assert json.loads(job)["sources"] is False  # a tome for sale ends without the sources page
     me = (await client.get("/api/me", headers=h)).json()
     assert me["plan"]["key"] == "creador" and me["plan"]["watermark"] is False
 

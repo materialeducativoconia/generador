@@ -1,6 +1,7 @@
 """Tomes (the `series` table): create, read, edit the outline and approve it (ARCHITECTURE.md §3)."""
 
 import json
+import re
 import uuid
 from typing import Annotated, Literal
 
@@ -33,6 +34,9 @@ COVER_STATUS_SQL = """(select j.status::text from public.generation_jobs j where
                          order by j.created_at desc limit 1) as cover_status"""
 
 
+AGE = re.compile(r"\b(\d{1,2})(?:\s*(?:a|-|–|y)\s*(\d{1,2}))?\s*años\b", re.I)
+
+
 class NewTome(BaseModel):
     request: str = Field(min_length=3, max_length=2000)
     audience: str = Field(default="", max_length=200)  # empty: the Architect reads the age from the request
@@ -56,6 +60,14 @@ class NewTome(BaseModel):
     def _sections_fit(self):
         if self.section_count and self.section_count > self.page_count:
             raise ValueError("Cada sección necesita al menos una página: elige menos secciones o más páginas.")
+        return self
+
+    @model_validator(mode="after")
+    def _age_in_request(self):
+        """The age the request names ("para niños de 4 a 7 años") wins over the audience picked from the list."""
+        m = next((m for m in AGE.finditer(self.request) if int(m[2] or m[1]) <= 17), None)  # not "hace 50 años"
+        if m:
+            self.audience = f"Niños ({m[1]}–{m[2]} años)" if m[2] else f"Niños ({m[1]} años)"
         return self
 
 

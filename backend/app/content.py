@@ -666,9 +666,9 @@ class Fix(BaseModel):
     """One correction from the Editor: replace a text field (or one item of a list field) of a block."""
 
     block_id: Annotated[str, Field(min_length=1, max_length=20)]
-    field: Literal["text", "title", "prompt", "answer", "explanation", "caption", "label", "instruction", "items",
-                   "options", "steps"]
-    index: int | None = Field(default=None, ge=0, le=40)  # for items / options / steps
+    field: Literal["text", "title", "prompt", "answer", "explanation", "caption", "label", "instruction", "question",
+                   "find", "items", "options", "steps", "notes"]
+    index: int | None = Field(default=None, ge=0, le=40)  # for items / options / steps / notes
     text: Annotated[str, Field(min_length=1, max_length=4000)]
 
 
