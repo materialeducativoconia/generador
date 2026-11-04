@@ -562,8 +562,12 @@ async def _cover(deps: Deps, job: dict) -> None:
 
     # The guide comes before the cover so the cover shows it; a preview only borrows from the library.
     cast, cast_usd = await cast_tome(deps, job, series, design, brief, paint=not free and not series["preview"])
+    # A story already written whose hero the cast lacks (a child the Narrator created): the cover follows the plates.
+    story = (_json(series["plan"]) or {}).get("story") if series.get("plan") else None
+    hero = (story or {}).get("protagonist", "") if not any(c.get("role") == "protagonist" for c in cast) else ""
+    seen = await _plate_images(deps, job["series_id"], 2) if hero and not free else []
     try:
-        result = await cover_director(deps.llm, brief, title, genre, list(sections), design, cast)
+        result = await cover_director(deps.llm, brief, title, genre, list(sections), design, cast, protagonist=hero)
     except AgentFailed as exc:
         await _log_attempts(deps.engine, job, "cover", exc.attempts)
         raise
@@ -581,7 +585,10 @@ async def _cover(deps: Deps, job: dict) -> None:
            "images are only references for quality.") if sheets else ""
     if house:
         who += f"\nThe image after the character sheets is a style reference. {STYLE_NOTE}"
-    refs = sheets + house + [r.data for r in references]
+    if seen:
+        who += (f"\nThe last {len(seen)} attached image(s) are pages of this very book: draw its protagonist exactly as "
+                "there (face, hair, skin, outfit, colours) and in front, bigger than the others.")
+    refs = sheets + house + [r.data for r in references][:max(0, 4 - len(sheets) - len(house) - len(seen))] + seen
     palette = ", ".join(plan.palette)
     lettered, spent_paint, review_usd = None, 0.0, 0.0
     if genre in LETTERED_GENRES and deps.vision is not None:
@@ -625,6 +632,24 @@ async def _cover(deps: Deps, job: dict) -> None:
         if job["payload"].get("illustrate"):  # a tome in another style: its plates after the cast is restyled
             await _queue_artwork(conn, job)
         await _succeed(conn, job)
+
+
+async def _plate_images(deps: Deps, series_id, limit: int) -> list[bytes]:
+    """The first painted plates of a tome, smaller, as references for a cover painted after the book."""
+    async with deps.engine.connect() as conn:
+        keys = (await conn.execute(text(
+            """select a.storage_key from public.lessons l
+                 cross join lateral jsonb_array_elements(l.content_json->'blocks') b
+                 join public.assets a on a.id = (b->>'asset_id')::uuid
+                where l.series_id = :s and b->>'size' = 'plate' order by l.position limit :n"""),
+            {"s": series_id, "n": limit})).scalars().all()
+    out = []
+    for key in keys:
+        try:
+            out.append(await asyncio.to_thread(reference_image, await deps.storage.download(key, bucket="images"), 1024))
+        except Exception:  # a reference less, never a failed cover
+            log.warning("plate %s unavailable for the cover", key)
+    return out
 
 
 def _cover_file(data: bytes, design: Design) -> bytes:

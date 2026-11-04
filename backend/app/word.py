@@ -60,7 +60,7 @@ def render_docx(tome: Tome, *, paper: str, include_answer_key: bool) -> bytes:
         doc.add_picture(io.BytesIO(_word_image(tome.logo[0])), height=Mm(15))
     if tome.signature:
         doc.add_paragraph(f"Elaborado por {tome.signature}")
-    if len(tome.sections) > 1:
+    if len(tome.sections) > 1 and tome.genre not in ("picture_book", "story_book"):
         _page_break(doc)
         doc.add_heading("Contenido", level=1)
         for s in tome.sections:

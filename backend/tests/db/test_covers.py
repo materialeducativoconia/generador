@@ -75,7 +75,7 @@ async def test_cover_job_paints_with_references_and_stores_the_cover(raw_db, goo
     assert PLAN["illustration_prompt"] in call["prompt"]
     logs = await raw_db.fetch("select prompt_version from public.generation_logs where job_id = $1 order by created_at",
                               job["id"])
-    assert [r["prompt_version"] for r in logs] == ["designer@4", "cover@5"]
+    assert [r["prompt_version"] for r in logs] == ["designer@4", "cover@6"]
 
     client._transport.app.state.storage = storage
     listed = (await client.get("/api/series", headers=bearer(key, user))).json()["series"][0]
@@ -245,3 +245,24 @@ async def test_a_title_painted_wrong_twice_falls_back_to_art_without_words(raw_d
     assert "lettered «Titlo mal»" in images.calls[1]["prompt"] and "no text" in images.calls[2]["prompt"].lower()
     cover = json.loads(await raw_db.fetchval("select cover from public.series where id = $1", sid))
     assert cover["lettered"] is None and cover["cost_usd"] == round(3 * 0.04 + 2 * 0.001, 4)
+
+
+async def test_a_new_cover_of_a_written_story_puts_its_hero_in_front_as_the_plates_draw_her(
+        raw_db, google_user, client, key, engine, monkeypatch):
+    user = await google_user()
+    sid, title = await _picture_book(raw_db, client, key, user, engine, monkeypatch)
+    await raw_db.execute("update public.series set genre = 'story_book', plan = coalesce(plan, '{}'::jsonb)"
+                         " || '{\"story\": {\"protagonist\": \"Lucía, una niña curiosa\"}}' where id = $1", sid)
+    asset = await raw_db.fetchval(
+        """insert into public.assets (kind, subject, subject_norm, style_key, storage_key, media_type, created_by, aspect)
+           values ('illustration', 'Lucía', 'lucia', 'tome:x', 'lucia.png', 'image/png', $1, '3:4') returning id""", user)
+    await raw_db.execute("update public.lessons set content_json = $2 where series_id = $1 and position = 1", sid,
+                         json.dumps({"blocks": [{"id": "p1", "type": "image", "size": "plate", "asset_id": str(asset)}]}))
+    storage = FakeStorage()
+    storage.uploads[("images", "lucia.png")] = (PNG, "image/png")
+    images, llm = FakeImages(), ScriptedLLM(json.dumps(DESIGN), json.dumps(PLAN))
+
+    await run_next(engine, llm, covers=True, images=images, storage=storage, references=fake_references)
+
+    assert "Lucía, una niña curiosa" in llm.calls[-1][1]["content"]
+    assert len(images.calls[0]["references"]) == 2 and "pages of this very book" in images.calls[0]["prompt"]

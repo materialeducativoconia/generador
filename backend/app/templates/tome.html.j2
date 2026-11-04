@@ -394,7 +394,8 @@
 </div>
 {% endif %}
 
-{% if tome.sections|length > 1 %}
+{# a picture book is read from start to end: no table of contents, as in the books it competes with #}
+{% if tome.sections|length > 1 and tome.genre not in ("picture_book", "story_book") %}
 <nav class="toc">
   <h2>Contenido</h2>
   {% for s in tome.sections %}

@@ -111,3 +111,11 @@ def test_every_theme_renders_and_embeds_its_fonts(theme):
     t = THEMES[theme]
     assert any(t.head.replace(" ", "-") in f for f in fonts), fonts
     assert any(t.body.replace(" ", "-") in f for f in fonts), fonts
+
+
+def test_a_picture_book_has_no_table_of_contents():
+    t = tome(DESIGN)
+    t.sections = t.sections * 2
+    assert "Contenido" in render_html(t, paper="A4", include_answer_key=False)
+    t.genre = "story_book"
+    assert "Contenido" not in render_html(t, paper="A4", include_answer_key=False)

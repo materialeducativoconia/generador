@@ -22,7 +22,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@9", "editor": "editor@1", "cover": "cover@5", "designer": "designer@4", "art": "art@5", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@3", "rewriter": "rewriter@1"}
+PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@9", "editor": "editor@1", "cover": "cover@6", "designer": "designer@4", "art": "art@5", "casting": "casting@2", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@4", "rewriter": "rewriter@1"}
 
 
 @dataclass
@@ -366,7 +366,8 @@ vez, página por página; cada sección del esquema es un acto del cuento.
 Cómo es un buen cuento:
 - Los protagonistas son los personajes que nombran el pedido o el título (si el título dice «Karla y…», Karla
   está en el cuento de principio a fin y es quien actúa); los personajes ya diseñados acompañan o son el
-  protagonista si nadie más se nombra. El protagonista QUIERE algo concreto desde la primera página.
+  protagonista si nadie más se nombra. Si uno de ellos viene marcado como PROTAGONISTA, el cuento es suyo: no
+  inventes otro protagonista. El protagonista QUIERE algo concreto desde la primera página.
 - Aunque el cuento sea corto, tiene arco: con 3 o 4 páginas, 1) quién es y qué quiere, 2) un problema o
   intento fallido, 3) el giro con el que lo logra gracias a lo que aprendió del tema, 4) final cálido. Nunca
   páginas que solo describen al animal o al tema: cada una es un paso de la aventura.
@@ -428,7 +429,8 @@ async def narrator(llm: LLM, brief: Brief, outline: Outline, cast: list[dict] | 
     people = ("\nPersonajes ya diseñados (usa sus nombres; cada uno sigue siendo lo que es en su dibujo: un niño "
               "no se vuelve un animal ni le das su nombre a otro ser; un nombre que pida el usuario y no esté aquí es "
               "otro personaje):\n" + "\n".join(
-                  f"- {c['name']}: {c.get('archetype') or ''}; aspecto: {(c.get('look') or '')[:160]}"
+                  f"- {c['name']}{' (PROTAGONISTA: el cuento es suyo)' if c.get('role') == 'protagonist' else ''}: "
+                  f"{c.get('archetype') or ''}; aspecto: {(c.get('look') or '')[:160]}"
                   for c in cast)) if cast else ""
     kept = ("\nEstos actos ya están impresos: devuélvelos con su mismo texto y continúa la historia desde ahí:\n"
             + "\n".join(f"Sección {i}: " + " / ".join(texts) for i, texts in sorted(written.items()))) if written else ""
@@ -602,7 +604,8 @@ Reglas del illustration_prompt:
 
 
 async def cover_director(llm: LLM, brief: Brief, title: str, genre: str, sections: list[str],
-                         design: Design | None = None, cast: list[dict] | None = None) -> AgentResult[CoverPlan]:
+                         design: Design | None = None, cast: list[dict] | None = None,
+                         protagonist: str = "") -> AgentResult[CoverPlan]:
     style = (f"\nMaqueta interior elegida: tema {design.theme}, adorno {design.ornament}. Usa exactamente esta "
              f"paleta: {', '.join(design.palette)}") if design else ""
     if design and design.art_style:
@@ -613,8 +616,14 @@ async def cover_director(llm: LLM, brief: Brief, title: str, genre: str, section
         m = design.brand.mascot
         style += f"\nLa mascota de la línea editorial protagoniza la portada: {m.name}: {m.look}"
     if cast:
+        hero = next((c for c in cast if c.get("role") == "protagonist"), None)
         style += ("\nPersonajes del tomo (protagonizan la portada tal como son; nómbralos en el illustration_prompt "
                   "y no inventes otros protagonistas): " + "; ".join(f"{c['name']}: {c['look']}" for c in cast))
+        if hero:
+            style += f"\n{hero['name']} es el protagonista del cuento: va al frente, más grande que los demás."
+    if protagonist:
+        style += (f"\nProtagonista del cuento (va al frente, más grande que los demás; descríbelo en el "
+                  f"illustration_prompt tal como aparece en las láminas adjuntas): {protagonist}")
     messages = [
         {"role": "system", "content": COVER_SYSTEM},
         {"role": "user", "content": f"Título del tomo: {title}\nTipo: {genre}\n{brief.describe()}\n"

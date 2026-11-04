@@ -32,7 +32,7 @@ class CastMember(BaseModel):
     reuse: str | None = None      # a library character's id, used exactly as it is
     based_on: str | None = None   # a library character's id this new one derives from
     name: str = Field(min_length=1, max_length=40)
-    role: str = "guide"           # guide | companion
+    role: str = "guide"           # protagonist (a story's hero) | guide | companion
     archetype: str = Field(min_length=3, max_length=80)
     look: str = Field(min_length=10, max_length=600)
     personality: str = Field(default="", max_length=300)
@@ -89,14 +89,23 @@ usuario y todavía no están entre ellos (máximo 2; ninguno si ya están todos,
 en el reparto no es un personaje nuevo."""
 
 
+STORY_CAST = """
+Es un cuento: el primero del reparto es su PROTAGONISTA (role "protagonist"), quien vive la aventura de principio a
+fin y sale en la portada: el personaje que nombra el título o el pedido; si no nombran a nadie, un niño o niña de la
+edad del lector. Un guía sabio o un compañero, si hace falta, va después."""
+
+
 async def casting_director(llm, brief: Brief, title: str, design: Design | None,
-                           library: list[dict], kept: list[dict] | None = None) -> AgentResult[Casting | Extras]:
+                           library: list[dict], kept: list[dict] | None = None,
+                           genre: str = "") -> AgentResult[Casting | Extras]:
     shelf = "\n".join(
         f"- id {c['id']} | {c['name']} | {c['archetype']} | usado {c['use_count']} veces | temas: "
         f"{', '.join(c['topics'][:6]) or '—'} | {c['look']}" for c in library) or "(vacía)"
     mascot = design.brand.mascot if design and design.brand and design.brand.mascot else None
     extra = f"\nMascota de la línea editorial (úsala como guía, con este nombre): {mascot.name}: {mascot.look}" \
         if mascot else ""
+    if genre == "story_book" and not kept:
+        extra += STORY_CAST
     if kept:
         extra += "\nReparto de este tomo (ya dibujado):\n" + "\n".join(
             f"- {c['name']} | {c.get('archetype') or ''}" for c in kept)
@@ -174,7 +183,8 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
     async with deps.engine.connect() as conn:
         library = await library_for(conn, job["user_id"], topic)
     try:
-        result = await casting_director(deps.llm, brief, series["title"] or series["topic"], design, library, kept)
+        result = await casting_director(deps.llm, brief, series["title"] or series["topic"], design, library, kept,
+                                        genre=series["genre"] or "")
     except Exception as exc:  # the cast is a quality step: without it the Art director invents the guide
         log.warning("casting failed for %s: %s", job["series_id"], exc)
         return kept or [], cost if kept else 0.0
