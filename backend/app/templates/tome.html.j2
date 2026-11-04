@@ -78,6 +78,7 @@
   .cover.poster h1 { margin: 4mm 0 0; font-size: 1pt; line-height: 0; color: transparent; }
   .cover.poster h1 .sr { font-size: 1pt; color: transparent; }
   .cover.poster .poster-t { display: block; margin: 0 auto; }
+  .cover.poster > h1 { position: absolute; margin: 0; }
   .cover.poster .ribbon { display: inline-block; margin-top: 2mm; max-width: 82%; padding: 2.5mm 6mm; border-radius: 3mm;
                           background: {{ c.accent }}; color: #fff; font: 700 12pt/1.25 {{ head|safe }}; transform: rotate(-1.5deg); border: .8mm solid #fff; }
   .cover.poster .age { position: absolute; right: 12mm; bottom: 14mm; width: 24mm; height: 24mm; border-radius: 50%; display: flex;
@@ -363,11 +364,15 @@
 {% if tome.cover_data_uri and tome.genre in ("picture_book", "story_book") %}
 <div class="cover art poster">
   <img class="cover-art" src="{{ tome.cover_data_uri }}" alt="">
+  {% if tome.cover_lettered %}
+  <h1><span class="sr">{{ tome.title }}</span></h1>
+  {% else %}
   <div class="poster-top">
     <div class="series">{{ tome.kicker }}</div>
     <h1>{{ poster_title(tome.title, th.head, c, geo.w - 24) }}<span class="sr">{{ tome.title }}</span></h1>
     {% if poster_subtitle(tome.title) %}<div class="ribbon">{{ poster_subtitle(tome.title) }}</div>{% endif %}
   </div>
+  {% endif %}
   <div class="age">{{ age_badge(tome.audience) }}</div>
 {% elif tome.cover_data_uri %}
 <div class="cover art {{ tome.design.cover_layout if tome.design else 'plate' }}">

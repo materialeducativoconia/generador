@@ -39,12 +39,39 @@ THEMES: dict[str, Theme] = {
                      "Nunito", "Nunito-Variable.ttf", 900, "Andika", "Andika-Regular.ttf", 11.5, "plain", 4),
 }
 
-# Heading fonts a library style may pick (all bundled under assets/fonts and on Google Fonts): file, weight.
+# Heading fonts (all bundled under assets/fonts and on Google Fonts): file, weight.
 FONTS: dict[str, tuple[str, int]] = {
     "Fredoka": ("Fredoka-Variable.ttf", 600), "Patrick Hand": ("PatrickHand-Regular.ttf", 400),
     "Fraunces": ("Fraunces-Variable.ttf", 700), "Baloo 2": ("Baloo2-Variable.ttf", 800),
     "Lexend": ("Lexend-Variable.ttf", 700), "Nunito": ("Nunito-Variable.ttf", 900),
     "Pacifico": ("Pacifico-Regular.ttf", 400), "Sniglet": ("Sniglet-ExtraBold.ttf", 800),
+    "Grandstander": ("Grandstander-Variable.ttf", 800), "Chewy": ("Chewy-Regular.ttf", 400),
+    "Lilita One": ("LilitaOne-Regular.ttf", 400), "Titan One": ("TitanOne-Regular.ttf", 400),
+    "Luckiest Guy": ("LuckiestGuy-Regular.ttf", 400), "Gluten": ("Gluten-Variable.ttf", 700),
+    "Bubblegum Sans": ("BubblegumSans-Regular.ttf", 400), "Quicksand": ("Quicksand-Variable.ttf", 700),
+    "Shrikhand": ("Shrikhand-Regular.ttf", 400),
+}
+# The font library: what each heading face says, so the Designer matches it to the topic and the public.
+FONT_MOOD: dict[str, str] = {
+    "Fredoka": "redonda y amable, preescolar", "Patrick Hand": "escrita a mano, cuaderno",
+    "Fraunces": "serifa elegante, clásica, adultos", "Baloo 2": "gruesa y alegre, métodos y juegos",
+    "Lexend": "moderna y limpia, ciencia", "Nunito": "neutra y redonda",
+    "Pacifico": "cursiva de verano, playa, fiesta", "Sniglet": "burbuja tierna, bebés y animales pequeños",
+    "Grandstander": "traviesa y saltarina, aventuras y humor", "Chewy": "de caricatura, chicle, humor y animales",
+    "Lilita One": "robusta y alegre, deportes, dinosaurios, vehículos", "Titan One": "pesada y redonda, monstruos y gigantes",
+    "Luckiest Guy": "de cómic, acción, superhéroes y exploradores", "Gluten": "suave y glotona, comida, cocina, granja",
+    "Bubblegum Sans": "infantil y ligera, cuentos tiernos y emociones", "Quicksand": "ligera y geométrica, naturaleza y calma",
+    "Shrikhand": "retro con carácter, circo, música, celebración",
+}
+# Reading faces for the body text: file, size relative to the theme's, and what they are for.
+BODY_FONTS: dict[str, tuple[str, float, str]] = {
+    "Andika": ("Andika-Regular.ttf", 1.0, "letras como las aprende un niño: primeros lectores"),
+    "Literata": ("Literata-Variable.ttf", 0.96, "serifa de libro para leer en voz alta: cuentos y álbumes"),
+    "Alegreya": ("Alegreya-Variable.ttf", 1.04, "serifa cálida y clásica: fábulas, leyendas, poesía"),
+    "Atkinson Hyperlegible": ("AtkinsonHyperlegible-Regular.ttf", 0.96, "máxima legibilidad: divulgación, datos, ciencia"),
+    "Mali": ("Mali-Regular.ttf", 0.96, "manuscrita y cercana: diarios, emociones, notas"),
+    "Nunito": ("Nunito-Variable.ttf", 1.0, "redonda y neutra: todo propósito"),
+    "Lexend": ("Lexend-Variable.ttf", 0.95, "moderna y clara: ciencia y tecnología"),
 }
 # Page frames drawn by @page (inside the margin, so the text area stays the same): CSS border, radius in mm.
 FRAMES: dict[str, tuple[str, float]] = {
@@ -59,6 +86,9 @@ def theme_for(design) -> Theme:
     if design and design.head_font:
         file, weight = FONTS[design.head_font]
         th = replace(th, head=design.head_font, head_file=file, head_weight=weight)
+    if design and design.body_font:
+        file, scale, _ = BODY_FONTS[design.body_font]
+        th = replace(th, body=design.body_font, body_file=file, body_size_pt=round(th.body_size_pt * scale, 1))
     return th
 
 

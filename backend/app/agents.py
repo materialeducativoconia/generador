@@ -4,6 +4,7 @@ Each agent is a bounded step: fixed prompt, JSON output validated with Pydantic,
 one repair round where the validation error goes back to the model.
 """
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass, field
@@ -16,12 +17,12 @@ from app.content import (ArtPlan, BrandDirections, Character, CoverPlan, Design,
                          Story)
 from app.literacy import (allowed_letters, check_blocks, check_picture_book, check_section, check_story_book, plate_up,
                            tidy)
-from app.themes import ART_STYLES, COVER_LAYOUTS, FONTS, FRAMES, THEMES
+from app.themes import ART_STYLES, BODY_FONTS, COVER_LAYOUTS, FONT_MOOD, FONTS, FRAMES, THEMES
 from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@9", "editor": "editor@1", "cover": "cover@4", "designer": "designer@3", "art": "art@5", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@3", "rewriter": "rewriter@1"}
+PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@9", "editor": "editor@1", "cover": "cover@5", "designer": "designer@4", "art": "art@5", "casting": "casting@1", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@3", "rewriter": "rewriter@1"}
 
 
 @dataclass
@@ -636,19 +637,26 @@ Estilos de ilustración (para la portada y todos los dibujos en color del tomo):
 Portadas:
 """ + "\n".join(f"- {key}: {label}" for key, (label, _) in COVER_LAYOUTS.items()) + f"""
 
-Letras de títulos (opcional, si no, la del tema): {", ".join(FONTS)}. Marcos de página: {", ".join(FRAMES)}.
+Letras de títulos (elige la que cuente el tema del tomo; la portada lleva su título pintado, esta letra es la del
+interior):
+""" + "\n".join(f"- {name}: {mood}" for name, mood in FONT_MOOD.items()) + """
+
+Letras de lectura (el texto de las páginas; la que mejor se lea para ese público y ese tipo de libro):
+""" + "\n".join(f"- {name}: {use}" for name, (_, _, use) in BODY_FONTS.items()) + f"""
+
+Marcos de página: {", ".join(FRAMES)}.
 
 Responde solo con json:
 {{"theme": "clave", "palette": ["#fondo muy claro", "#tinta oscura legible", "#acento saturado"],
  "ornament": "uno de los adornos", "illustration": "clave del estilo de ilustración",
- "cover_layout": "clave de la portada", "head_font": "letra o null", "frame": "marco",
+ "cover_layout": "clave de la portada", "head_font": "letra de títulos", "body_font": "letra de lectura", "frame": "marco",
  "rationale": "por qué, en una frase",
  "style_id": "id de un estilo de la biblioteca del usuario que encaje con este tomo, o null"}}
 
 El usuario no sabe pedir un diseño: decide tú lo que haría una editorial con oficio para este tema y este
 público, con una idea visual propia (el tema del tomo sugiere colores y estilo: el mar, la granja, el espacio,
-la música…). Combina tema, letra, ilustración, portada y paleta de forma coherente y distinta de sus últimos
-tomos.""" + """
+la música…). Combina tema, letras, ilustración, portada y paleta de forma coherente y distinta de sus últimos
+tomos: nunca la misma letra de títulos que uno de ellos.""" + """
 
 Si el usuario tiene estilos propios en su biblioteca (sacados de sus referencias), prefiere uno cuando encaje con
 el tipo de tomo y su público; si ninguno encaja, deja style_id en null y elige tema y paleta.
@@ -675,7 +683,7 @@ async def designer(llm: LLM, brief: Brief, title: str, genre: str, sections: lis
                      f"{'; '.join(s.get('traits') or [])}" for s in library)
     styles += "\nSus últimos tomos (no los repitas):" + "".join(
         f"\n- tema {d.theme}, acento {d.palette[2]}, ilustración {d.illustration or '—'}, portada {d.cover_layout}, "
-        f"letra {d.head_font or 'del tema'}" for d in recent) if recent else ""
+        f"letra {d.head_font or 'del tema'}, lectura {d.body_font or 'del tema'}" for d in recent) if recent else ""
     messages = [
         {"role": "system", "content": DESIGNER_SYSTEM},
         {"role": "user", "content": f"Título del tomo: {title}\nTipo: {genre}\n{brief.describe()}\n"
@@ -688,7 +696,24 @@ async def designer(llm: LLM, brief: Brief, title: str, genre: str, sections: lis
         design.theme = "juego"  # a children's tome always gets the children's layer
     if not design.style_id and design.illustration:  # the curated style's prompt travels with the tome
         design.art_style = ART_STYLES[design.illustration][1]
+    if not design.style_id:
+        design.head_font = _fresh_font(design.head_font, title, brief.audience, recent)
     return result
+
+
+KIDS_FONTS = ("Fredoka", "Baloo 2", "Sniglet", "Grandstander", "Chewy", "Lilita One", "Titan One", "Luckiest Guy",
+              "Gluten", "Bubblegum Sans", "Patrick Hand")
+ADULT_FONTS = ("Fraunces", "Lexend", "Nunito", "Quicksand", "Shrikhand", "Lilita One")
+
+
+def _fresh_font(chosen: str | None, title: str, audience: str, recent: list[Design]) -> str:
+    """The Designer's heading face, unless it left none or the user's last tomes already wore it: then another one
+    of the library for that public, the same for the same title."""
+    used = {d.head_font for d in recent}
+    if chosen and chosen not in used:
+        return chosen
+    pool = [f for f in (KIDS_FONTS if _for_children(audience) else ADULT_FONTS) if f not in used] or list(KIDS_FONTS)
+    return pool[int(hashlib.sha256(title.encode()).hexdigest(), 16) % len(pool)]
 
 
 BRAND_SYSTEM = """Eres estratega de marca de una editorial de material educativo impreso. El usuario es un autor

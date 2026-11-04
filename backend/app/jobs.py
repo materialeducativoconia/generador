@@ -34,6 +34,7 @@ from app.illustrator import (ASPECT, cover_jpeg, line_art_coverage, normalize_su
                              upscale, vectorize)
 from app.references import find_covers
 from app.styles import contact_sheet, read_spec, sample_pages, theme_from_spec
+from app.themes import FONT_MOOD
 from app.vision import Review
 
 log = logging.getLogger("worker")
@@ -449,6 +450,26 @@ quality, genre conventions and composition. Do NOT copy their characters, artwor
 create an original illustration that would sit proudly next to them on a bookstore shelf."""
 
 
+LETTERED_RULES = """Children's picture-book cover, portrait 3:4, full bleed, as published picture books on a bookstore shelf.
+The title is hand-lettered INSIDE the illustration, the way a professional illustrator letters a picture-book cover:
+exactly «{title}», every letter, accent (á é í ó ú ñ ü) and Spanish sign (¿ ¡) as written here, nothing added, no
+word left out, spelled correctly.
+Big, bold, playful display lettering in the top third, readable even as a small thumbnail: the most evocative word
+gets the biggest letters, the small connecting words smaller; the letters have the texture, outline and colours of
+the illustration and the book's palette ({font}); the characters may lean on, hold or peek around the letters but
+never hide any of them. Leave the bottom fifth calm.
+No other text anywhere: no author, publisher, logos, age, barcode or watermark.
+Palette: {palette}.
+The attached images are covers of real published books, given only as references for quality and genre
+conventions. Do NOT copy their characters, artwork, lettering, layout or branding."""
+LETTERED_GENRES = ("picture_book", "story_book")  # a picture book's cover carries its title painted in
+
+
+def _letters(text_: str) -> str:
+    """What a reader checks in a painted title: its letters and accents, in order, whatever the case or spacing."""
+    return "".join(ch for ch in text_.casefold() if ch.isalnum())
+
+
 async def enqueue_cover(conn, user_id, series_id, free: bool = False, illustrate: bool = False) -> uuid.UUID:
     """`illustrate`: the plates are painted after the cover (a tome redone in another style)."""
     job_id = uuid.uuid4()
@@ -544,16 +565,41 @@ async def _cover(deps: Deps, job: dict) -> None:
            "images are only references for quality.") if sheets else ""
     if house:
         who += f"\nThe image after the character sheets is a style reference. {STYLE_NOTE}"
-    image = await deps.images.generate(
-        f"{plan.illustration_prompt}\n\n{COVER_RULES.format(palette=', '.join(plan.palette))}{who}",
-        references=sheets + house + [r.data for r in references], aspect_ratio="3:4", resolution="4K")  # 300+ dpi
+    refs = sheets + house + [r.data for r in references]
+    palette = ", ".join(plan.palette)
+    lettered, spent_paint, review_usd = None, 0.0, 0.0
+    if genre in LETTERED_GENRES and deps.vision is not None:
+        # The title painted into the art, read back letter by letter; once more with the misreading named, then
+        # the art without words and the title set in type.
+        mood = FONT_MOOD.get(design.head_font or "", "letras de álbum ilustrado")
+        rules = LETTERED_RULES.format(title=title, font=f"lettering with this character: {mood}", palette=palette)
+        fix = ""
+        for _ in range(2):
+            image = await deps.images.generate(f"{plan.illustration_prompt}\n\n{rules}{fix}{who}", references=refs,
+                                               aspect_ratio="3:4", resolution="4K")
+            spent_paint += image.cost_usd or 0
+            try:
+                read, cost = await deps.vision.read_text(image.data)
+            except UpstreamError as exc:
+                log.warning("cover title not read: %s", exc)
+                read, cost = "", None
+            review_usd += cost or 0
+            if read and _letters(read) == _letters(title):
+                lettered = title
+                break
+            fix = (f"\nThe previous attempt lettered «{read}» instead of «{title}»: letter every word exactly as "
+                   "written.") if read else ""
+    if lettered is None:
+        image = await deps.images.generate(f"{plan.illustration_prompt}\n\n{COVER_RULES.format(palette=palette)}{who}",
+                                           references=refs, aspect_ratio="3:4", resolution="4K")  # 300+ dpi
+        spent_paint += image.cost_usd or 0
     key = f"{job['user_id']}/{job['series_id']}/{job['id']}.jpg"
     await deps.storage.upload(key, await asyncio.to_thread(_cover_file, image.data, design), "image/jpeg",
                               bucket="covers")
     prior = _json(series["cover"]) or {}  # "Otra portada" adds up: the tome paid for every cover it painted
-    spent = (prior.get("spent_usd") or prior.get("cost_usd") or 0) + (image.cost_usd or 0) + cast_usd
-    cover = {"concept": plan.concept, "palette": plan.palette, "model": image.model, "cost_usd": image.cost_usd,
-             "spent_usd": round(spent, 4),
+    spent = (prior.get("spent_usd") or prior.get("cost_usd") or 0) + spent_paint + review_usd + cast_usd
+    cover = {"concept": plan.concept, "palette": plan.palette, "model": image.model,
+             "cost_usd": round(spent_paint + review_usd, 4), "spent_usd": round(spent, 4), "lettered": lettered,
              "references": [{"title": r.title, "source_url": r.source_url, "image_url": r.image_url}
                             for r in references]}
     async with deps.engine.begin() as conn:

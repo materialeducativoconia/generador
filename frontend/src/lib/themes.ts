@@ -27,16 +27,27 @@ const HEAD_FONTS: Record<NonNullable<Design['head_font']>, [number, string]> = {
   Fredoka: [600, 'Fredoka:wght@400..700'], 'Patrick Hand': [400, 'Patrick+Hand'], Fraunces: [700, 'Fraunces:wght@300..800'],
   'Baloo 2': [800, 'Baloo+2:wght@400..800'], Lexend: [700, 'Lexend:wght@300..800'], Nunito: [900, 'Nunito:wght@400..900'],
   Pacifico: [400, 'Pacifico'], Sniglet: [800, 'Sniglet:wght@800'],
+  Grandstander: [800, 'Grandstander:wght@100..900'], Chewy: [400, 'Chewy'], 'Lilita One': [400, 'Lilita+One'],
+  'Titan One': [400, 'Titan+One'], 'Luckiest Guy': [400, 'Luckiest+Guy'], Gluten: [700, 'Gluten:wght@100..900'],
+  'Bubblegum Sans': [400, 'Bubblegum+Sans'], Quicksand: [700, 'Quicksand:wght@300..700'], Shrikhand: [400, 'Shrikhand'],
+}
+/** Reading fonts, as backend/app/themes.py BODY_FONTS. */
+const BODY_FONTS: Record<NonNullable<Design['body_font']>, string> = {
+  Andika: 'Andika', Literata: 'Literata:opsz,wght@7..72,200..900', Alegreya: 'Alegreya:wght@400..900',
+  'Atkinson Hyperlegible': 'Atkinson+Hyperlegible', Mali: 'Mali', Nunito: 'Nunito:wght@400..900', Lexend: 'Lexend:wght@300..800',
 }
 export const FRAMES: Record<NonNullable<Design['frame']>, string> = {
   none: 'none', line: '1.5px solid', rounded: '2px solid', dashed: '2px dashed', double: '4px double',
 }
 
 function themeOf(d: Design): Theme {
-  const t = THEMES[d.theme]
-  if (!d.head_font) return t
-  const [headWeight, font] = HEAD_FONTS[d.head_font]
-  return { ...t, head: d.head_font, headWeight, fonts: `${t.fonts}&family=${font}` }
+  let t = THEMES[d.theme]
+  if (d.head_font) {
+    const [headWeight, font] = HEAD_FONTS[d.head_font]
+    t = { ...t, head: d.head_font, headWeight, fonts: `${t.fonts}&family=${font}` }
+  }
+  if (d.body_font) t = { ...t, body: d.body_font, fonts: `${t.fonts}&family=${BODY_FONTS[d.body_font]}` }
+  return t
 }
 
 const DEFAULT: Design = { theme: 'clasico', palette: ['#F5F3FF', '#1C1917', '#4F46E5'], ornament: 'ninguno' }

@@ -523,7 +523,10 @@ Frame = Literal["none", "line", "rounded", "dashed", "double"]
 ArtStyle = Literal["acuarela", "crayon", "recorte", "gouache", "vector", "riso", "tinta", "plastilina", "grabado",
                    "infografia"]
 CoverLayout = Literal["plate", "band", "framed"]
-HeadFont = Literal["Fredoka", "Patrick Hand", "Fraunces", "Baloo 2", "Lexend", "Nunito", "Pacifico", "Sniglet"]
+HeadFont = Literal["Fredoka", "Patrick Hand", "Fraunces", "Baloo 2", "Lexend", "Nunito", "Pacifico", "Sniglet",
+                   "Grandstander", "Chewy", "Lilita One", "Titan One", "Luckiest Guy", "Gluten", "Bubblegum Sans",
+                   "Quicksand", "Shrikhand"]
+BodyFont = Literal["Andika", "Literata", "Alegreya", "Atkinson Hyperlegible", "Mali", "Nunito", "Lexend"]
 
 
 Mark = Literal["circle", "shield", "leaf", "star", "badge", "book"]
@@ -556,6 +559,7 @@ class Design(BaseModel):
     ornament: Ornament = "ninguno"
     rationale: str = Field(default="", max_length=400)
     head_font: HeadFont | None = None
+    body_font: BodyFont | None = None  # the reading face; the theme's when null
     frame: Frame = "none"
     art_style: str | None = Field(default=None, max_length=1000)  # English, for the image model
     style_id: str | None = None  # the library style it came from

@@ -50,6 +50,7 @@ class Tome:
     sections: list[TomeSection]
     cover_image: bytes | None = None
     cover_media_type: str = "image/png"
+    cover_lettered: bool = False  # the title is painted into the cover art: nothing is set over it
     palette: list[str] | None = None  # [background, ink, accent] from the cover agent
     design: Design | None = None  # the Designer's theme; None means the classic theme
     images: dict[str, tuple[bytes, str]] = field(default_factory=dict)  # asset id -> (bytes, media type)

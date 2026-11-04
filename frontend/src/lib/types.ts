@@ -10,6 +10,7 @@ export type CoverFields = {
   cover_url: string | null
   cover_status: JobStatus | null
   cover_palette: [string, string, string] | null
+  cover_lettered?: boolean  // the title is painted into the art
 }
 
 /** A recurring guide of the shared library, with its model sheet (turnaround and expressions). */
@@ -26,7 +27,9 @@ export type Design = {
   ornament: 'estrellas' | 'notas' | 'hojas' | 'puntos' | 'formas' | 'ninguno'
   rationale?: string
   // set when the design comes from a style in the user's library
-  head_font?: 'Fredoka' | 'Patrick Hand' | 'Fraunces' | 'Baloo 2' | 'Lexend' | 'Nunito' | 'Pacifico' | 'Sniglet' | null
+  head_font?: 'Fredoka' | 'Patrick Hand' | 'Fraunces' | 'Baloo 2' | 'Lexend' | 'Nunito' | 'Pacifico' | 'Sniglet' | 'Grandstander' | 'Chewy'
+    | 'Lilita One' | 'Titan One' | 'Luckiest Guy' | 'Gluten' | 'Bubblegum Sans' | 'Quicksand' | 'Shrikhand' | null
+  body_font?: 'Andika' | 'Literata' | 'Alegreya' | 'Atkinson Hyperlegible' | 'Mali' | 'Nunito' | 'Lexend' | null
   frame?: 'none' | 'line' | 'rounded' | 'dashed' | 'double'
   art_style?: string | null
   house_style?: string | null  // the illustration style picked when creating the tome (lib/houseStyles)

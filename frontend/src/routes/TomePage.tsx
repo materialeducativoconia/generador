@@ -183,7 +183,7 @@ function CoverPanel({ series: s }: { series: Series }) {
   })
   const busy = s.cover_status === 'queued' || s.cover_status === 'running' || repaint.isPending
   const [big, setBig] = useState(false)
-  const cover = { title: tomeName(s), genre: s.genre, audience: s.audience.label, cover_url: s.cover_url, cover_status: s.cover_status,
+  const cover = { title: tomeName(s), genre: s.genre, audience: s.audience.label, cover_url: s.cover_url, cover_status: s.cover_status, cover_lettered: s.cover_lettered,
                   cover_palette: s.cover_palette ?? s.design?.palette ?? null, design: s.design, marked: s.preview }
   return (
     <div className="cover-panel">
@@ -689,8 +689,10 @@ function TomeTitle({ series: s }: { series: Series }) {
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(s.title ?? '')
+  // The title is painted into the cover: a new title paints a new cover.
+  const repaint = !!s.cover_lettered && title.trim().replace(/\s+/g, ' ') !== s.title
   const rename = useMutation({
-    mutationFn: () => api.patch(`/api/series/${s.id}/title`, { title: title.trim() }),
+    mutationFn: () => api.patch(`/api/series/${s.id}/title`, { title: title.trim(), repaint: repaint }),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['series', s.id] })
       setEditing(false)
@@ -707,8 +709,11 @@ function TomeTitle({ series: s }: { series: Series }) {
   return (
     <form className="tome-title editing" onSubmit={(e) => { e.preventDefault(); rename.mutate() }}>
       <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={300} autoFocus aria-label="Título del tomo" />
-      <button className="primary" disabled={title.trim().length < 2 || rename.isPending}>{rename.isPending ? 'Guardando…' : 'Guardar'}</button>
+      <button className="primary" disabled={title.trim().length < 2 || rename.isPending}>
+        {rename.isPending ? 'Guardando…' : repaint ? 'Guardar y pintar portada (4 créditos)' : 'Guardar'}
+      </button>
       <button type="button" className="ghost" onClick={() => setEditing(false)}>Cancelar</button>
+      {repaint && <p className="muted small">El título está pintado en la portada, así que se pinta una portada nueva con el título nuevo.</p>}
       {rename.error && <p className="error small" role="alert">{errorText(rename.error, 'No se pudo cambiar el título.')}</p>}
     </form>
   )

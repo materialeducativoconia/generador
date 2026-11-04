@@ -75,7 +75,7 @@ async def test_cover_job_paints_with_references_and_stores_the_cover(raw_db, goo
     assert PLAN["illustration_prompt"] in call["prompt"]
     logs = await raw_db.fetch("select prompt_version from public.generation_logs where job_id = $1 order by created_at",
                               job["id"])
-    assert [r["prompt_version"] for r in logs] == ["designer@3", "cover@4"]
+    assert [r["prompt_version"] for r in logs] == ["designer@4", "cover@5"]
 
     client._transport.app.state.storage = storage
     listed = (await client.get("/api/series", headers=bearer(key, user))).json()["series"][0]
@@ -185,3 +185,61 @@ async def test_visitors_preview_only_the_free_house_styles(google_user, client, 
     free = await client.post("/api/series", json={**NEW_TOME, "page_count": 2, "section_count": 1,
                                                   "house_style": "acuarela"}, headers=bearer(key, anon))
     assert free.status_code == 202
+
+
+class Reader:
+    """The Reviewer reading the painted title: one reading per painting."""
+
+    def __init__(self, *readings):
+        self.readings = list(readings)
+
+    async def read_text(self, image):
+        return self.readings.pop(0), 0.001
+
+
+async def _picture_book(raw_db, client, key, user, engine, monkeypatch):
+    async def no_cast(*args, **kwargs):  # casting has its own tests
+        return [], 0.0
+    monkeypatch.setattr("app.casting.cast_tome", no_cast)
+    sid = await outlined_tome(client, key, user, engine)
+    await raw_db.execute("update public.series set genre = 'picture_book' where id = $1", sid)
+    return sid, await raw_db.fetchval("select title from public.series where id = $1", sid)
+
+
+async def test_a_picture_book_cover_has_its_title_painted_in_and_read_back(raw_db, google_user, client, key, engine,
+                                                                               monkeypatch):
+    user = await google_user()
+    sid, title = await _picture_book(raw_db, client, key, user, engine, monkeypatch)
+    images = FakeImages()
+
+    await run_next(engine, ScriptedLLM(json.dumps(DESIGN), json.dumps(PLAN)), covers=True, images=images,
+                   storage=FakeStorage(), references=fake_references, vision=Reader(title.upper()))
+
+    assert len(images.calls) == 1 and f"«{title}»" in images.calls[0]["prompt"]
+    assert json.loads(await raw_db.fetchval("select cover from public.series where id = $1", sid))["lettered"] == title
+    client._transport.app.state.storage = FakeStorage()
+    tome = (await client.get(f"/api/series/{sid}", headers=bearer(key, user))).json()
+    assert tome["cover_lettered"] is True
+    # A new title would leave the old one painted on the cover: it asks first, then paints a new cover.
+    refused = await client.patch(f"/api/series/{sid}/title", json={"title": "Otro título"}, headers=bearer(key, user))
+    assert refused.status_code == 409 and refused.json()["error"]["code"] == "lettered_cover"
+    renamed = await client.patch(f"/api/series/{sid}/title", json={"title": "Otro título", "repaint": True},
+                                 headers=bearer(key, user))
+    assert renamed.status_code == 200
+    assert await raw_db.fetchval("select count(*) from public.generation_jobs where series_id = $1 and kind = 'cover'"
+                                 " and status = 'queued'", sid) == 1
+
+
+async def test_a_title_painted_wrong_twice_falls_back_to_art_without_words(raw_db, google_user, client, key, engine,
+                                                                               monkeypatch):
+    user = await google_user()
+    sid, title = await _picture_book(raw_db, client, key, user, engine, monkeypatch)
+    images = FakeImages()
+
+    await run_next(engine, ScriptedLLM(json.dumps(DESIGN), json.dumps(PLAN)), covers=True, images=images,
+                   storage=FakeStorage(), references=fake_references, vision=Reader("Titlo mal", "Otra cosa"))
+
+    assert len(images.calls) == 3
+    assert "lettered «Titlo mal»" in images.calls[1]["prompt"] and "no text" in images.calls[2]["prompt"].lower()
+    cover = json.loads(await raw_db.fetchval("select cover from public.series where id = $1", sid))
+    assert cover["lettered"] is None and cover["cost_usd"] == round(3 * 0.04 + 2 * 0.001, 4)

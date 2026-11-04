@@ -9,8 +9,8 @@ from app.content import Design, SectionContent
 from app.render import Tome, TomeSection, render_html, render_pdf
 from typing import get_args
 
-from app.content import ArtStyle, CoverLayout
-from app.themes import ART_STYLES, COVER_LAYOUTS, THEMES
+from app.content import ArtStyle, BodyFont, CoverLayout, HeadFont
+from app.themes import ART_STYLES, BODY_FONTS, COVER_LAYOUTS, FONT_MOOD, FONTS, THEMES
 from tests.fakes import ScriptedLLM
 
 DESIGN = {"theme": "editorial", "palette": ["#FBF7F0", "#2B2A4C", "#C8553D"], "ornament": "hojas",
@@ -51,6 +51,26 @@ async def test_designer_picks_an_illustration_and_avoids_recent_tomes():
 
 def test_curated_lists_match_the_design_schema():
     assert set(ART_STYLES) == set(get_args(ArtStyle)) and set(COVER_LAYOUTS) == set(get_args(CoverLayout))
+    assert set(FONTS) == set(FONT_MOOD) == set(get_args(HeadFont)) and set(BODY_FONTS) == set(get_args(BodyFont))
+
+
+@pytest.mark.parametrize("head,body", list(zip(FONTS, [*BODY_FONTS] * 3)))
+def test_every_font_of_the_library_is_embedded(head, body):
+    pdf, _ = render_pdf(tome({**DESIGN, "head_font": head, "body_font": body}), paper="A4", include_answer_key=False)
+
+    fonts = {str(font["/BaseFont"]).replace("-", "") for page in PdfReader(io.BytesIO(pdf)).pages
+             for font in (page.get("/Resources", {}).get("/Font", {}) or {}).values()}
+    assert any(head.replace(" ", "") in f for f in fonts) and any(body.replace(" ", "") in f for f in fonts), fonts
+
+
+async def test_the_designer_never_repeats_the_heading_font_of_recent_tomes():
+    llm = ScriptedLLM(json.dumps({**DESIGN, "head_font": "Chewy", "body_font": "Literata"}))
+    recent = [Design.model_validate({**DESIGN, "head_font": "Chewy"})]
+
+    result = await designer(llm, Brief(request="x", audience="Preescolar"), "Dinos", "picture_book", [], recent=recent)
+
+    assert result.value.head_font not in (None, "Chewy") and result.value.body_font == "Literata"
+    assert all(name in llm.calls[0][0]["content"] for name in [*FONTS, *BODY_FONTS])
 
 
 @pytest.mark.parametrize("layout", ["plate", "band", "framed"])

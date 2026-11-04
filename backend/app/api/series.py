@@ -315,19 +315,25 @@ async def _cost(conn, series) -> dict:
 
 class Rename(BaseModel):
     title: str = Field(min_length=2, max_length=300)
+    repaint: bool = False  # the cover has the old title painted in: paint a new one (a cover's credits)
 
 
 @router.patch("/api/series/{series_id}/title")
 async def rename_series(series_id: uuid.UUID, body: Rename, request: Request, user_id: UserId):
-    """The title, any time after the plan: the cover prints it as text, so nothing is painted again and the next
-    export carries it."""
+    """The title, any time after the plan. A cover that prints it as text is not painted again; one with the title
+    painted in is, when the user agrees to its cost."""
+    title = " ".join(body.title.split())
     async with request.app.state.engine.begin() as conn:
         series = await _own_series(conn, series_id, user_id, lock=True)
         if series["status"] in ("outlining", "outline_failed"):
             raise ApiError(409, "invalid_state", "Espera a que el tomo tenga su plan para cambiar el título.")
-        await conn.execute(text("update public.series set title = :t where id = :s"),
-                           {"t": " ".join(body.title.split()), "s": series_id})
-    return {"title": " ".join(body.title.split())}
+        lettered = series["cover_key"] and (_parse(series["cover"]) or {}).get("lettered") == series["title"]
+        if lettered and title != series["title"] and not body.repaint:
+            raise ApiError(409, "lettered_cover", "El título está pintado en la portada: cambiarlo pinta una portada nueva.")
+        await conn.execute(text("update public.series set title = :t where id = :s"), {"t": title, "s": series_id})
+        if lettered and title != series["title"]:
+            await _new_cover(conn, series_id, user_id, "Portada con el título nuevo")
+    return {"title": title}
 
 
 @router.patch("/api/series/{series_id}/outline")
@@ -431,18 +437,22 @@ async def request_cover(series_id: uuid.UUID, request: Request, user_id: UserId)
         series = await _own_series(conn, series_id, user_id, lock=True)
         if not series["title"]:
             raise ApiError(409, "invalid_state", "La portada se crea cuando el esquema está listo.")
-        busy = (await conn.execute(text(
-            "select 1 from public.generation_jobs where series_id = :s and kind = 'cover'"
-            " and status in ('queued', 'running')"), {"s": series_id})).first()
-        if busy:
-            raise ApiError(409, "cover_in_progress", "Ya estamos creando una portada para este tomo.")
-        today = (await conn.execute(text(
-            "select count(*) from public.generation_jobs where user_id = :u and kind = 'cover'"
-            " and created_at > now() - interval '1 day'"), {"u": user_id})).scalar_one()
-        if today >= COVERS_PER_DAY:
-            raise ApiError(429, "quota_exceeded", f"Puedes crear hasta {COVERS_PER_DAY} portadas al día.")
-        await credits.charge(conn, user_id, COVER, "Portada nueva", await enqueue_cover(conn, user_id, series_id))
+        await _new_cover(conn, series_id, user_id, "Portada nueva")
     return {"cover_status": "queued"}
+
+
+async def _new_cover(conn, series_id, user_id, reason: str) -> None:
+    busy = (await conn.execute(text(
+            "select 1 from public.generation_jobs where series_id = :s and kind = 'cover'"
+        " and status in ('queued', 'running')"), {"s": series_id})).first()
+    if busy:
+        raise ApiError(409, "cover_in_progress", "Ya estamos creando una portada para este tomo.")
+    today = (await conn.execute(text(
+        "select count(*) from public.generation_jobs where user_id = :u and kind = 'cover'"
+        " and created_at > now() - interval '1 day'"), {"u": user_id})).scalar_one()
+    if today >= COVERS_PER_DAY:
+        raise ApiError(429, "quota_exceeded", f"Puedes crear hasta {COVERS_PER_DAY} portadas al día.")
+    await credits.charge(conn, user_id, COVER, reason, await enqueue_cover(conn, user_id, series_id))
 
 
 
@@ -688,6 +698,7 @@ def _with_cover(out: dict, request: Request) -> dict:
     storage = request.app.state.storage
     out["cover_url"] = storage.public_url(key) if key and storage else None
     out["cover_palette"] = cover.get("palette")
+    out["cover_lettered"] = bool(key) and cover.get("lettered") is not None and cover.get("lettered") == out.get("title")
     cast = out.get("cast")
     if isinstance(cast, str):
         cast = json.loads(cast)

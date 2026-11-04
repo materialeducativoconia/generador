@@ -60,6 +60,9 @@ pondrán tarjetas de texto, y ninguna debe tapar algo importante. Divide la imag
 celda donde haya una cara (de persona o animal), un personaje o animal entero, o el objeto principal de la escena;
 deja libres las de cielo, pasto, agua, pared o fondo tranquilo. Responde solo con json:
 {"busy": ["A2", "B2", ...], "faces": ["B2", ...]}"""
+READ_PROMPT = """Transcribe exactamente todo el texto escrito en esta imagen, letra por letra, tal como está pintado:
+con sus acentos, ñ, ¿ y ¡, sin corregir faltas ni completar palabras. Si una letra no se lee, ponla como ?.
+Si no hay texto, devuelve "". Responde solo con json: {"text": "..."}"""
 CELLS = {f"{c}{r}" for c in "ABC" for r in "1234"}
 
 
@@ -101,6 +104,11 @@ class OpenRouterVision:
         verdict, cost = await self._ask(image, LAYOUT_PROMPT, max_tokens=300)
         cells = {str(c).upper() for c in (verdict.get("busy") or []) + (verdict.get("faces") or [])}
         return sorted(cells & CELLS), cost
+
+    async def read_text(self, image: bytes) -> tuple[str, float | None]:
+        """Every word painted in the picture, as written: a lettered title is checked against what it should say."""
+        verdict, cost = await self._ask(image, READ_PROMPT, max_tokens=300)
+        return str(verdict.get("text") or "").strip()[:400], cost
 
     async def _ask(self, image: bytes, prompt: str, max_tokens: int = 800) -> tuple[dict, float | None]:
         url = f"data:{_sniff(image)};base64,{base64.b64encode(image).decode()}"

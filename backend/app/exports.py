@@ -104,6 +104,7 @@ async def run_export(deps, job: dict) -> None:
                               content=SectionContent.model_validate(_json(lesson["content_json"])))
                   for lesson in lessons if lesson["content_json"]],
         cover_image=cover_image, cover_media_type=media_type,
+        cover_lettered=bool(cover_image) and (_json(series["cover"]) or {}).get("lettered") == (series["title"] or series["topic"]),
         palette=palette, design=design,
         images=images, credits=credits,
         sources=(_json(series["research"]) or {}).get("sources") or [],

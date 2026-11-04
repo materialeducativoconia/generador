@@ -13,7 +13,7 @@ type Props = CoverFields & {
 }
 
 /** The tome as a printed book: the agent's illustration with our type set on top, like the PDF cover. */
-export function BookCover({ title, genre, audience, cover_url, cover_status, cover_palette, size = 'card', design, marked = false }: Props) {
+export function BookCover({ title, genre, audience, cover_url, cover_status, cover_palette, cover_lettered, size = 'card', design, marked = false }: Props) {
   const [loaded, setLoaded] = useState(false)
   useThemeFonts(design)
   const [bg, ink, accent] = cover_palette ?? ['#EEF2FF', '#1C1917', '#4F46E5']
@@ -30,12 +30,12 @@ export function BookCover({ title, genre, audience, cover_url, cover_status, cov
       ) : (
         <div className={painting ? 'book-art placeholder painting' : 'book-art placeholder'} aria-hidden="true" />
       )}
-      <div className="book-plate">
+      {cover_lettered && cover_url ? <span className="sr-only">{title}</span> : <div className="book-plate">
         <span className="book-k">{genre ? GENRE_LABEL[genre] : 'Nuevo tomo'}</span>
         <span className="book-t">{layout === 'poster' ? title.split(':')[0] : title}</span>
         {layout === 'poster' && title.includes(':') && size !== 'card' && <span className="book-sub">{title.split(':').slice(1).join(':').trim()}</span>}
         {audience && size !== 'card' && layout !== 'poster' && <span className="book-a">{audience}</span>}
-      </div>
+      </div>}
       {layout === 'poster' && audience && size !== 'card' && <span className="book-age">{audience.match(/\(([^)]+)\)/)?.[1] ?? audience}</span>}
       {marked && <span className="watermark" aria-hidden="true" />}
       {painting && <span className="book-badge">Pintando portada…</span>}
