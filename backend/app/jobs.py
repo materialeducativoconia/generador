@@ -558,10 +558,13 @@ async def _cover(deps: Deps, job: dict) -> None:
     free = bool(job["payload"].get("free"))
     if deps.images is None and not free:
         raise JobFailed("not_configured", "Falta OPENROUTER_API_KEY para generar portadas.")
-    from app.casting import cast_line, cast_sheets, cast_tome  # casting imports this module
+    from app.casting import cast_line, cast_sheets, cast_tome, complete_sheets  # casting imports this module
 
     # The guide comes before the cover so the cover shows it; a preview only borrows from the library.
     cast, cast_usd = await cast_tome(deps, job, series, design, brief, paint=not free and not series["preview"])
+    if not free and any(not c.get("sheet_key") for c in cast):  # a paid preview: its characters get their sheets
+        cast, sheets_usd = await complete_sheets(deps, job["series_id"], design)
+        cast_usd += sheets_usd
     # A story already written whose hero the cast lacks (a child the Narrator created): the cover follows the plates.
     story = (_json(series["plan"]) or {}).get("story") if series.get("plan") else None
     hero = (story or {}).get("protagonist", "") if not any(c.get("role") == "protagonist" for c in cast) else ""
@@ -884,9 +887,12 @@ async def _illustration(deps: Deps, job: dict) -> None:
             references = [reference_image(await deps.storage.download(series["cover_key"]))]
         except Exception:  # the cover is a style anchor, not a requirement
             log.warning("cover %s unavailable as reference", series["cover_key"])
-    from app.casting import cast_sheets  # casting imports this module
+    from app.casting import cast_sheets, complete_sheets  # casting imports this module
 
-    character_sheets = await cast_sheets(deps, _json(series["cast"]) or [])  # the guide the same on every page
+    cast = _json(series["cast"]) or []
+    if not (free or preview) and any(not c.get("sheet_key") for c in cast):  # a paid preview: the cover's faces
+        cast, _ = await complete_sheets(deps, job["series_id"], design)
+    character_sheets = await cast_sheets(deps, cast)  # the guide the same on every page
     references += character_sheets
     house = await style_references(deps.engine, deps.storage, design.house_style if design else None)
 

@@ -266,3 +266,29 @@ async def test_a_new_cover_of_a_written_story_puts_its_hero_in_front_as_the_plat
 
     assert "Lucía, una niña curiosa" in llm.calls[-1][1]["content"]
     assert len(images.calls[0]["references"]) == 2 and "pages of this very book" in images.calls[0]["prompt"]
+
+
+async def test_a_paid_preview_draws_its_characters_from_the_cover_once_for_the_cover_and_every_plate(
+        raw_db, google_user, client, key, engine):
+    import asyncio
+    from types import SimpleNamespace
+
+    from app.casting import complete_sheets
+
+    user = await google_user()
+    sid = await new_tome(client, key, user)
+    cast = [{"character_id": None, "name": "Laura", "role": "companion", "look": "niña de coletas", "sheet_key": None},
+            {"character_id": "c1", "name": "Robi", "role": "guide", "look": "robot", "sheet_key": "characters/c1.jpg"}]
+    await raw_db.execute("""update public.series set "cast" = $2, cover_key = 'free.jpg' where id = $1""",
+                         sid, json.dumps(cast))
+    storage, images = FakeStorage(), FakeImages()
+    storage.uploads[("covers", "free.jpg")] = (PNG, "image/jpeg")
+    deps = SimpleNamespace(engine=engine, images=images, storage=storage, vision=None)
+
+    (first, cost), (second, _) = await asyncio.gather(complete_sheets(deps, sid, None), complete_sheets(deps, sid, None))
+
+    assert len(images.calls) == 1 and cost == 0.04  # the cover job and a section start together: one painting
+    assert "this book's cover" in images.calls[0]["prompt"] and "Laura" in images.calls[0]["prompt"]
+    assert len(images.calls[0]["references"]) == 1  # the cover the user saw
+    assert first[0]["sheet_key"] == second[0]["sheet_key"] == f"characters/{sid}-0.jpg"
+    assert json.loads(await raw_db.fetchval('select "cast" from public.series where id = $1', sid))[0]["sheet_key"]

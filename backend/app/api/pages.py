@@ -17,9 +17,10 @@ from sqlalchemy import text
 from app import credits
 from app.api.deps import current_user_id
 from app.api.series import _own_lesson, _parse
-from app.content import PLATE_GENRES, Design, Image, SectionContent
+from app.content import PLATE_GENRES, Design, Image, SectionContent, Spot
 from app.errors import ApiError
 from app.jobs import _queue_artwork
+from app.render import note_spots, question_low
 
 router = APIRouter()
 UserId = Annotated[uuid.UUID, Depends(current_user_id)]
@@ -38,6 +39,7 @@ class PageEdit(BaseModel):
     notes: list[Annotated[str, Field(max_length=140)]] | None = Field(default=None, max_length=4)
     find: str | None = Field(default=None, max_length=300)
     layout: Literal["bleed", "band", "vignette", "spread"] | None = None
+    place: dict[Literal["q", "f", "n0", "n1", "n2", "n3"], Spot] | None = None  # {} back to the automatic layout
 
 
 class Repaint(BaseModel):
@@ -70,9 +72,12 @@ async def page_preview(lesson_id: uuid.UUID, block_id: str, request: Request, us
     key = hashlib.sha256(json.dumps([block, paper, lesson["position"], lesson["title"], str(asset and asset["busy"])] +
                                     [str(series[c]) for c in ("title", "topic", "genre", "audience", "cover", "design")],
                                     sort_keys=True, default=str).encode()).hexdigest()
+    # Where each fact sits on the printed page, so the editor lays its draggable copy out the same way.
+    plate, cells = Image.model_validate(block), _parse(asset["busy"]) if asset and asset["busy"] else None
+    layout = {"spots": note_spots(plate, cells), "low": question_low(plate, cells)}
     if key in _rendered:
         _rendered.move_to_end(key)
-        return {"image": _rendered[key]}
+        return {"image": _rendered[key], **layout}
     images, busy = {}, {}
     if asset:
         try:
@@ -86,7 +91,7 @@ async def page_preview(lesson_id: uuid.UUID, block_id: str, request: Request, us
     _rendered[key] = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
     while len(_rendered) > RENDERED:
         _rendered.popitem(last=False)
-    return {"image": _rendered[key]}
+    return {"image": _rendered[key], **layout}
 
 
 def _render_page(series, lesson, block: dict, images: dict, busy: dict, paper: str) -> bytes:
@@ -143,7 +148,7 @@ async def edit_page(lesson_id: uuid.UUID, block_id: str, body: PageEdit, request
                 value = value.strip() or None
             if field == "notes":
                 value = [n.strip() for n in value or [] if n.strip()]
-            if value in (None, []):
+            if value in (None, [], {}):
                 block.pop(field, None)
             else:
                 block[field] = value

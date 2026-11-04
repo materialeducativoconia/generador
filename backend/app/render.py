@@ -245,18 +245,35 @@ NOTE_SPOTS = {"n1": ("A2",), "n2": ("C2",), "n3": ("A3",), "n4": ("C3",)}
 SPREAD_SPOTS = {"s1": ("C2",), "s2": ("C3",), "s3": ("A3",)}
 
 
-def plate_notes(block, busy: list[str] | None, layout: str = "bleed") -> tuple[list[tuple[str, str]], list[str]]:
-    """Where each fact goes: (spot, text) on a calm part of the picture, the rest in the question card. Without the
-    inspector's map the spots keep their order; an inset diagram takes the lower spots. Band and vignette plates
-    list their facts beside the picture, never over it."""
+def plate_notes(block, busy: list[str] | None, layout: str = "bleed") -> tuple[list[tuple[str, str, str]], list[str]]:
+    """Where each fact goes: (spot, text, style) on a calm part of the picture, the rest in the question card. A fact
+    the user dragged stays where they left it; without the inspector's map the spots keep their order; an inset
+    diagram takes the lower spots. Band and vignette plates list their facts beside the picture, never over it."""
     if layout in ("band", "vignette"):
         return [], []
+    place = (getattr(block, "place", None) or {}) if layout == "bleed" else {}
+    dragged = [("at", n, f"left: {place[f'n{i}'].x}%; top: {place[f'n{i}'].y}%")
+               for i, n in enumerate(block.notes) if f"n{i}" in place]
+    notes = [n for i, n in enumerate(block.notes) if f"n{i}" not in place]
     table = SPREAD_SPOTS if layout == "spread" else NOTE_SPOTS
     spots = ["n1", "n2"] if block.inset and layout != "spread" else list(table)
     if busy is not None:
         spots = [s for s in spots if not set(table[s]) & set(busy)]
-    placed = list(zip(spots, block.notes))
-    return placed, list(block.notes[len(placed):])
+    placed = [(spot, n, "") for spot, n in zip(spots, notes)]
+    return dragged + placed, notes[len(placed):]
+
+
+def question_low(block, busy: list[str] | None) -> bool:
+    """The question card goes down to the foot of a bleed plate when the inspector found a face, a character or the
+    subject in the top row: covering feet and floor is better than covering a face. Not over an inset diagram."""
+    return bool(set(busy or []) & {"A1", "B1", "C1"}) and not block.inset
+
+
+def note_spots(block, busy: list[str] | None) -> list[str | None]:
+    """For the page editor: the spot each fact takes on a bleed plate ("at" where the user left it), None in the card."""
+    placed, _ = plate_notes(block, busy, "bleed")
+    spots = {n: spot for spot, n, _ in placed}
+    return [spots.get(n) for n in block.notes]
 
 
 def vignette_height(block, w: float, h: float, first: bool) -> float:
@@ -280,7 +297,7 @@ def vignette_height(block, w: float, h: float, first: bool) -> float:
     return round(max(h * 0.3, min(h * 0.56, h - 12 - head - 9 - notes - strip)), 1)
 
 
-_env.globals.update(vignette_height=vignette_height, poster_title=poster_title, poster_subtitle=poster_subtitle, age_badge=age_badge,
+_env.globals.update(question_low=question_low, vignette_height=vignette_height, poster_title=poster_title, poster_subtitle=poster_subtitle, age_badge=age_badge,
                     plate_notes=plate_notes)
 
 

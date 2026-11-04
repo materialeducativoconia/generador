@@ -537,3 +537,46 @@ async def keep_seeded(engine, images, storage, vision=None) -> None:
             await conn.execute(text("delete from public.character_sheets where character_id = :id"), {"id": char_id})
         log.info("seeded character %s", c["name"])
         await asyncio.sleep(PAUSE_SECONDS)
+
+
+FROM_COVER = ("The attached image is this book's cover: if {name} is on it, draw exactly that character (face, skin, "
+              "hair, outfit, colours, proportions); if not, ignore it. ")
+
+
+async def complete_sheets(deps, series_id, design: Design | None) -> tuple[list[dict], float]:
+    """A tome begun as a free preview cast its characters without model sheets (a preview paints none). Once it is
+    paid, the cover and the plates paint them first, from the cover the user already saw, so the new cover and every
+    plate draw the same faces. The cover job and the sections start together: the first one paints, the rest wait for
+    it. Returns the cast and what painting cost."""
+    from app.jobs import _json  # jobs imports this module
+
+    async with deps.engine.begin() as conn:
+        await conn.execute(text("select pg_advisory_xact_lock(hashtext(:k))"), {"k": f"sheets:{series_id}"})
+        row = (await conn.execute(text('select "cast", cover_key from public.series where id = :s'),
+                                  {"s": series_id})).mappings().one()
+        cast = _json(row["cast"]) or []
+        if deps.images is None or all(c.get("sheet_key") for c in cast):
+            return cast, 0.0
+        refs = []
+        if row["cover_key"]:
+            try:
+                refs = [reference_image(await deps.storage.download(row["cover_key"]))]
+            except Exception:
+                log.warning("cover %s unavailable for the sheets", row["cover_key"])
+        style = design.art_style if design and design.art_style else SHEET_STYLE
+        cost = 0.0
+        for i, c in enumerate(cast):
+            if c.get("sheet_key"):
+                continue
+            prompt = (FROM_COVER.format(name=c["name"]) if refs else "") + sheet_prompt(c, style, False)
+            try:
+                image, spent = await paint_sheet(deps.images, getattr(deps, "vision", None), prompt, refs, c["name"])
+            except Exception as exc:  # without a sheet the character is drawn from its description, as before
+                log.warning("model sheet failed for %s: %s", c["name"], exc)
+                continue
+            key = f"characters/{series_id}-{i}.jpg"
+            await deps.storage.upload(key, await asyncio.to_thread(_jpeg, image.data), "image/jpeg", bucket="images")
+            c["sheet_key"], cost = key, cost + spent
+        await conn.execute(text('update public.series set "cast" = cast(:c as jsonb) where id = :s'),
+                           {"s": series_id, "c": json.dumps(cast)})
+    return cast, cost

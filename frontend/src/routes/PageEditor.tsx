@@ -2,14 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { AppShell } from '../components/AppShell'
+import { PlateStage } from '../components/PlateStage'
 import { errorText } from '../components/ErrorNote'
 import { api } from '../lib/apiClient'
 import { tomeName } from '../lib/labels'
 import { useSeries } from '../lib/queries'
-import type { Block } from '../lib/types'
+import type { Block, Design, PlatePlace } from '../lib/types'
 
 type Plate = Extract<Block, { type: 'image' }>
-type Page = { lessonId: string; position: number; section: string; block: Plate }
+type Page = { lessonId: string; position: number; section: string; block: Plate; first: boolean }
 
 const LAYOUTS: { key: NonNullable<Plate['layout']>; label: string }[] = [
   { key: 'bleed', label: 'Ilustración a toda página' },
@@ -26,7 +27,7 @@ export function PageEditor() {
   const s = series.data
   const pages = useMemo<Page[]>(() => (s?.lessons ?? []).flatMap((l) =>
     (l.content_json?.blocks ?? []).filter((b): b is Plate => b.type === 'image' && b.size === 'plate')
-      .map((block) => ({ lessonId: l.id, position: l.position, section: l.title, block }))), [s])
+      .map((block, i) => ({ lessonId: l.id, position: l.position, section: l.title, block, first: i === 0 }))), [s])
   const current = pages.find((p) => p.block.id === params.get('p') && p.lessonId === params.get('s')) ?? pages[0]
   const next = current && pages[pages.indexOf(current) + 1]
   const paper = s?.genre === 'story_book' || s?.genre === 'picture_book' ? '17x21' : 'A4'
@@ -68,7 +69,7 @@ export function PageEditor() {
             })}
           </ol>
           <PageView key={`${current.lessonId}:${current.block.id}`} seriesId={id} page={current} paper={paper}
-            picture={current.block.asset_id ? s.assets[current.block.asset_id] : undefined} story={s.genre === 'story_book'} />
+            picture={current.block.asset_id ? s.assets[current.block.asset_id] : undefined} story={s.genre === 'story_book'} design={s.design} />
           {next && <Prefetch page={next} paper={paper} />}
         </div>
       )}
@@ -79,10 +80,10 @@ export function PageEditor() {
 // The picture of the page as printed; it follows the saved page (its asset and words), not the form.
 function previewQuery(page: Page, paper: string) {
   const b = page.block
-  const stamp = `${b.asset_id ?? 'none'}:${b.layout ?? ''}:${b.narration ?? ''}:${b.question ?? ''}:${b.answer ?? ''}:${(b.notes ?? []).join('|')}:${b.find ?? ''}`
+  const stamp = `${b.asset_id ?? 'none'}:${b.layout ?? ''}:${b.narration ?? ''}:${b.question ?? ''}:${b.answer ?? ''}:${(b.notes ?? []).join('|')}:${b.find ?? ''}:${JSON.stringify(b.place ?? {})}`
   return {
     queryKey: ['page-preview', page.lessonId, b.id, stamp, paper],
-    queryFn: () => api.get<{ image: string }>(`/api/lessons/${page.lessonId}/pages/${b.id}/preview?paper=${paper}`),
+    queryFn: () => api.get<{ image: string; spots?: (string | null)[]; low?: boolean }>(`/api/lessons/${page.lessonId}/pages/${b.id}/preview?paper=${paper}`),
     staleTime: Infinity,
   }
 }
@@ -95,7 +96,7 @@ function Prefetch({ page, paper }: { page: Page; paper: string }) {
   return null
 }
 
-function PageView({ seriesId, page, paper, picture, story }: { seriesId: string; page: Page; paper: string; picture?: string; story: boolean }) {
+function PageView({ seriesId, page, paper, picture, story, design }: { seriesId: string; page: Page; paper: string; picture?: string; story: boolean; design?: Design | null }) {
   const qc = useQueryClient()
   const b = page.block
   const [narration, setNarration] = useState(b.narration ?? '')
@@ -104,6 +105,8 @@ function PageView({ seriesId, page, paper, picture, story }: { seriesId: string;
   const [notes, setNotes] = useState<string[]>(() => [...(b.notes ?? []), '', '', '', ''].slice(0, 4))
   const [find, setFind] = useState(b.find ?? '')
   const [layout, setLayout] = useState(b.layout ?? 'bleed')
+  const [place, setPlace] = useState<PlatePlace>(b.place ?? {})
+  const [view, setView] = useState<'move' | 'print'>('move')
   const [ask, setAsk] = useState('')
   const base = `/api/lessons/${page.lessonId}/pages/${b.id}`
   const preview = useQuery(previewQuery(page, paper))
@@ -116,6 +119,7 @@ function PageView({ seriesId, page, paper, picture, story }: { seriesId: string;
       ...(b.notes?.length ? { notes: notes.filter((n) => n.trim()) } : {}),
       ...(b.find != null ? { find } : {}),
       layout,
+      ...(placed ? { place } : {}),
     }),
     onSuccess: refresh,
   })
@@ -126,18 +130,36 @@ function PageView({ seriesId, page, paper, picture, story }: { seriesId: string;
       await Promise.all([refresh(), qc.invalidateQueries({ queryKey: ['me'] })])
     },
   })
+  const placed = JSON.stringify(place) !== JSON.stringify(b.place ?? {})
   const dirty = narration !== (b.narration ?? '') || question !== (b.question ?? '') || answer !== (b.answer ?? '') ||
     find !== (b.find ?? '') || layout !== (b.layout ?? 'bleed') ||
-    notes.filter((n) => n.trim()).join('|') !== (b.notes ?? []).join('|')
+    notes.filter((n) => n.trim()).join('|') !== (b.notes ?? []).join('|') || placed
+  // Texts lie over the picture only on a bleed page (an inset diagram keeps its own place at the foot).
+  const movable = layout === 'bleed' && !!picture && !!b.asset_id && !b.inset
   const layouts = LAYOUTS.filter((l) => !story || l.key !== 'vignette')
 
   return (
     <>
       <figure className="page-preview">
-        {preview.data ? <img src={preview.data.image} alt={`Página: ${b.narration ?? b.question ?? b.subject}`} />
+        {movable && (
+          <div className="page-view-switch">
+            <div className="segmented-inline" role="radiogroup" aria-label="Vista">
+              <button type="button" role="radio" aria-checked={view === 'move'} className={view === 'move' ? 'chip on' : 'chip'} onClick={() => setView('move')}>Mover textos</button>
+              <button type="button" role="radio" aria-checked={view === 'print'} className={view === 'print' ? 'chip on' : 'chip'} onClick={() => setView('print')}>Vista de impresión</button>
+            </div>
+            {view === 'move' && Object.keys(place).length > 0 && <button type="button" className="ghost small" onClick={() => setPlace({})}>Volver al acomodo automático</button>}
+          </div>
+        )}
+        {movable && view === 'move' ? (
+          <PlateStage picture={picture!} design={design} kicker={page.first ? `${page.position} · ${page.section}` : undefined}
+            narration={b.narration != null || story ? narration : undefined} question={question} answer={answer}
+            notes={notes} find={find} spots={preview.data?.spots} low={preview.data?.low} place={place} onPlace={setPlace} />
+        ) : preview.data ? <img src={preview.data.image} alt={`Página: ${b.narration ?? b.question ?? b.subject}`} />
           : picture && !preview.isError ? (  // the painting itself, at once, while the printed page is laid out
             <div className="page-preview-draft"><img src={picture} alt="" /><span className="notice small">Preparando la página…</span></div>
           ) : <div className="page-preview-wait">{preview.isError ? 'No se pudo mostrar la página.' : 'Preparando la página…'}</div>}
+        {movable && view === 'move' && <figcaption className="muted small">Arrastra la pregunta, los datos o el reto con el dedo o el cursor; lo que escribes a la derecha se ve aquí al momento. Guarda para llevarlo al PDF.</figcaption>}
+        {movable && view === 'print' && placed && <figcaption className="muted small">La vista de impresión muestra la página guardada: guarda los cambios para verlos aquí.</figcaption>}
         {!b.asset_id && <figcaption className="notice small">Pintando la ilustración de nuevo… aparecerá aquí en uno o dos minutos.</figcaption>}
       </figure>
       <aside className="page-form">

@@ -60,3 +60,33 @@ async def test_the_preview_is_the_printed_page(raw_db, google_user, client, key,
     with patch("app.api.pages._render_page", side_effect=AssertionError("rendered twice")):
         again = await client.get(f"/api/lessons/{lid}/pages/p1/preview", headers=bearer(key, user))
     assert again.json() == response.json()
+
+
+async def test_texts_dragged_on_the_page_print_where_the_user_left_them(raw_db, google_user, client, key,
+                                                                         engine):  # noqa: F811
+    from app.content import Image
+    from app.render import Tome, TomeSection, render_html
+    from app.content import SectionContent
+
+    user = await google_user()
+    sid = await _written(raw_db, client, key, engine, user)
+    lid = await _lesson(raw_db, sid)
+
+    response = await client.patch(f"/api/lessons/{lid}/pages/p1", headers=bearer(key, user),
+                                  json={"place": {"q": {"x": 0, "y": 62.5}}})
+    assert response.status_code == 200 and response.json()["block"]["place"] == {"q": {"x": 0, "y": 62.5}}
+    bad = await client.patch(f"/api/lessons/{lid}/pages/p1", headers=bearer(key, user),
+                             json={"place": {"q": {"x": 0, "y": 140}}})
+    assert bad.status_code == 422  # never off the page
+
+    block = Image.model_validate({"id": "b1", "type": "image", "kind": "illustration", "size": "plate", "subject": "x",
+                                  "question": "¿Qué?", "notes": ["uno", "dos"], "find": "¿dónde?",
+                                  "place": {"q": {"x": 0, "y": 60}, "f": {"x": 0, "y": 5}, "n1": {"x": 33, "y": 44}}})
+    html = render_html(Tome(title="t", genre="picture_book", audience="", author=None,
+                            sections=[TomeSection(1, "s", SectionContent(blocks=[block]))]),
+                       paper="17x21", include_answer_key=False)
+    assert 'class="pq" style="top: 60.0%"' in html and "top: 5.0%; bottom: auto" in html
+    assert 'class="pn at" style="left: 33.0%; top: 44.0%">dos' in html
+
+    cleared = await client.patch(f"/api/lessons/{lid}/pages/p1", headers=bearer(key, user), json={"place": {}})
+    assert "place" not in cleared.json()["block"]  # back to the automatic layout

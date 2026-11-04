@@ -104,6 +104,13 @@ class LetterGrid(_Block):
     instruction: Short | None = None
 
 
+class Spot(BaseModel):
+    """Where the user dragged a text on a plate: its top-left corner, in % of the page's width and height."""
+
+    x: float = Field(ge=0, le=100)
+    y: float = Field(ge=0, le=100)
+
+
 class Image(_Block):
     """An image request; phase 1 renders a placeholder, later the Illustrator/Curator fills `asset_id`."""
 
@@ -122,6 +129,9 @@ class Image(_Block):
     answer: Annotated[str, Field(max_length=500)] | None = None
     notes: list[Annotated[str, Field(min_length=1, max_length=140)]] = Field(default_factory=list, max_length=4)
     find: Short | None = None
+    # A bleed plate's texts where the user dragged them in the page editor: "q" the question (or story) card and "f"
+    # the find strip, which span the page (only y counts), "n0".."n3" each fact. Unset: the automatic layout.
+    place: dict[Literal["q", "f", "n0", "n1", "n2", "n3"], Spot] | None = None
     # A plate's exact fact drawn by code over the picture (planet order, moon phases, a cycle): the painting sets
     # the scene, the inset carries what must be right.
     inset: "Inset | None" = None

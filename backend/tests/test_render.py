@@ -132,8 +132,27 @@ def test_fact_cards_avoid_the_cells_the_design_inspector_marked():
     from app.render import plate_notes
 
     plate = SimpleNamespace(notes=["uno", "dos", "tres"], inset=None)
-    assert plate_notes(plate, None) == ([("n1", "uno"), ("n2", "dos"), ("n3", "tres")], [])
+    assert plate_notes(plate, None) == ([("n1", "uno", ""), ("n2", "dos", ""), ("n3", "tres", "")], [])
     # a face on the left at the top and the subject on the right below: two cards move, one goes to the question
-    assert plate_notes(plate, ["A2", "C3", "B2"]) == ([("n2", "uno"), ("n3", "dos")], ["tres"])
+    assert plate_notes(plate, ["A2", "C3", "B2"]) == ([("n2", "uno", ""), ("n3", "dos", "")], ["tres"])
     assert plate_notes(SimpleNamespace(notes=["uno", "dos", "tres"], inset=object()), []) == (
-        [("n1", "uno"), ("n2", "dos")], ["tres"])
+        [("n1", "uno", ""), ("n2", "dos", "")], ["tres"])
+    # a fact the user dragged keeps its place; the others take the spots
+    moved = SimpleNamespace(notes=["uno", "dos"], inset=None, place={"n1": SimpleNamespace(x=40, y=70)})
+    assert plate_notes(moved, None) == ([("at", "dos", "left: 40%; top: 70%"), ("n1", "uno", "")], [])
+
+
+def test_the_question_card_moves_to_the_foot_when_a_face_is_at_the_top():
+    from app.content import Image, SectionContent
+    from app.render import Tome, TomeSection, render_html
+
+    block = Image.model_validate({"id": "b1", "type": "image", "kind": "illustration", "size": "plate", "subject": "x",
+                                  "asset_id": "a1", "question": "¿Qué?", "find": "¿dónde?"})
+
+    def html(busy):
+        return render_html(Tome(title="t", genre="picture_book", audience="", author=None,
+                                sections=[TomeSection(1, "s", SectionContent(blocks=[block]))], busy={"a1": busy}),
+                           paper="17x21", include_answer_key=False)
+
+    assert 'class="pq" style="top: auto; bottom: 27mm"' in html(["B1", "B2"])
+    assert 'class="pq">' in html(["B2", "B3"])

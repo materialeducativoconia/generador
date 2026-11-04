@@ -499,23 +499,24 @@
         {% if uri %}<img src="{{ uri }}" alt="{{ b.subject }}">{% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
         <div class="pq">{{ kicker }}{{ head }}
           {% if carded %}<ul class="pqf">{% for n in carded %}<li>{{ n|inline }}</li>{% endfor %}</ul>{% endif %}</div>
-        {% for spot, n in placed if spot == "s3" %}<div class="pn {{ spot }}">{{ n|inline }}</div>{% endfor %}
+        {% for spot, n, at in placed if spot == "s3" %}<div class="pn {{ spot }}">{{ n|inline }}</div>{% endfor %}
       </div>
       <div class="plate spread sr">
         {% if uri %}<img src="{{ uri }}" alt="">{% endif %}
-        {% for spot, n in placed if spot != "s3" %}<div class="pn {{ spot }}">{{ n|inline }}</div>{% endfor %}
+        {% for spot, n, at in placed if spot != "s3" %}<div class="pn {{ spot }}">{{ n|inline }}</div>{% endfor %}
         {{ find }}
       </div>
       {% else %}
+      {% set moved = b.place or {} %}
       <div class="plate" data-block="{{ s.position ~ ':' ~ b.id }}">
         {% if uri %}<img src="{{ uri }}" alt="{{ b.subject }}">
         {% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
-        <div class="pq">{{ kicker }}
+        <div class="pq"{% if moved.q %} style="top: {{ moved.q.y }}%"{% elif question_low(b, tome.busy.get(b.asset_id)) %} style="top: auto; bottom: {{ 27 if b.find else 9 }}mm"{% endif %}>{{ kicker }}
           {{ head }}
           {% if carded %}<ul class="pqf">{% for n in carded %}<li>{{ n|inline }}</li>{% endfor %}</ul>{% endif %}</div>
-        {% for spot, n in placed %}<div class="pn {{ spot }}">{{ n|inline }}</div>{% endfor %}
+        {% for spot, n, at in placed %}<div class="pn {{ spot }}"{% if at %} style="{{ at }}"{% endif %}>{{ n|inline }}</div>{% endfor %}
         {% if b.inset %}<div class="pi{% if b.find %} above{% endif %}">{{ render_diagram(b.inset, c, th.head) }}{% if b.inset.caption %}<div class="pic">{{ b.inset.caption|inline }}</div>{% endif %}</div>{% endif %}
-        {{ find }}
+        {% if moved.f and b.find %}<div class="pf" style="top: {{ moved.f.y }}%; bottom: auto"><b>Observa y encuentra:</b> {{ b.find|find|inline }}</div>{% else %}{{ find }}{% endif %}
       </div>
       {% endif %}
     {% elif b.type == "image" and tome.image_uri(b.asset_id) %}
