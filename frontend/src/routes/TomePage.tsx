@@ -74,7 +74,7 @@ export function TomePage() {
           <Sections series={s} progress={progress.data} />
           {s.research?.sources.length ? <Sources research={s.research} /> : null}
           {status === 'ready' && <QualityCard seriesId={s.id} progress={progress.data} />}
-          {status === 'ready' && <ExportPanel key={progress.data.images.done} seriesId={s.id} genre={s.genre} latest={progress.data.latest_export} images={progress.data.images} />}
+          {status === 'ready' && <ExportPanel key={`${progress.data.images.done}:${progress.data.latest_export?.id}:${progress.data.latest_export?.stale}`} seriesId={s.id} genre={s.genre} latest={progress.data.latest_export} images={progress.data.images} />}
         </>
       )}
     </AppShell>
@@ -1016,6 +1016,10 @@ function ExportPanel({ seriesId, genre, latest, images }: { seriesId: string; ge
                 Portada con lomo
               </button>
             )}
+            <button className="ghost" onClick={() => create.mutate()} disabled={busy || illustrating}
+              title="Maqueta el libro otra vez con los últimos cambios de texto, posiciones e ilustraciones">
+              {create.isPending ? <><span className="spinner" /> Maquetando…</> : 'Volver a maquetar'}
+            </button>
             <button className="primary" onClick={() => download.mutate(current.data!.download_url!)} disabled={download.isPending}>
               {format === 'docx' ? 'Descargar Word'
                 : `Descargar ${current.data.cover_download_url ? 'interior' : 'PDF'} · ${current.data.page_count} págs.`}
@@ -1027,6 +1031,9 @@ function ExportPanel({ seriesId, genre, latest, images }: { seriesId: string; ge
           </button>
         )}
       </div>
+      {!exportId && latest?.stale && latest.status === 'succeeded' && (
+        <p className="notice small">Cambiaste páginas después del último PDF: genéralo de nuevo para que las incluya.</p>
+      )}
       {preflight && (
         <div className={`preflight ${preflight.rating}`}>
           <strong>{RATING[preflight.rating]}</strong>

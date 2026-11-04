@@ -110,7 +110,7 @@ function PageView({ seriesId, page, paper, picture, story, design }: { seriesId:
   const [ask, setAsk] = useState('')
   const base = `/api/lessons/${page.lessonId}/pages/${b.id}`
   const preview = useQuery(previewQuery(page, paper))
-  const refresh = () => qc.invalidateQueries({ queryKey: ['series', seriesId] })
+  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['series', seriesId] }), qc.invalidateQueries({ queryKey: ['progress', seriesId] })])
   const save = useMutation({
     mutationFn: () => api.patch(base, {
       ...(b.narration != null || story ? { narration } : {}),
