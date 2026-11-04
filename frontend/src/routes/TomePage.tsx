@@ -235,7 +235,7 @@ function TomeProgress({ series, status, progress, preview }: { series: Series; s
   const [title, sub] = stage === 0 ? (status === 'outline_failed'
       ? ['No pudimos diseñar el tomo', 'Prueba de nuevo o cambia un poco la idea.'] : ['Planeando tu libro', live])
     : stage === 1 ? (preview ? ['Tu vista previa', 'Mira tus páginas y, con un plan, genera el tomo completo.']
-                             : ['Revisa el plan y el arte', 'Ajusta secciones y páginas; cuando estés listo, genera el tomo.'])
+                             : ['El plan está listo: falta tu visto bueno', 'Nada se escribe ni se ilustra hasta que pulses «Generar así».'])
     : stage === 2 ? ['Escribiendo tu libro', live]
     : stage === 3 ? [`Ilustrando · ${img?.done ?? 0} de ${img?.total ?? 0} láminas`, live]
     : status === 'needs_attention' ? ['Algunas secciones necesitan otro intento', 'Reinténtalas abajo; no se cobran dos veces.']
@@ -264,6 +264,7 @@ function TomeProgress({ series, status, progress, preview }: { series: Series; s
           </li>
         ))}
       </ol>
+      {stage === 1 && !preview && !series.owner && <NextStep series={series} />}
       {(stage === 2 || stage === 3) && c && (
         <dl className="run-stats">
           <div><dt>Secciones</dt><dd>{sections}<span>/{c.total}</span></dd></div>
@@ -273,6 +274,25 @@ function TomeProgress({ series, status, progress, preview }: { series: Series; s
       )}
       {stage === 3 && <PaintedPlates series={series} total={img?.total ?? 0} />}
     </section>
+  )
+}
+
+/** After the plan: what is done, what is still being painted, and the one button that moves the tome on. */
+function NextStep({ series: s }: { series: Series }) {
+  const painting = s.cover_status === 'queued' || s.cover_status === 'running'
+  return (
+    <div className="next-step">
+      <ol>
+        <li className="done">Plan del libro: listo</li>
+        <li className={painting ? 'busy' : s.cover_url ? 'done' : ''}>
+          {painting ? 'Portada: pintándose (1 a 3 minutos). No hace falta esperarla.' : s.cover_url ? 'Portada: lista' : 'Portada: pendiente'}
+        </li>
+        <li className="now">Siguiente: revisa las secciones abajo y pulsa <strong>«Generar así»</strong></li>
+      </ol>
+      <button className="primary" onClick={() => document.getElementById('generar')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
+        Revisar y generar ↓
+      </button>
+    </div>
   )
 }
 
@@ -824,7 +844,7 @@ function OutlineEditor({ series }: { series: Series }) {
       )}
 
       {series.preview && <p className="muted small">Las páginas de tu vista previa ya están hechas y no gastan créditos: solo se cobran las secciones nuevas o las que cambies de páginas o contenido.</p>}
-      <div className="action-bar">
+      <div className="action-bar" id="generar">
         <div className="redo">
           <input value={redo} onChange={(e) => setRedo(e.target.value)} placeholder="¿Rehacer? Ej.: menos teoría, más ejercicios" maxLength={2000} />
           <button className="ghost" onClick={() => regenerate.mutate()} disabled={regenerate.isPending}>Rehacer esquema</button>

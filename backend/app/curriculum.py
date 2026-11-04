@@ -20,6 +20,21 @@ para qué grado o edad, los aprendizajes esperados y los pasos del método. Pref
 editoriales educativas reconocidas. No inventes nada que no esté en las fuentes."""
 
 
+FACTS_PROMPT = """Busca datos verificados sobre: {query}
+Idioma del material: {language}. Usa solo fuentes publicadas y confiables: libros publicados (Google Books,
+editoriales), enciclopedias (Britannica, Larousse), museos, universidades, institutos científicos, organismos
+oficiales y editoriales educativas reconocidas. NO uses Wikipedia, Wikimedia, foros, blogs, redes sociales ni
+sitios de tareas. Responde en viñetas cortas, un dato por viñeta, cada una con su cita [n] al final. No inventes
+nada que no esté en las fuentes."""
+UNRELIABLE = ("wikipedia.org", "wikimedia.org", "wikiwand.com", "fandom.com", "brainly.", "quora.com", "reddit.com",
+              "youtube.com", "facebook.com", "tiktok.com", "instagram.com", "pinterest.")
+
+
+def reliable(url: str) -> bool:
+    """A source a printed book may cite: not an open wiki, a forum, a homework site or a social network."""
+    return not any(domain in url.lower() for domain in UNRELIABLE)
+
+
 @dataclass
 class Finding:
     query: str
@@ -34,8 +49,15 @@ class ProgramSearch:
         self.api_key, self.model, self.timeout, self.transport = api_key, model, timeout, transport
 
     async def search(self, query: str, *, language: str = "es") -> Finding:
+        return await self._ask(query, SEARCH_PROMPT.format(query=query, language=language))
+
+    async def facts(self, query: str, *, language: str = "es") -> Finding:
+        """The Researcher's facts from published sources, each bullet citing the one it came from."""
+        return await self._ask(query, FACTS_PROMPT.format(query=query, language=language))
+
+    async def _ask(self, query: str, prompt: str) -> Finding:
         body = {"model": self.model, "temperature": 0.1, "max_tokens": 1500,
-                "messages": [{"role": "user", "content": SEARCH_PROMPT.format(query=query, language=language)}]}
+                "messages": [{"role": "user", "content": prompt}]}
         try:
             async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as http:
                 response = await http.post("https://openrouter.ai/api/v1/chat/completions", json=body,

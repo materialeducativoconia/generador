@@ -101,4 +101,4 @@ def test_pdf_ends_with_sources_and_credits_photos():
 
     assert 'id="fuentes"' in html and "https://es.wikipedia.org/wiki/Vulpes_vulpes" in html
     assert "Foto: Uoaei1, CC BY-SA 4.0, Wikimedia Commons" in html
-    assert "Wikipedia" in html and "CC BY-SA" in html
+    assert "fuentes publicadas" in html and "CC BY-SA" in html  # the photo credit keeps its licence

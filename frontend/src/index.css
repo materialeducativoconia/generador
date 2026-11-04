@@ -1222,3 +1222,13 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
   .page-strip { grid-auto-flow: column; grid-auto-columns: 72px; max-height: none; overflow-x: auto; padding: 4px; }
   .page-preview { position: static; }
 }
+.next-step { margin-top: 16px; display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 14px 16px; border-radius: 14px; background: var(--surface-2); }
+.next-step ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
+.next-step li { padding-left: 24px; position: relative; color: var(--muted); }
+.next-step li::before { content: ''; position: absolute; left: 4px; top: 5px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid currentColor; }
+.next-step li.done { color: var(--text); }
+.next-step li.done::before { background: #2f8f4e; border-color: #2f8f4e; }
+.next-step li.busy::before { border-color: #c98a12; border-top-color: transparent; animation: spin 0.9s linear infinite; }
+.next-step li.now { color: inherit; font-weight: 600; }
+.next-step li.now::before { background: var(--accent); border-color: var(--accent); }
+@media (max-width: 640px) { .next-step .primary { width: 100%; } }

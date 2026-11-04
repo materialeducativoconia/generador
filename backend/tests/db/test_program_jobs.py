@@ -30,6 +30,9 @@ class FakeSearch:
         n = len(self.queries)
         return Finding(query, f"Hallazgo {n}", [{"title": f"Fuente {n}", "url": f"https://sep.example/{n}"}], 0.006)
 
+    async def facts(self, query, *, language="es"):
+        return Finding(query, "")
+
 
 async def test_the_outline_is_built_on_an_official_program_and_checked_against_it(raw_db, google_user, client, key,
                                                                                 engine):
@@ -62,6 +65,9 @@ async def test_the_outline_is_built_on_an_official_program_and_checked_against_i
 async def test_a_search_outage_never_blocks_the_outline(raw_db, google_user, client, key, engine):
     class DownSearch:
         async def search(self, query, *, language="es"):
+            raise RuntimeError("down")
+
+        async def facts(self, query, *, language="es"):
             raise RuntimeError("down")
 
     user = await google_user()

@@ -220,6 +220,8 @@ async def test_a_picture_book_cover_has_its_title_painted_in_and_read_back(raw_d
     client._transport.app.state.storage = FakeStorage()
     tome = (await client.get(f"/api/series/{sid}", headers=bearer(key, user))).json()
     assert tome["cover_lettered"] is True
+    listed = (await client.get("/api/series", headers=bearer(key, user))).json()["series"]
+    assert [t["cover_lettered"] for t in listed if t["id"] == str(sid)] == [True]  # the library card too
     # A new title would leave the old one painted on the cover: it asks first, then paints a new cover.
     refused = await client.patch(f"/api/series/{sid}/title", json={"title": "Otro título"}, headers=bearer(key, user))
     assert refused.status_code == 409 and refused.json()["error"]["code"] == "lettered_cover"

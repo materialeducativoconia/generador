@@ -33,6 +33,7 @@ from app.layout import COMPOSE, lay_out
 from app.illustrator import (ASPECT, cover_jpeg, line_art_coverage, normalize_subject, prepare_image, reference_image,
                              upscale, vectorize)
 from app.references import find_covers
+from app.research import cited_documents
 from app.styles import contact_sheet, read_spec, sample_pages, theme_from_spec
 from app.themes import FONT_MOOD
 from app.vision import Review
@@ -252,8 +253,10 @@ async def _research(deps: Deps, job: dict, brief: Brief) -> dict:
         research = {"needed": planned.value.needed, "reason": planned.value.reason, "queries": planned.value.queries}
         if deps.search is not None and planned.value.program_queries:
             research["program"] = await _program_search(deps, job, brief, planned.value.program_queries)
-        if deps.web is not None and planned.value.needed and planned.value.queries:
-            documents = await deps.web.wikipedia(planned.value.queries, lang=brief.language)
+        if planned.value.needed and planned.value.queries:
+            documents, research["facts_usd"] = await _published(deps, job, brief, planned.value.queries)
+            if not documents and deps.web is not None:  # checks the facts; app.exports never prints it as a source
+                documents = await deps.web.wikipedia(planned.value.queries, lang=brief.language)
             if documents:
                 sheet = await fact_sheet(deps.llm, brief, documents)
                 await _log_attempts(deps.engine, job, "facts", sheet.attempts)
@@ -276,6 +279,19 @@ def only_cited(facts: list[dict], sources: list[dict]) -> tuple[list[dict], list
     renumber = {old: new for new, old in enumerate(used, 1)}
     return ([{**f, "source": renumber[f["source"]]} for f in facts if f.get("source") in renumber],
             [sources[i - 1] for i in used])
+
+async def _published(deps: Deps, job: dict, brief: Brief, queries: list[str]) -> tuple[list, float]:
+    """Facts from published sources (books, encyclopedias, museums, universities), found by the search model."""
+    if deps.search is None:
+        return [], 0.0
+    found = await asyncio.gather(*(deps.search.facts(q, language=brief.language) for q in queries[:3]),
+                                 return_exceptions=True)
+    for f in found:
+        if isinstance(f, BaseException):
+            log.warning("fact search failed for %s: %s", job["series_id"], f)
+    findings = [f for f in found if not isinstance(f, BaseException) and f.text]
+    return cited_documents(findings), round(sum(f.cost_usd or 0 for f in findings), 4)
+
 
 async def _program_search(deps: Deps, job: dict, brief: Brief, queries: list[str]) -> dict:
     """Program searcher + Program sheet: official programs and proven methods from the web, with their links."""

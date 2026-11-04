@@ -1,4 +1,5 @@
-"""The Researcher's sources: Wikipedia for facts, Wikimedia Commons for freely licensed photos.
+"""The Researcher's sources: published sources found by the search model (Wikipedia only as a fallback that is
+never printed), Wikimedia Commons for freely licensed photos.
 
 Everything here is best effort: no source means the tome is written as before, never a failed job.
 Fetched text is untrusted data; the fact-sheet prompt treats it as such.
@@ -34,6 +35,23 @@ class Photo:
     @property
     def credit(self) -> str:
         return f"Foto: {self.author}, {self.license}, Wikimedia Commons"
+
+
+def cited_documents(findings) -> list[Document]:
+    """One document per published source a search cited, holding the bullets that cite it: the Fact sheet then
+    ties every fact to the source it came from. Open wikis and forums are dropped."""
+    from app.curriculum import reliable
+
+    docs: dict[str, Document] = {}
+    for finding in findings:
+        for line in re.split(r"\n+|(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])", finding.text):
+            for n in {int(m) for m in re.findall(r"\[(\d+)\]", line)}:
+                if not 1 <= n <= len(finding.sources) or not reliable(finding.sources[n - 1]["url"]):
+                    continue
+                source = finding.sources[n - 1]
+                doc = docs.setdefault(source["url"], Document(source["title"], source["url"], ""))
+                doc.text += re.sub(r"\s*\[\d+\]", "", line).strip(" -•*") + "\n"
+    return [d for d in docs.values() if d.text.strip()][:8]
 
 
 class Web:

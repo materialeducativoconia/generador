@@ -93,3 +93,28 @@ async def test_a_photo_missing_on_commons_is_painted(raw_db, google_user, client
                    web=FakeWeb(photo=False))
 
     assert len(images.calls) == 1
+
+
+async def test_facts_come_from_published_sources_and_wikipedia_is_not_read(raw_db, google_user, client, key, engine):
+    from app.curriculum import Finding
+
+    class FactSearch:
+        async def search(self, query, *, language="es"):
+            return Finding(query, "")
+
+        async def facts(self, query, *, language="es"):
+            return Finding(query, "- El agua se evapora con el calor del Sol [1].\n- Las nubes son gotitas [2].", [
+                {"title": "El ciclo del agua (Editorial SM)", "url": "https://books.google.com/books?id=abc"},
+                {"title": "Nube", "url": "https://es.wikipedia.org/wiki/Nube"}], 0.005)
+
+    user = await google_user()
+    sid = await new_tome(client, key, user)
+    web, llm = FakeWeb(), ScriptedLLM(json.dumps(PLAN), json.dumps(FACTS), json.dumps(OUTLINE))
+
+    await run_next(engine, llm, web=web, search=FactSearch())
+
+    assert web.searches == []  # the published source was enough
+    assert "El agua se evapora con el calor del Sol." in llm.calls[1][1]["content"] and "gotitas" not in llm.calls[1][1]["content"]
+    research = json.loads(await raw_db.fetchval("select research from public.series where id = $1", sid))
+    assert research["sources"] == [{"title": "El ciclo del agua (Editorial SM)", "url": "https://books.google.com/books?id=abc"}]
+    assert research["facts_usd"] == 0.005

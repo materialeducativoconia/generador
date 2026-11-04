@@ -307,7 +307,8 @@ async def _cost(conn, series) -> dict:
     cover = _parse(series["cover"]) or {}
     out = {k: round(float(row[k]), 4) for k in ("text_usd", "images_usd", "review_usd")}
     out["cover_usd"] = round(float(cover.get("spent_usd") or cover.get("cost_usd") or 0), 4)
-    out["search_usd"] = round(float(((_parse(series["research"]) or {}).get("program") or {}).get("cost_usd") or 0), 4)
+    research = _parse(series["research"]) or {}
+    out["search_usd"] = round(float((research.get("program") or {}).get("cost_usd") or 0) + float(research.get("facts_usd") or 0), 4)
     out["total_usd"] = round(sum(out.values()), 4)
     out["minutes"] = round(float(row["minutes"]), 1) if row["minutes"] is not None else None
     return out
