@@ -3,6 +3,8 @@
     { "source": "/api/:path*", "destination": "https://generador-oktm.onrender.com/api/:path*" },
     { "source": "/material-educativo", "destination": "/material-educativo/index.html" },
     { "source": "/material-educativo/:slug", "destination": "/material-educativo/:slug.html" },
+    { "source": "/comparar", "destination": "/comparar/index.html" },
+    { "source": "/comparar/:slug", "destination": "/comparar/:slug.html" },
     { "source": "/((?!assets/).*)", "destination": "/index.html" }
   ]
 }

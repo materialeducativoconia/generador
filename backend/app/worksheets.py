@@ -1,5 +1,6 @@
 """Literacy worksheets drawn by code (no AI): syllable charts, picture words, cut-out cards, reading, dictation,
-fill-in sentences, word search, classify and drawing frames.
+fill-in sentences, word search, classify, drawing frames and mazes. Word searches and mazes also draw their
+solution for the answer key.
 
 Like app.diagrams, each renderer returns one inline <svg>, so the PDF and the web preview are the same picture.
 Pictures come from `picture(asset_id) -> href | None` (a data URI in the PDF, a public URL on the web); a word
@@ -29,7 +30,7 @@ def render_worksheet(block, c: dict, font: str, picture: Picture | None = None, 
     draw = {"syllable_chart": syllable_chart, "picture_words": picture_words, "syllable_cards": syllable_cards,
             "reading": reading, "dictation": dictation, "fill_sentences": fill_sentences,
             "word_search": word_search, "classify": classify, "draw_frames": draw_frames, "counting": counting,
-            "picture_math": picture_math}[block.type]
+            "picture_math": picture_math, "maze": maze}[block.type]
     pics = getattr(block, "pictures", {}) or {}
     look = picture or (lambda _id: None)
 
@@ -287,43 +288,170 @@ def fill_sentences(b, c, font, pic, top, room):
 
 # --- word search, classify, frames --------------------------------------------------------------------------
 
-def search_grid(b) -> list[list[str]]:
-    """Words across or down (no diagonals for young readers); the rest filled with the words' own letters."""
+def _letters(word: str) -> str:
+    return _fold(word).replace(" ", "").upper()
+
+
+def search_layout(b) -> tuple[list[list[str]], dict[str, list[tuple[int, int]]]]:
+    """The grid and the cells of each word. Across or down for young readers; diagonals and backwards only when
+    the block asks. A crowded grid that leaves a word out starts over; the rest is filled with the words' letters."""
     rng, n = _rng(b), b.size
-    grid = [["" for _ in range(n)] for _ in range(n)]
-    for word in sorted((_fold(w).replace(" ", "").upper() for w in b.words), key=len, reverse=True):
-        for _ in range(200):
-            down = rng.random() < 0.4
-            span = n - len(word) + 1
-            r, col = (rng.randrange(span), rng.randrange(n)) if down else (rng.randrange(n), rng.randrange(span))
-            cells = [(r + k, col) if down else (r, col + k) for k in range(len(word))]
-            if all(grid[i][j] in ("", word[k]) for k, (i, j) in enumerate(cells)):
-                for k, (i, j) in enumerate(cells):
-                    grid[i][j] = word[k]
+    dirs = [(0, 1), (1, 0)] + ([(1, 1), (-1, 1)] if b.diagonal else [])
+    dirs += [(-dr, -dc) for dr, dc in dirs] if b.backwards else []
+    words = sorted(dict.fromkeys(b.words), key=lambda w: len(_letters(w)), reverse=True)
+    for _ in range(30):
+        grid, placed = [["" for _ in range(n)] for _ in range(n)], {}
+        for w in words:
+            word = _letters(w)
+            for _ in range(300):
+                dr, dc = rng.choice(dirs)
+                r, col = rng.randrange(n), rng.randrange(n)
+                cells = [(r + dr * k, col + dc * k) for k in range(len(word))]
+                if all(0 <= i < n and 0 <= j < n and grid[i][j] in ("", word[k]) for k, (i, j) in enumerate(cells)):
+                    for k, (i, j) in enumerate(cells):
+                        grid[i][j] = word[k]
+                    placed[w] = cells
+                    break
+            else:
                 break
-    letters = sorted({ch for w in b.words for ch in _fold(w).replace(" ", "").upper()})
-    return [[cell or rng.choice(letters) for cell in row] for row in grid]
+        if len(placed) == len(words):
+            break
+    letters = sorted({ch for w in b.words for ch in _letters(w)})
+    return [[cell or rng.choice(letters) for cell in row] for row in grid], placed
+
+
+def search_grid(b) -> list[list[str]]:
+    return search_layout(b)[0]
+
+
+def _letter_grid(grid, x0, y0, cell, c) -> list[str]:
+    return [_text(x0 + j * cell + cell / 2, y0 + r * cell + cell * 0.7, ch, KID, size=cell * 0.6, fill=c["ink"],
+                  weight=700) for r, row in enumerate(grid) for j, ch in enumerate(row)]
 
 
 def word_search(b, c, font, pic, top, room):
     n, k = b.size, len(b.words)
-    per_row = 4 if k > 4 else k
+    per_row = min(k, 4 if k <= 8 else 6)
+    p = 96 if k <= 8 else 62
     clue_rows = -(-k // per_row)
-    clue_w, p = W / per_row, 96
+    clue_w = W / per_row
     body = []
     for i, w in enumerate(b.words):
         x, y = (i % per_row) * clue_w, top + (i // per_row) * (p + 34)
         body.append(pic(w, x + (clue_w - p) / 2, y, p, p))
-        body.append(_text(x + clue_w / 2, y + p + 24, w, KID, size=20, fill=c["ink"], weight=700))
+        body.append(_text(x + clue_w / 2, y + p + 24, w, KID, size=20 if k <= 8 else 16, fill=c["ink"], weight=700))
     y0 = top + clue_rows * (p + 34) + 16
-    cell = max(30, min(60, (room - (y0 - top) - 16) / n, (W - 20) / n))
+    cell = max(26, min(60, (room - (y0 - top) - 16) / n, (W - 20) / n))
     x0 = (W - cell * n) / 2
     body.append(_box(x0 - 8, y0 - 8, cell * n + 16, cell * n + 16, c, rx=10))
-    for r, row in enumerate(search_grid(b)):
-        for j, ch in enumerate(row):
-            body.append(_text(x0 + j * cell + cell / 2, y0 + r * cell + cell * 0.7, ch, KID, size=cell * 0.6,
-                              fill=c["ink"], weight=700))
+    body += _letter_grid(search_grid(b), x0, y0, cell, c)
     return W, y0 + cell * n + 12, body
+
+
+def _search_solution(b, c) -> str:
+    grid, placed = search_layout(b)
+    n = b.size
+    cell = min(34, 420 / n)
+    body = []
+    for cells in placed.values():  # a capsule over each word, under its letters
+        (r0, c0), (r1, c1) = cells[0], cells[-1]
+        body.append(f'<line x1="{8 + c0 * cell + cell / 2:.1f}" y1="{8 + r0 * cell + cell / 2:.1f}" '
+                    f'x2="{8 + c1 * cell + cell / 2:.1f}" y2="{8 + r1 * cell + cell / 2:.1f}" stroke="{c["tint"]}" '
+                    f'stroke-width="{cell * 0.8:.1f}" stroke-linecap="round"/>')
+    body += _letter_grid(grid, 8, 8, cell, c)
+    return _svg("ws-key ws-word-search", cell * n + 16, cell * n + 16, body)
+
+
+# --- maze ---------------------------------------------------------------------------------------------------
+
+N, E, S, WEST = 1, 2, 4, 8
+STEP = {N: (-1, 0), E: (0, 1), S: (1, 0), WEST: (0, -1)}
+OPPOSITE = {N: S, S: N, E: WEST, WEST: E}
+
+
+def maze_layout(b) -> tuple[list[list[int]], list[tuple[int, int]]]:
+    """Each cell's walls as N|E|S|W bits, carved depth-first so there is exactly one way between any two cells,
+    and that way from the entrance (top left) to the exit (bottom right)."""
+    rng, rows, cols = _rng(b), b.rows, b.cols
+    walls = [[N | E | S | WEST] * cols for _ in range(rows)]
+    seen, stack = {(0, 0)}, [(0, 0)]
+    while stack:
+        r, col = stack[-1]
+        free = [(d, r + dr, col + dc) for d, (dr, dc) in STEP.items()
+                if 0 <= r + dr < rows and 0 <= col + dc < cols and (r + dr, col + dc) not in seen]
+        if not free:
+            stack.pop()
+            continue
+        d, nr, nc = rng.choice(free)
+        walls[r][col] &= ~d
+        walls[nr][nc] &= ~OPPOSITE[d]
+        seen.add((nr, nc))
+        stack.append((nr, nc))
+    walls[0][0] &= ~N
+    walls[rows - 1][cols - 1] &= ~S
+    came, todo = {(0, 0): None}, [(0, 0)]
+    for r, col in todo:  # breadth first: the one way out
+        for d, (dr, dc) in STEP.items():
+            nxt = (r + dr, col + dc)
+            if not walls[r][col] & d and nxt not in came and 0 <= nxt[0] < rows and 0 <= nxt[1] < cols:
+                came[nxt] = (r, col)
+                todo.append(nxt)
+    path, at = [], (rows - 1, cols - 1)
+    while at:
+        path.append(at)
+        at = came[at]
+    return walls, path[::-1]
+
+
+def _maze_walls(walls, x0, y0, cell, c) -> str:
+    d = []
+    for r, row in enumerate(walls):
+        for col, w in enumerate(row):
+            x, y = x0 + col * cell, y0 + r * cell
+            if w & N:
+                d.append(f"M{x:.1f} {y:.1f}h{cell:.1f}")
+            if w & WEST:
+                d.append(f"M{x:.1f} {y:.1f}v{cell:.1f}")
+            if w & S and r == len(walls) - 1:
+                d.append(f"M{x:.1f} {y + cell:.1f}h{cell:.1f}")
+            if w & E and col == len(row) - 1:
+                d.append(f"M{x + cell:.1f} {y:.1f}v{cell:.1f}")
+    return (f'<path d="{"".join(d)}" fill="none" stroke="{c["ink"]}" stroke-width="{max(2, min(5, cell * 0.1)):.1f}" '
+            f'stroke-linecap="round"/>')
+
+
+def _arrow(x, y, size, c) -> str:
+    """A downward arrow: into the maze at the entrance, out of it at the exit."""
+    return (f'<path d="M{x - size / 2:.1f} {y:.1f}h{size:.1f}l{-size / 2:.1f} {size * 0.8:.1f}z" '
+            f'fill="{c["accent"]}"/>')
+
+
+def maze(b, c, font, pic, top, room):
+    walls, _ = maze_layout(b)
+    p = 84 if b.start or b.goal else 0
+    cell = max(18, min(56, (W - 40) / b.cols, (room - 2 * (p + 22)) / b.rows))
+    mw, mh = cell * b.cols, cell * b.rows
+    x0, y0 = (W - mw) / 2, top + p + 22
+    body = []
+    if b.start:
+        body.append(pic(b.start, max(0, x0 + cell / 2 - p / 2), top, p, p))
+    body.append(_arrow(x0 + cell / 2, y0 - 18, min(cell * 0.6, 22), c))
+    body.append(_maze_walls(walls, x0, y0, cell, c))
+    body.append(_arrow(x0 + mw - cell / 2, y0 + mh + 4, min(cell * 0.6, 22), c))
+    if b.goal:
+        body.append(pic(b.goal, min(W - p, x0 + mw - cell / 2 - p / 2), y0 + mh + 22, p, p))
+    return W, y0 + mh + 22 + p, body
+
+
+def _maze_solution(b, c) -> str:
+    walls, path = maze_layout(b)
+    cell = min(28, 420 / max(b.cols, b.rows))
+    pts = [(10 + col * cell + cell / 2, 10 + r * cell + cell / 2) for r, col in path]
+    pts = [(pts[0][0], 4), *pts, (pts[-1][0], 16 + cell * b.rows)]
+    line = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+    body = [f'<polyline points="{line}" fill="none" stroke="{c["accent"]}" stroke-width="{cell * 0.3:.1f}" '
+            f'stroke-linecap="round" stroke-linejoin="round"/>', _maze_walls(walls, 10, 10, cell, c)]
+    return _svg("ws-key ws-maze", cell * b.cols + 20, cell * b.rows + 20, body)
 
 
 def classify(b, c, font, pic, top, room):
@@ -454,3 +582,15 @@ def answers(block) -> list[tuple[str, str]]:
     if block.type == "picture_math":
         return [(f"{o.a} {'−' if o.op == '-' else o.op} {o.b} ({o.object})", str(o.result)) for o in block.operations]
     return []
+
+
+SOLVED = {"word_search": ("Sopa de letras", _search_solution), "maze": ("Laberinto", _maze_solution)}
+
+
+def solution(block, c: dict) -> tuple[str, Markup] | None:
+    """The answer key's drawing of a puzzle the code built: the word search with its words marked, the maze with
+    its way out. (label, svg), or None for every other block."""
+    if block.type not in SOLVED:
+        return None
+    label, draw = SOLVED[block.type]
+    return label, Markup(draw(block, c))

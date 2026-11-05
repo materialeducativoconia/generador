@@ -33,6 +33,8 @@ EVERY = [
     {"id": "s", "type": "word_search", "words": ["mamá", "mapa", "puma"], "size": 7},
     {"id": "x", "type": "classify", "columns": ["ma", "pi"], "words": ["mamá", "pipa", "malo", "pino"]},
     {"id": "g", "type": "draw_frames", "count": 3, "instruction": "Dibuja 3 cosas que empiecen con m."},
+    {"id": "z", "type": "maze", "start": "conejo", "goal": "zanahoria", "rows": 8, "cols": 8,
+     "instruction": "Ayuda al conejo a llegar a su zanahoria."},
 ]
 
 
@@ -142,3 +144,65 @@ def test_counting_draws_the_array_the_instruction_asks_for():
     assert len(centers(_icons(pic, "huevo", 12, 0, 0, 480, 300, rows=3))) == 3
     with pytest.raises(ValueError):
         Counting.model_validate({"id": "c", "type": "counting", "items": [{"object": "huevo", "count": 10, "rows": 3}]})
+
+
+HARD = {"id": "h", "type": "word_search", "size": 12, "diagonal": True, "backwards": True,
+        "words": ["planeta", "estrella", "cometa", "luna", "sol", "galaxia", "órbita", "satélite", "marte", "venus"]}
+
+
+def test_harder_word_searches_hide_every_word_diagonally_or_backwards():
+    from app.worksheets import search_layout
+
+    grid, placed = search_layout(block(HARD))
+    assert set(placed) == set(HARD["words"])  # none left out, even crowded
+    for word, cells in placed.items():
+        letters = "".join(grid[r][c] for r, c in cells)
+        assert letters == word.upper().replace("Ó", "O").replace("É", "E")
+        steps = {(b[0] - a[0], b[1] - a[1]) for a, b in zip(cells, cells[1:])}
+        assert len(steps) == 1  # a straight line
+    directions = {next(iter({(b[0] - a[0], b[1] - a[1]) for a, b in zip(c, c[1:])})) for c in placed.values()}
+    assert directions - {(0, 1), (1, 0)}  # some diagonal or backwards words, as asked
+
+
+def test_young_word_searches_stay_across_or_down():
+    from app.worksheets import search_layout
+
+    _, placed = search_layout(block(EVERY[9]))
+    for cells in placed.values():
+        assert {(b[0] - a[0], b[1] - a[1]) for a, b in zip(cells, cells[1:])} <= {(0, 1), (1, 0)}
+
+
+def test_a_word_search_with_too_many_letters_is_rejected():
+    with pytest.raises(ValueError):
+        block({"id": "s", "type": "word_search", "size": 6, "words": ["abcdef"] * 4})
+
+
+@pytest.mark.parametrize("rows,cols", [(4, 4), (8, 8), (20, 16), (5, 12)])
+def test_the_maze_has_exactly_one_way_through_every_cell(rows, cols):
+    from app.worksheets import STEP, maze_layout
+
+    b = block({"id": "m", "type": "maze", "rows": rows, "cols": cols})
+    walls, path = maze_layout(b)
+    opened = sum(1 for r in range(rows) for c in range(cols) for d in STEP if not walls[r][c] & d) - 2
+    assert opened == 2 * (rows * cols - 1)  # a spanning tree: every cell reached, no loops
+    assert path[0] == (0, 0) and path[-1] == (rows - 1, cols - 1)
+    for (r0, c0), (r1, c1) in zip(path, path[1:]):  # each step goes through an open wall
+        d = next(d for d, step in STEP.items() if step == (r1 - r0, c1 - c0))
+        assert not walls[r0][c0] & d
+    assert maze_layout(b) == (walls, path)  # deterministic
+
+
+def test_the_maze_draws_who_searches_and_what_they_look_for():
+    out = svg(EVERY[12], picture=lambda asset_id: f"https://cdn/{asset_id}.svg")
+
+    assert out.count('class="pic-empty"') == 2 and "conejo" in out and "zanahoria" in out
+
+
+def test_the_answer_key_draws_the_word_search_and_maze_solutions():
+    from app.render import render_html
+
+    html = render_html(tome(EVERY[9], EVERY[12]), paper="A4", include_answer_key=True)
+
+    key = html[html.index('id="solucionario"'):]
+    assert "dg-ws-key ws-word-search" in key and "dg-ws-key ws-maze" in key and "<polyline" in key
+    assert "Sopa de letras" in key and "Laberinto" in key

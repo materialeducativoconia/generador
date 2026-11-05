@@ -36,3 +36,11 @@ def test_word_without_answer_key():
     data = render_docx(tome(*BLOCKS[:3]), paper="Letter", include_answer_key=False)
 
     assert "Solucionario" not in "\n".join(p.text for p in Document(io.BytesIO(data)).paragraphs)
+
+
+def test_word_answer_key_draws_the_maze_solution():
+    maze = {"id": "m", "type": "maze", "rows": 6, "cols": 6}
+    doc = Document(io.BytesIO(render_docx(tome(maze, genre="worksheets"), paper="A4", include_answer_key=True)))
+
+    assert "Laberinto" in "\n".join(p.text for p in doc.paragraphs)
+    assert len(doc.inline_shapes) == 2  # the maze, then its solution

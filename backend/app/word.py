@@ -23,7 +23,7 @@ from app.literacy import find_text
 from app.printing import PAPERS
 from app.render import ASSETS, GENRE_LABEL, Tome, keyboard_svg, letter_grid_cells, theme_colors, tracing_svg
 from app.themes import FONTS
-from app.worksheets import answers as worksheet_answers, render_worksheet
+from app.worksheets import answers as worksheet_answers, render_worksheet, solution as worksheet_solution
 
 MARGIN_MM = 18
 DRAWN = set(DIAGRAM_TYPES) | set(WORKSHEET_TYPES) | {"keyboard", "tracing"}
@@ -81,10 +81,15 @@ def render_docx(tome: Tome, *, paper: str, include_answer_key: bool) -> bytes:
         _page_break(doc)
         doc.add_heading("Solucionario", level=1)
         current = None
-        for section, prompt, answer, explanation in answers:
+        for section, prompt, answer, explanation, key in answers:
             if section.position != current:
                 current = section.position
                 doc.add_heading(f"{section.position}. {section.title}", level=3)
+            if key:  # a puzzle's drawn solution
+                doc.add_paragraph().add_run(prompt).bold = True
+                if key in drawings:
+                    doc.add_picture(io.BytesIO(drawings[key]), width=min(column, Mm(95)))
+                continue
             p = doc.add_paragraph()
             _inline(p, prompt)
             p = doc.add_paragraph()
@@ -212,6 +217,8 @@ def _rasterise(tome: Tome, c: dict, head: str) -> dict[str, bytes]:
                 svgs[key] = str(render_diagram(b, c, head))
             elif b.type in WORKSHEET_TYPES:
                 svgs[key] = str(render_worksheet(b, c, head, tome.image_uri))
+                if solved := worksheet_solution(b, c):
+                    svgs[f"{key}:solution"] = str(solved[1])
             elif b.type == "keyboard":
                 svgs[key] = str(keyboard_svg(b, c["tint"], c["accent"]))
             elif b.type == "tracing":
@@ -272,9 +279,12 @@ def _answers(tome: Tome) -> list[tuple]:
     for s in tome.sections:
         for b in s.content.blocks:
             if b.type == "exercise" and b.answer:
-                out.append((s, _plain(b.prompt), b.answer, b.explanation))
+                out.append((s, _plain(b.prompt), b.answer, b.explanation, None))
             for prompt, answer in worksheet_answers(b):
-                out.append((s, prompt, answer, None))
+                out.append((s, prompt, answer, None, None))
+            if b.type in ("word_search", "maze"):
+                out.append((s, "Laberinto" if b.type == "maze" else "Sopa de letras", "", None,
+                            f"{s.position}:{b.id}:solution"))
     return out
 
 

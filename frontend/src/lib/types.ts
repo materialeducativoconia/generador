@@ -233,7 +233,7 @@ export const DIAGRAM_TYPES = [
   'staff', 'timeline', 'cycle', 'bar_chart', 'number_line', 'fraction', 'clock', 'sizes', 'phases',
   // literacy worksheets: also drawn by the backend, with their word pictures inside the SVG
   'syllable_chart', 'picture_words', 'syllable_cards', 'reading', 'dictation', 'fill_sentences', 'word_search',
-  'classify', 'draw_frames',
+  'classify', 'draw_frames', 'maze',
 ] as const
 export type DiagramType = (typeof DIAGRAM_TYPES)[number]
 

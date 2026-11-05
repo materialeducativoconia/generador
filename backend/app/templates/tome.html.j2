@@ -203,6 +203,9 @@
   #solucionario h2 { font: 900 22pt {{ head|safe }}; margin: 0 0 6mm; }
   #solucionario h3 { font: 800 12pt {{ head|safe }}; margin: 5mm 0 2mm; }
   #solucionario p { font-size: 10.5pt; }
+  #solucionario .key-drawing { margin: 2mm 0 4mm; break-inside: avoid; }
+  #solucionario .key-drawing figcaption { font-weight: 700; font-size: 10.5pt; margin-bottom: 1.5mm; }
+  #solucionario .key-drawing svg { max-width: 95mm; height: auto; }
   {% if th.kids %}
   /* The children's layer (benchmark: SM, Larousse infantil, Flamboyant, Kalandraka): a colour opener with
      confetti, sticker callouts, numbered bubbles in three colours, answer pills and pale page corners. */
@@ -542,7 +545,11 @@
   <h2>Solucionario</h2>
   {% for s, b in answers %}
     {% if loop.first or answers[loop.index0 - 1][0].position != s.position %}<h3>{{ s.position }}. {{ s.title }}</h3>{% endif %}
+    {% if b.solution %}{% set label, drawing = worksheet_solution(b.solution, c) %}
+    <figure class="key-drawing"><figcaption>{{ label }}</figcaption>{{ drawing }}</figure>
+    {% else %}
     <p><strong>{{ b.prompt|inline }}</strong><br>{{ b.answer|inline }}{% if b.explanation %} — {{ b.explanation|inline }}{% endif %}</p>
+    {% endif %}
   {% endfor %}
 </section>
 {% endif %}

@@ -698,7 +698,7 @@ ICON_LIBRARY = "icon"  # style key of the worksheet pictures every tome shares
 # Where each worksheet block keeps the words that get a picture.
 PICTURED = {"syllable_chart": ("words", "word"), "picture_words": ("items", "word"), "reading": ("sentences", "picture"),
             "fill_sentences": ("items", "answer"), "word_search": ("words", None), "counting": ("items", "object"),
-            "picture_math": ("operations", "object")}
+            "picture_math": ("operations", "object"), "maze": (("start", "goal"), "fields")}
 
 
 def _picture_requests(lessons) -> list[ImageRequest]:
@@ -718,7 +718,8 @@ def _picture_requests(lessons) -> list[ImageRequest]:
                                            compose=compose, check=f"{b['subject']} | Datos: {check}" if check else None))
             elif b.get("type") in PICTURED:
                 field, attr = PICTURED[b["type"]]
-                words = [i if attr is None else i.get(attr) for i in b.get(field) or []]
+                words = [b.get(k) for k in field] if attr == "fields" else \
+                    [i if attr is None else i.get(attr) for i in b.get(field) or []]
                 for w in dict.fromkeys(w for w in words if w and w not in (b.get("pictures") or {})):
                     icons.append(ImageRequest(ref=f"{ref}:{w}", lesson_id=lesson["id"], block_id=b["id"],
                                               kind="icon", size="icon", subject=w, word=w))

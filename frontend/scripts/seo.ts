@@ -1,8 +1,9 @@
 // After `vite build`: static, crawlable pages for each landing topic, the topic hub, sitemap.xml and robots.txt,
-// plus the home page's meta tags. vercel.json rewrites /material-educativo/<slug> to these files before the SPA fallback.
+// the comparison pages (/comparar/<slug>) and the home page's meta tags. vercel.json rewrites /material-educativo/<slug> to these files before the SPA fallback.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { PUBLIC_PLANS } from '../src/lib/pricing.ts'
 import { showcaseFrom } from '../src/lib/showcase.ts'
+import { COMPARISONS, comparisonHref, type Comparison } from '../src/lib/comparisons.ts'
 import { TOPICS, topicHref, type Topic } from '../src/lib/topics.ts'
 
 const SITE = (process.env.SITE_URL
@@ -52,8 +53,8 @@ ${extra}`
 
 const LOGO = `<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="13" height="18" rx="2.5" fill="currentColor" opacity=".18"/><rect x="8" y="3" width="13" height="18" rx="2.5" fill="currentColor"/><path d="M11.5 8.5h6M11.5 12h6M11.5 15.5h3.5" stroke="var(--bg)" stroke-width="1.6" stroke-linecap="round"/></svg>`
 const HEADER = `<header class="top"><a class="brand" href="/">${LOGO}<span>${NAME}</span></a>
-<nav><a href="/material-educativo">Temas</a><a href="/laminas">Láminas gratis</a><a href="/#planes">Planes</a><a class="btn small" href="/app">Entrar</a></nav></header>`
-const FOOTER = `<footer><p><a href="/">${NAME}</a> · <a href="/material-educativo">Material educativo por tema</a> · <a href="/laminas">Láminas gratis</a> · <a href="/#planes">Planes</a></p>
+<nav><a href="/material-educativo">Temas</a><a class="wide" href="/comparar">Comparar</a><a class="wide" href="/laminas">Láminas gratis</a><a href="/#planes">Planes</a><a class="btn small" href="/app">Entrar</a></nav></header>`
+const FOOTER = `<footer><p><a href="/">${NAME}</a> · <a href="/material-educativo">Material educativo por tema</a> · <a href="/laminas">Láminas gratis</a> · <a href="/comparar">Comparar apps</a> · <a href="/#planes">Planes</a></p>
 <p class="muted">Vista previa sin registro ni tarjeta.</p></footer>`
 
 /** The example covers drifting by, as on the home page: pure CSS, two copies of the row. */
@@ -127,6 +128,55 @@ ${plans()}
 ${CTA('/#crear')}</main>${FOOTER}</body></html>`
 }
 
+const MARK = { jelyx: '✓', them: '–', tie: '✓' } as const
+const RIVAL_MARK = { jelyx: '–', them: '✓', tie: '✓' } as const
+
+/** Feature by feature, the winner's cell marked; on a phone each row stacks as a card (no sideways scroll). */
+const vsTable = (c: Comparison) => `<table class="vs"><caption class="muted small">Datos de ${esc(c.rival)} tomados de su sitio público (${esc(c.checked)}).</caption>
+<thead><tr><th scope="col">Qué comparas</th><th scope="col">${NAME}</th><th scope="col">${esc(c.rival)}</th></tr></thead><tbody>${c.rows.map(([f, j, t, w]) => `
+<tr><th scope="row">${esc(f)}</th><td class="${w === 'them' ? '' : 'win'}" data-app="${NAME}"><b aria-hidden="true">${MARK[w]}</b> ${esc(j)}</td><td class="${w === 'jelyx' ? '' : 'win'}" data-app="${esc(c.rival)}"><b aria-hidden="true">${RIVAL_MARK[w]}</b> ${esc(t)}</td></tr>`).join('')}</tbody></table>`
+
+function comparisonPage(c: Comparison) {
+  const start = `/?${new URLSearchParams({ pedido: c.request, publico: c.audience })}#crear`
+  const wins = c.rows.filter((r) => r[3] === 'jelyx').length
+  const ld = [
+    { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: c.faq.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) },
+    { '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [
+      { '@type': 'ListItem', position: 1, name: NAME, item: `${SITE}/` },
+      { '@type': 'ListItem', position: 2, name: 'Comparar', item: `${SITE}/comparar` },
+      { '@type': 'ListItem', position: 3, name: `${NAME} vs ${c.rival}`, item: SITE + comparisonHref(c) }] },
+  ]
+  return `<!doctype html><html lang="es"><head>${head(`${c.title} | ${NAME}`, c.description, comparisonHref(c), ld.map(json).join('\n'))}</head><body>
+${HEADER}<main>
+<nav class="crumbs" aria-label="Ruta"><a href="/comparar">Comparar</a> › ${NAME} vs ${esc(c.rival)}</nav>
+<section class="hero"><p class="eyebrow">Comparación · revisada en ${esc(c.checked)}</p><h1>${esc(c.title)}</h1><p class="lede">${esc(c.intro)}</p>
+<a class="btn" href="${esc(start)}">Probar ${NAME} gratis</a><p class="muted small trust">✓ Ves tu tomo real antes de pagar · ✓ Sin tarjeta · ✓ En español</p></section>
+<section class="card verdict"><p class="eyebrow">La respuesta corta</p><p>${esc(c.verdict)}</p><p class="muted small">${NAME} gana en ${wins} de ${c.rows.length} puntos; ${esc(c.rival)}, en ${c.rows.filter((r) => r[3] === 'them').length}.</p></section>
+<section><p class="eyebrow">Punto por punto</p><h2>${NAME} y ${esc(c.rival)}, lado a lado.</h2>${vsTable(c)}</section>
+<section class="two"><div class="card"><p class="eyebrow">Elige ${NAME} si…</p><ul class="checks">${c.pickJelyx.map((p) => `<li>${esc(p)}</li>`).join('')}</ul><a class="btn small" href="${esc(start)}">Crear mi vista previa</a></div>
+<div class="card"><p class="eyebrow">Elige ${esc(c.rival)} si…</p><ul>${c.pickThem.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div></section>
+${VALUES}
+${STEPS}
+<section><p class="eyebrow">Preguntas frecuentes</p><h2>Lo que suelen preguntarnos.</h2>${c.faq.map(([q, a]) => `<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</section>
+${plans()}
+<section><p class="eyebrow">Ideas para empezar</p><h2>Material que puedes crear hoy</h2>${topicGrid(TOPICS.slice(0, 5))}</section>
+${CTA(start)}
+</main>${FOOTER}</body></html>`
+}
+
+function comparisonsHub() {
+  const title = `Comparar ${NAME} con otras apps de material educativo`
+  const description = `${NAME} frente a otras apps y sitios de fichas para imprimir: idioma, niveles, solucionario, marca propia y precio, punto por punto.`
+  const ld = { '@context': 'https://schema.org', '@type': 'CollectionPage', name: title, url: `${SITE}/comparar`,
+    hasPart: COMPARISONS.map((c) => ({ '@type': 'WebPage', name: c.title, url: SITE + comparisonHref(c) })) }
+  return `<!doctype html><html lang="es"><head>${head(title, description, '/comparar', json(ld))}</head><body>
+${HEADER}<main><section class="hero"><p class="eyebrow">Comparar</p><h1>${NAME} frente a otras apps de material educativo</h1>
+<p class="lede">Comparaciones honestas, con los datos de cada sitio y la fecha en que los revisamos. También te decimos cuándo te conviene la otra opción.</p></section>
+<section class="grid3">${COMPARISONS.map((c) => `<a class="card topic" href="${comparisonHref(c)}"><span class="eyebrow">${NAME} vs ${esc(c.rival)}</span><strong>${esc(c.title)}</strong><span class="muted small">${esc(c.description)}</span></a>`).join('')}</section>
+${VALUES}
+${CTA('/#crear')}</main>${FOOTER}</body></html>`
+}
+
 const HOME_TITLE = `${NAME}: libros educativos ilustrados para imprimir, hechos con IA`
 const HOME_DESCRIPTION = 'Escribe el tema y la edad y recibe un libro ilustrado listo para imprimir: láminas a página completa, cuentos, cuadernillos y libros para colorear. Vista previa gratis.'
 
@@ -148,7 +198,7 @@ function homeShell(base: string) {
       image: OG, offers: PUBLIC_PLANS.map((p) => ({ '@type': 'Offer', name: p.label, price: p.price, priceCurrency: 'USD' })) }]
   const body = `<h1>Libros educativos ilustrados, listos en minutos.</h1><p>${esc(HOME_DESCRIPTION)}</p>
 <h2>Material educativo por tema</h2><ul>${TOPICS.map((t) => `<li><a href="${topicHref(t)}">${esc(t.title)}</a></li>`).join('')}</ul>
-<p><a href="/laminas">Láminas gratis para imprimir</a> · <a href="/material-educativo">Todos los temas</a> · <a href="/#planes">Planes</a></p>`
+<p><a href="/laminas">Láminas gratis para imprimir</a> · <a href="/material-educativo">Todos los temas</a> · <a href="/comparar">Comparar apps</a> · <a href="/#planes">Planes</a></p>`
   return shell(base, '/', HOME_TITLE, HOME_DESCRIPTION, body, ld)
 }
 
@@ -234,6 +284,13 @@ h2{font-size:clamp(24px,3.6vw,34px);line-height:1.1;letter-spacing:-.03em;font-w
 @media (max-width:640px){.covers{grid-template-columns:repeat(2,1fr)}}
 .cta{position:relative;overflow:hidden;isolation:isolate;text-align:center;padding:64px 24px;border-radius:28px;background:#0c0a09;color:#fff}
 .cta::before{content:'';position:absolute;inset:auto -10% -60% -10%;height:120%;z-index:-1;background:linear-gradient(120deg,#7c6cff,#ff8a6b 52%,#3dd6b5);filter:blur(80px);opacity:.55}
+.verdict{background:var(--accent-soft);border-color:transparent}.verdict p:not(.eyebrow){margin:0 0 8px;font-size:17px}
+.vs{width:100%;border-collapse:collapse;font-size:15px}.vs caption{caption-side:bottom;text-align:left;padding-top:10px}
+.vs th,.vs td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid var(--border)}.vs thead th{font-size:13px;color:var(--muted);font-weight:600}
+.vs tbody th{font-weight:600;width:22%}.vs td{width:39%;color:var(--muted)}.vs td.win{color:var(--text)}.vs td b{display:inline-block;width:1.1em}.vs td.win b{color:#0f7b4f}
+@media (max-width:640px){.vs thead{display:none}.vs tr{display:block;border:1px solid var(--border);border-radius:14px;padding:4px 14px;margin-bottom:12px}
+.vs th,.vs td,.vs tbody th{display:block;width:auto;border:0;padding:8px 0}.vs tbody th{padding-top:12px}.vs td::before{content:attr(data-app);display:block;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}}
+@media (max-width:640px){.top nav .wide{display:none}}  /* the footer links them */
 .cta h2{max-width:22ch;margin:0 auto 10px}.cta p{color:rgb(255 255 255/.72);margin:0 0 24px}
 footer{border-top:1px solid var(--border);padding:24px 16px;text-align:center;font-size:14px}`
 
@@ -243,6 +300,13 @@ writeFileSync(new URL('material-educativo/index.html', DIST), hubPage())
 for (const t of TOPICS) {
   writeFileSync(new URL(`material-educativo/${t.slug}.html`, DIST), topicPage(t))
   pages.push({ path: topicHref(t), images: [`${COVERS}/${t.cover}.webp`] })
+}
+mkdirSync(new URL('comparar/', DIST), { recursive: true })
+writeFileSync(new URL('comparar/index.html', DIST), comparisonsHub())
+pages.push({ path: '/comparar' })
+for (const c of COMPARISONS) {
+  writeFileSync(new URL(`comparar/${c.slug}.html`, DIST), comparisonPage(c))
+  pages.push({ path: comparisonHref(c) })
 }
 
 // The SPA's public pages: each at <path>/index.html, which Vercel serves before the SPA fallback.

@@ -180,7 +180,8 @@ Catálogo de bloques (usa solo estos "type"):
 
 Diagramas: los bloques staff, timeline, cycle, bar_chart, number_line, fraction, clock, sizes, phases, keyboard, tracing y
 letter_grid los dibuja el código: son exactos, con texto real y gratis. Úsalos siempre que sirvan y nunca pidas
-una image para un pentagrama, una línea de tiempo, un ciclo, una gráfica, una recta, fracciones o un reloj.
+una image para un pentagrama, una línea de tiempo, un ciclo, una gráfica, una recta, fracciones, un reloj, un
+laberinto (usa maze) o una sopa de letras (usa word_search).
 Las image nunca llevan texto ni rótulos: reserva image diagram para lo que esos bloques no cubren.
 - writing_lines {lines, label?}
 - page_break {}
@@ -200,7 +201,13 @@ personas):
 - dictation {words: [..] (5 a 10), lines: 10, show_words: true}  ← dictado; las palabras son para el adulto
 - fill_sentences {items: [{text: "Mi ___ es azul.", answer: "moto"}] (3 a 6), instruction?}  ← completa la frase;
   el dibujo de answer es la pista
-- word_search {words: [..] (3 a 8), size: 6-10, instruction?}  ← sopa de letras con los dibujos como pista
+- word_search {words: [..] (3 a 12), size: 6-15, diagonal: false, backwards: false, instruction?}  ← sopa de
+  letras con los dibujos como pista; diagonal y backwards solo desde 2.º de primaria (más difícil). El código
+  dibuja la solución en el solucionario
+- maze {start?: "conejo", goal?: "zanahoria", rows: 4-20, cols: 4-16, instruction?}  ← laberinto con una sola
+  salida; start y goal son UNA palabra que se pueda dibujar (quién busca y qué busca, del tema de la ficha).
+  Tamaño según la edad: preescolar 5×5 a 6×6, 1.º-2.º 8×8 a 10×10, mayores hasta 14×14. El código dibuja la
+  solución en el solucionario
 - classify {columns: ["ma", "pa"], words: [..] (6 a 12), instruction?}  ← clasifica cada palabra en la columna
   de su sílaba (cada palabra encaja en una sola columna)
 - draw_frames {count: 1-6, labels?: [..], instruction?}  ← marcos para dibujar ("Dibuja 3 cosas que empiecen con m")
@@ -233,7 +240,7 @@ Reglas según el género:
   con question «¿Sabías que…?», answer breve y 3 o 4 notes con datos reales del tema, sin narration.
 - coloring_book: un heading con el título y un image line_art size "full" por página; texto mínimo.
 - worksheets: cada ficha empieza con heading "Ficha N"; instrucciones cortas para niños; usa tracing,
-  letter_grid, image line_art, writing_lines y exercise; separa fichas con page_break.
+  letter_grid, word_search, maze, image line_art, writing_lines y exercise; separa fichas con page_break.
 - método de lectoescritura (si se te indican letras): cada sección es una semana de fichas de su letra, cada
   una en su página (heading "Ficha N" + una ficha + page_break), en este orden: syllable_chart, tracing de la
   letra y sus sílabas, picture_words circle, picture_words complete, syllable_cards, classify, fill_sentences,

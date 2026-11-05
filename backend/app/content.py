@@ -376,15 +376,33 @@ class FillSentences(_Pictured):
 
 
 class WordSearch(_Pictured):
+    """Words hidden across and down; `diagonal` and `backwards` make it harder for older readers. The code draws
+    the solution in the answer key."""
+
     type: Literal["word_search"]
-    words: list[Word] = Field(min_length=3, max_length=8)
-    size: int = Field(default=8, ge=6, le=12)
+    words: list[Word] = Field(min_length=3, max_length=12)
+    size: int = Field(default=8, ge=6, le=15)
+    diagonal: bool = False
+    backwards: bool = False
 
     @model_validator(mode="after")
     def _fits(self):
         if any(len(w) > self.size for w in self.words):
             raise ValueError("Cada palabra debe caber en la sopa de letras (size).")
+        if sum(len(w) for w in self.words) > self.size * self.size * 0.6:
+            raise ValueError("Demasiadas letras para esta sopa: sube size o quita palabras.")
         return self
+
+
+class Maze(_Pictured):
+    """A maze carved by code with one way from the entrance (top left) to the exit (bottom right); `start` and
+    `goal` are drawn there ("conejo" → "zanahoria"). The code draws the solution in the answer key."""
+
+    type: Literal["maze"]
+    start: Word | None = None
+    goal: Word | None = None
+    rows: int = Field(default=8, ge=4, le=20)
+    cols: int = Field(default=8, ge=4, le=16)
 
 
 class Classify(_Block):
@@ -459,7 +477,7 @@ class PictureMath(_Pictured):
 
 
 WORKSHEET_TYPES = ("syllable_chart", "picture_words", "syllable_cards", "reading", "dictation", "fill_sentences",
-                   "word_search", "classify", "draw_frames", "counting", "picture_math")
+                   "word_search", "classify", "draw_frames", "counting", "picture_math", "maze")
 
 
 class WritingLines(_Block):
@@ -477,7 +495,7 @@ Block = Annotated[
     | Keyboard | Tracing | LetterGrid | Image | WritingLines | PageBreak
     | Staff | Timeline | Cycle | BarChart | NumberLine | Fraction | Clock | Sizes | Phases
     | SyllableChart | PictureWords | SyllableCards | Reading | Dictation | FillSentences | WordSearch | Classify
-    | DrawFrames | Counting | PictureMath,
+    | DrawFrames | Counting | PictureMath | Maze,
     Field(discriminator="type"),
 ]
 

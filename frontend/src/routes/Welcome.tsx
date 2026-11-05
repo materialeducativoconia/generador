@@ -207,7 +207,7 @@ export function Welcome() {
       </section>
 
       <footer className="landing-foot muted small">
-        <a href="/material-educativo">Material educativo por tema</a> · <a href="#planes">Planes</a> ·{' '}
+        <a href="/material-educativo">Material educativo por tema</a> · <a href="/comparar">Comparar apps</a> · <a href="#planes">Planes</a> ·{' '}
         <button className="link-button" onClick={start} disabled={starting || loading}>{starting ? 'Abriendo Google…' : 'Entrar con Google'}</button>
       </footer>
     </div>

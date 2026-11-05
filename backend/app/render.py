@@ -24,7 +24,7 @@ from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Design, Keyboard, Letter
 from app.diagrams import render_diagram
 from app.literacy import find_text
 from app.identity import mark_svg
-from app.worksheets import answers as worksheet_answers, render_worksheet
+from app.worksheets import answers as worksheet_answers, render_worksheet, solution as worksheet_solution
 
 ASSETS = Path(__file__).parent / "assets"
 TEMPLATES = Path(__file__).parent / "templates"
@@ -177,7 +177,8 @@ _env.filters["inline"] = inline
 _env.filters["find"] = find_text  # tomes written before the label was taken out of the text
 _env.globals.update(keyboard_svg=keyboard_svg, tracing_svg=tracing_svg, letter_grid_cells=letter_grid_cells,
                     GENRE_LABEL=GENRE_LABEL, render_diagram=render_diagram, DIAGRAM_TYPES=DIAGRAM_TYPES,
-                    render_worksheet=render_worksheet, WORKSHEET_TYPES=WORKSHEET_TYPES)
+                    render_worksheet=render_worksheet, worksheet_solution=worksheet_solution,
+                    WORKSHEET_TYPES=WORKSHEET_TYPES)
 
 
 def theme_colors(design: Design | None, palette: list[str] | None = None):
@@ -327,6 +328,8 @@ def render_html(tome: Tome, *, paper: str, include_answer_key: bool, print_editi
                 answers.append((section, block))
             for prompt, answer in worksheet_answers(block):  # counting and picture maths: computed, not written
                 answers.append((section, SimpleNamespace(prompt=prompt, answer=answer, explanation=None)))
+            if block.type in ("word_search", "maze"):  # puzzles: their solution is drawn, in the theme's colours
+                answers.append((section, SimpleNamespace(prompt=None, answer=None, explanation=None, solution=block)))
     return _env.get_template("tome.html.j2").render(
         tome=tome, paper=paper, answers=answers if include_answer_key else [], print_edition=print_edition,
         fit=fit or {},
