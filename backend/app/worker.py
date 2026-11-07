@@ -12,7 +12,7 @@ from app.config import Settings
 from app.curriculum import ProgramSearch
 from app.db import make_engine
 from app.free_images import Finder, WorkersAI
-from app.jobs import Deps, claim_job, process_job, reap_stale_jobs
+from app.jobs import Deps, claim_job, heartbeat, process_job, reap_stale_jobs
 from app.images import OpenRouterImages
 from app.llm import DeepSeek
 from app.research import Web
@@ -61,9 +61,11 @@ async def run(stop: asyncio.Event | None = None) -> None:
             loop.add_signal_handler(sig, stop.set)
 
     async def run_one(job):
+        beat = asyncio.create_task(heartbeat(engine, job["id"]))
         try:
             await process_job(deps, job)
         finally:
+            beat.cancel()
             slots.release()
 
     print("worker started", flush=True)

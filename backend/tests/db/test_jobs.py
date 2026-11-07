@@ -1,5 +1,6 @@
 """The worker's job handlers against the local Supabase database, with DeepSeek replaced by a script."""
 
+import asyncio
 import json
 import uuid
 
@@ -7,7 +8,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.jobs import Deps, claim_job, process_job, reap_stale_jobs
+from app.jobs import Deps, claim_job, heartbeat, process_job, reap_stale_jobs
 from app.llm import UpstreamError
 from tests.db.conftest import LOCAL_SUPABASE_DB_URL
 from tests.db.test_me import bearer
@@ -131,6 +132,21 @@ async def test_stale_running_jobs_are_reaped(raw_db, google_user, client, key, e
 
     assert await reap_stale_jobs(engine, lease_seconds=600) >= 1
     assert await raw_db.fetchval("select status from public.generation_jobs where series_id = $1", sid) == "queued"
+
+
+async def test_a_long_job_keeps_its_lease_and_is_not_run_twice(raw_db, google_user, client, key, engine):
+    user = await google_user()
+    sid = await new_tome(client, key, user)
+    job_id = await raw_db.fetchval("select id from public.generation_jobs where series_id = $1", sid)
+    await raw_db.execute("update public.generation_jobs set status = 'running', locked_at = now() - interval '1 hour'"
+                         " where id = $1", job_id)
+
+    beat = asyncio.create_task(heartbeat(engine, job_id, every=0.05))
+    await asyncio.sleep(0.2)
+    beat.cancel()
+
+    await reap_stale_jobs(engine, lease_seconds=600)
+    assert await raw_db.fetchval("select status from public.generation_jobs where id = $1", job_id) == "running"
 
 
 async def test_read_and_regenerate_a_section(raw_db, google_user, client, key, engine):

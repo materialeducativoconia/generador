@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import random
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
@@ -88,6 +89,20 @@ async def reap_stale_jobs(engine: AsyncEngine, lease_seconds: int = 600) -> int:
                 where status = 'running' and locked_at < now() - make_interval(secs => :lease)"""
         ), {"lease": lease_seconds})
     return result.rowcount
+
+
+async def heartbeat(engine: AsyncEngine, job_id, every: float = 60) -> None:
+    """Keeps a running job's lease fresh until it is cancelled: a cover that paints its model sheets first can run
+    longer than the lease, and the reaper must only take back jobs whose worker died, never run one twice."""
+    while True:
+        await asyncio.sleep(every)
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text(
+                    "update public.generation_jobs set locked_at = now() where id = :j and status = 'running'"),
+                    {"j": job_id})
+        except Exception:  # a DB blip: the next beat tries again
+            log.warning("heartbeat of job %s failed", job_id)
 
 
 async def process_job(deps: Deps, job: dict) -> None:
@@ -540,6 +555,7 @@ async def _base_design(deps: Deps, job: dict, series, brief: Brief, title: str, 
 
 
 async def _cover(deps: Deps, job: dict) -> None:
+    marks = [("start", time.monotonic())]  # where a slow cover spent its time, in the worker's log
     async with deps.engine.connect() as conn:
         series = await _series(conn, job["series_id"])
         sections = (await conn.execute(text(
@@ -565,6 +581,7 @@ async def _cover(deps: Deps, job: dict) -> None:
     if not free and any(not c.get("sheet_key") for c in cast):  # a paid preview: its characters get their sheets
         cast, sheets_usd = await complete_sheets(deps, job["series_id"], design)
         cast_usd += sheets_usd
+    marks.append(("cast", time.monotonic()))
     # A story already written whose hero the cast lacks (a child the Narrator created): the cover follows the plates.
     story = (_json(series["plan"]) or {}).get("story") if series.get("plan") else None
     hero = (story or {}).get("protagonist", "") if not any(c.get("role") == "protagonist" for c in cast) else ""
@@ -575,6 +592,7 @@ async def _cover(deps: Deps, job: dict) -> None:
         await _log_attempts(deps.engine, job, "cover", exc.attempts)
         raise
     await _log_attempts(deps.engine, job, "cover", result.attempts)  # a retry below must not redo this log
+    marks.append(("director", time.monotonic()))
     plan = result.value
     plan.palette = design.palette  # cover and interior share one palette
     if free:
@@ -591,9 +609,10 @@ async def _cover(deps: Deps, job: dict) -> None:
     if seen:
         who += (f"\nThe last {len(seen)} attached image(s) are pages of this very book: draw its protagonist exactly as "
                 "there (face, hair, skin, outfit, colours) and in front, bigger than the others.")
+    marks.append(("references", time.monotonic()))
     refs = sheets + house + [r.data for r in references][:max(0, 4 - len(sheets) - len(house) - len(seen))] + seen
     palette = ", ".join(plan.palette)
-    lettered, spent_paint, review_usd = None, 0.0, 0.0
+    lettered, spent_paint, review_usd, paintings = None, 0.0, 0.0, 0
     if genre in LETTERED_GENRES and deps.vision is not None:
         # The title painted into the art, read back letter by letter; once more with the misreading named, then
         # the art without words and the title set in type.
@@ -603,7 +622,7 @@ async def _cover(deps: Deps, job: dict) -> None:
         for _ in range(2):
             image = await deps.images.generate(f"{plan.illustration_prompt}\n\n{rules}{fix}{who}", references=refs,
                                                aspect_ratio="3:4", resolution="4K")
-            spent_paint += image.cost_usd or 0
+            spent_paint, paintings = spent_paint + (image.cost_usd or 0), paintings + 1
             try:
                 read, cost = await deps.vision.read_text(image.data)
             except UpstreamError as exc:
@@ -618,7 +637,10 @@ async def _cover(deps: Deps, job: dict) -> None:
     if lettered is None:
         image = await deps.images.generate(f"{plan.illustration_prompt}\n\n{COVER_RULES.format(palette=palette)}{who}",
                                            references=refs, aspect_ratio="3:4", resolution="4K")  # 300+ dpi
-        spent_paint += image.cost_usd or 0
+        spent_paint, paintings = spent_paint + (image.cost_usd or 0), paintings + 1
+    marks.append(("paint", time.monotonic()))
+    log.info("cover %s timings: %s (%d paintings, %d characters)", job["series_id"],
+             ", ".join(f"{name} {t - marks[i][1]:.0f}s" for i, (name, t) in enumerate(marks[1:])), paintings, len(cast))
     key = f"{job['user_id']}/{job['series_id']}/{job['id']}.jpg"
     await deps.storage.upload(key, await asyncio.to_thread(_cover_file, image.data, design), "image/jpeg",
                               bucket="covers")

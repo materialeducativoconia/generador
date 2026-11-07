@@ -194,6 +194,26 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
     style = (design.art_style if design and design.art_style else SHEET_STYLE)
     said = _words(" ".join(filter(None, [series["topic"], series["extra_instructions"]])))  # what the user wrote
     cast, cost = (list(kept), cost) if kept else ([], 0.0)
+
+    async def paint_new(m):
+        """A new character's sheet (from its parent's when it is based on one); None when painting failed."""
+        parent = by_id.get(m.based_on) if m.based_on else None
+        refs = []
+        if parent:
+            try:
+                refs = [reference_image(await deps.storage.download(parent["sheet_key"], bucket="images"))]
+            except Exception:
+                log.warning("sheet %s unavailable", parent["sheet_key"])
+        try:
+            return await paint_sheet(deps.images, getattr(deps, "vision", None), sheet_prompt(m, style, bool(refs)),
+                                     refs, m.name)
+        except Exception as exc:
+            log.warning("model sheet failed for %s: %s", m.name, exc)
+            return None
+
+    # The new characters' sheets are painted at once: one after another they kept the cover waiting minutes.
+    new = [m for m in result.value.cast if not m.reuse] if paint and deps.images is not None else []
+    painted = dict(zip(map(id, new), await asyncio.gather(*map(paint_new, new))))
     for m in result.value.cast:
         if m.reuse:
             row = by_id[m.reuse]
@@ -211,20 +231,11 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
         if not paint or deps.images is None:
             cast.append(_entry(None, m.model_dump(), None))
             continue
-        parent = by_id.get(m.based_on) if m.based_on else None
-        refs = []
-        if parent:
-            try:
-                refs = [reference_image(await deps.storage.download(parent["sheet_key"], bucket="images"))]
-            except Exception:
-                log.warning("sheet %s unavailable", parent["sheet_key"])
-        try:
-            image, spent = await paint_sheet(deps.images, getattr(deps, "vision", None),
-                                             sheet_prompt(m, style, bool(refs)), refs, m.name)
-        except Exception as exc:
-            log.warning("model sheet failed for %s: %s", m.name, exc)
+        if painted[id(m)] is None:
             cast.append(_entry(None, m.model_dump(), None))
             continue
+        image, spent = painted[id(m)]
+        parent = by_id.get(m.based_on) if m.based_on else None
         cost += spent
         char_id = str(uuid.uuid4())
         key = f"characters/{char_id}.jpg"
@@ -564,16 +575,21 @@ async def complete_sheets(deps, series_id, design: Design | None) -> tuple[list[
             except Exception:
                 log.warning("cover %s unavailable for the sheets", row["cover_key"])
         style = design.art_style if design and design.art_style else SHEET_STYLE
-        cost = 0.0
-        for i, c in enumerate(cast):
-            if c.get("sheet_key"):
-                continue
+        async def paint(c):
             prompt = (FROM_COVER.format(name=c["name"]) if refs else "") + sheet_prompt(c, style, False)
             try:
-                image, spent = await paint_sheet(deps.images, getattr(deps, "vision", None), prompt, refs, c["name"])
+                return await paint_sheet(deps.images, getattr(deps, "vision", None), prompt, refs, c["name"])
             except Exception as exc:  # without a sheet the character is drawn from its description, as before
                 log.warning("model sheet failed for %s: %s", c["name"], exc)
+                return None
+
+        missing = [i for i, c in enumerate(cast) if not c.get("sheet_key")]
+        painted = await asyncio.gather(*(paint(cast[i]) for i in missing))  # at once: the cover waits for them
+        cost = 0.0
+        for i, done in zip(missing, painted):
+            if done is None:
                 continue
+            c, (image, spent) = cast[i], done
             key = f"characters/{series_id}-{i}.jpg"
             await deps.storage.upload(key, await asyncio.to_thread(_jpeg, image.data), "image/jpeg", bucket="images")
             c["sheet_key"], cost = key, cost + spent
