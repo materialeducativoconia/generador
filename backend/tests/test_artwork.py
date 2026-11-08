@@ -60,6 +60,17 @@ def test_sheet_prompt_names_every_panel_and_the_style_bible():
     assert "orange scarf" in prompt and "Soft rounded flat vector" in prompt and "no text" in prompt.lower()
 
 
+def test_words_quoted_in_a_scene_are_painted_as_a_picture_never_as_text():
+    plan = ArtPlan(style="Soft rounded flat vector, thick lines", prompts={
+        "a": 'Juanito says "Torni, go forward two steps" in a speech bubble',
+        "b": "Laura holds a list «1. Recoger juguetes 2. Deberes» and smiles"})
+    prompt = sheet_prompt(plan_sheets([req("a"), req("b")])[0], plan, DESIGN)
+
+    assert "go forward" not in prompt and "Recoger" not in prompt
+    assert "Juanito says a simple picture, no words in a speech bubble" in prompt
+    assert "never written words" in prompt
+
+
 def test_a_2x2_sheet_is_cut_into_four_trimmed_panels():
     panels = slice_sheet(grid(2, 2), 2, 2)
 

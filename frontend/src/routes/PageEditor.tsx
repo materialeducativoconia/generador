@@ -101,9 +101,10 @@ function PageView({ seriesId, page, paper, picture, story, design }: { seriesId:
   const b = page.block
   const [narration, setNarration] = useState(b.narration ?? '')
   const [question, setQuestion] = useState(b.question ?? '')
-  const [answer, setAnswer] = useState(b.answer ?? '')
-  const [notes, setNotes] = useState<string[]>(() => [...(b.notes ?? []), '', '', '', ''].slice(0, 4))
-  const [find, setFind] = useState(b.find ?? '')
+  // null: the page has no such text (removed, or never written); the PDF then leaves its place out.
+  const [answer, setAnswer] = useState<string | null>(b.answer ?? null)
+  const [notes, setNotes] = useState<string[]>(() => b.notes ?? [])
+  const [find, setFind] = useState<string | null>(b.find ?? null)
   const [layout, setLayout] = useState(b.layout ?? 'bleed')
   const [place, setPlace] = useState<PlatePlace>(b.place ?? {})
   const [view, setView] = useState<'move' | 'print'>('move')
@@ -115,9 +116,7 @@ function PageView({ seriesId, page, paper, picture, story, design }: { seriesId:
     mutationFn: () => api.patch(base, {
       ...(b.narration != null || story ? { narration } : {}),
       ...(b.question != null ? { question } : {}),
-      ...(b.answer != null ? { answer } : {}),
-      ...(b.notes?.length ? { notes: notes.filter((n) => n.trim()) } : {}),
-      ...(b.find != null ? { find } : {}),
+      ...(!story ? { answer: answer ?? '', notes: notes.filter((n) => n.trim()), find: find ?? '' } : {}),
       layout,
       ...(placed ? { place } : {}),
     }),
@@ -131,12 +130,23 @@ function PageView({ seriesId, page, paper, picture, story, design }: { seriesId:
     },
   })
   const placed = JSON.stringify(place) !== JSON.stringify(b.place ?? {})
-  const dirty = narration !== (b.narration ?? '') || question !== (b.question ?? '') || answer !== (b.answer ?? '') ||
-    find !== (b.find ?? '') || layout !== (b.layout ?? 'bleed') ||
+  const dirty = narration !== (b.narration ?? '') || question !== (b.question ?? '') || (answer ?? '') !== (b.answer ?? '') ||
+    (find ?? '') !== (b.find ?? '') || layout !== (b.layout ?? 'bleed') ||
     notes.filter((n) => n.trim()).join('|') !== (b.notes ?? []).join('|') || placed
   // Texts lie over the picture only on a bleed page (an inset diagram keeps its own place at the foot).
   const movable = layout === 'bleed' && !!picture && !!b.asset_id && !b.inset
   const layouts = LAYOUTS.filter((l) => !story || l.key !== 'vignette')
+  // A fact removed: the ones after it move up a place, and so does where the user had dragged them.
+  const dropNote = (i: number) => {
+    setNotes(notes.filter((_, j) => j !== i))
+    const moved: PlatePlace = { ...place }
+    for (let j = i; j < 4; j++) {
+      const key = `n${j}` as keyof PlatePlace, after = place[`n${j + 1}` as keyof PlatePlace]
+      if (after) moved[key] = after
+      else delete moved[key]
+    }
+    setPlace(moved)
+  }
 
   return (
     <>
@@ -152,8 +162,8 @@ function PageView({ seriesId, page, paper, picture, story, design }: { seriesId:
         )}
         {movable && view === 'move' ? (
           <PlateStage picture={picture!} design={design} kicker={page.first ? `${page.position} · ${page.section}` : undefined}
-            narration={b.narration != null || story ? narration : undefined} question={question} answer={answer}
-            notes={notes} find={find} spots={preview.data?.spots} low={preview.data?.low} place={place} onPlace={setPlace} />
+            narration={b.narration != null || story ? narration : undefined} question={question} answer={answer ?? undefined}
+            notes={notes} find={find ?? undefined} spots={preview.data?.spots} low={preview.data?.low} place={place} onPlace={setPlace} />
         ) : preview.data ? <img src={preview.data.image} alt={`Página: ${b.narration ?? b.question ?? b.subject}`} />
           : picture && !preview.isError ? (  // the painting itself, at once, while the printed page is laid out
             <div className="page-preview-draft"><img src={picture} alt="" /><span className="notice small">Preparando la página…</span></div>
@@ -172,22 +182,32 @@ function PageView({ seriesId, page, paper, picture, story, design }: { seriesId:
           <label className="field"><span>Pregunta</span>
             <input value={question} onChange={(e) => setQuestion(e.target.value)} maxLength={300} /></label>
         )}
-        {b.answer != null && (
-          <label className="field"><span>Respuesta</span>
-            <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} rows={3} maxLength={500} /></label>
-        )}
-        {b.notes?.length ? (
+        {!story && (answer != null ? (
+          <div className="field">
+            <span className="field-head"><label htmlFor="pe-answer">Respuesta</label>
+              <button type="button" className="ghost small" onClick={() => setAnswer(null)}>Quitar</button></span>
+            <textarea id="pe-answer" value={answer} onChange={(e) => setAnswer(e.target.value)} rows={3} maxLength={500} />
+          </div>
+        ) : <button type="button" className="ghost small add-text" onClick={() => setAnswer('')}>+ Añadir respuesta</button>)}
+        {!story && (
           <fieldset className="field"><legend>Datos</legend>
             {notes.map((n, i) => (
-              <input key={i} value={n} onChange={(e) => setNotes(notes.map((x, j) => (j === i ? e.target.value : x)))}
-                maxLength={140} aria-label={`Dato ${i + 1}`} />
+              <span key={i} className="removable">
+                <input value={n} onChange={(e) => setNotes(notes.map((x, j) => (j === i ? e.target.value : x)))}
+                  maxLength={140} aria-label={`Dato ${i + 1}`} />
+                <button type="button" className="ghost small" aria-label={`Quitar el dato ${i + 1}`} onClick={() => dropNote(i)}>✕</button>
+              </span>
             ))}
+            {notes.length < 4 && <button type="button" className="ghost small add-text" onClick={() => setNotes([...notes, ''])}>+ Añadir dato</button>}
           </fieldset>
-        ) : null}
-        {b.find != null && (
-          <label className="field"><span>Observa y encuentra</span>
-            <input value={find} onChange={(e) => setFind(e.target.value)} maxLength={300} /></label>
         )}
+        {!story && (find != null ? (
+          <div className="field">
+            <span className="field-head"><label htmlFor="pe-find">Observa y encuentra</label>
+              <button type="button" className="ghost small" onClick={() => setFind(null)}>Quitar</button></span>
+            <input id="pe-find" value={find} onChange={(e) => setFind(e.target.value)} maxLength={300} />
+          </div>
+        ) : <button type="button" className="ghost small add-text" onClick={() => setFind('')}>+ Añadir reto «Observa y encuentra»</button>)}
         {b.layout !== 'spread' && (
           <fieldset className="field"><legend>Composición</legend>
             <div className="segmented" role="radiogroup" aria-label="Composición">

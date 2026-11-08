@@ -140,7 +140,13 @@ class Image(_Block):
     @classmethod
     def _clip_subject(cls, v):
         """A plate's scene can run long; it is only the Illustrator's brief, never a reason to reject a section."""
-        return v[:700].rstrip() if isinstance(v, str) else v
+        if not isinstance(v, str) or len(v) <= 700:
+            return v
+        cut = v[:700]  # at the last full sentence (or clause), so the Illustrator never gets half an order
+        end = cut.rfind(". ")
+        if end <= 400:
+            end = max(cut.rfind("; "), cut.rfind(", "))
+        return (cut[:end + 1] if end > 400 else cut).rstrip(" ,;")
 
 
 # Diagrams drawn exactly by code (app.diagrams): free, instant, real text, never a garbled picture.

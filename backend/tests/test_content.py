@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.content import Outline, SectionContent
+from app.content import Image, Outline, SectionContent
 
 
 def section(*blocks):
@@ -65,3 +65,11 @@ def test_outline_needs_between_one_and_twenty_sections():
 def test_outline_unknown_genre_is_rejected():
     with pytest.raises(ValidationError):
         Outline.model_validate({"title": "X", "genre": "novela", "sections": [{"title": "a"}]})
+
+
+def test_a_long_scene_is_cut_at_its_last_full_clause_never_mid_sentence():
+    scene = "Torni, un robot azul, escucha a Laura. " * 17 + "Sus orejas muestran ondas de sonido de colores"
+    image = Image.model_validate({"id": "b1", "type": "image", "kind": "illustration", "size": "plate",
+                                  "subject": scene})
+
+    assert len(image.subject) <= 700 and image.subject.endswith("Laura.")

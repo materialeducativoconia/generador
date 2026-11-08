@@ -271,7 +271,9 @@ async def get_quality(series_id: uuid.UUID, request: Request, user_id: UserId):
     if scores and (min(scores) <= 2 or textcard["score"] < 4):
         reasons.append("El Editor pide revisar el texto de alguna sección")
     if undecodable:
-        reasons.append(f"{len(undecodable)} palabras usan letras que el niño aún no conoce")
+        n = len(undecodable)
+        reasons.append(f"{n} {'regla' if n == 1 else 'reglas'} del texto sin cumplir (letras aún no enseñadas, "
+                       "ejercicios mal planteados)")
     if images["failed"]:
         reasons.append(f"{images['failed']} imágenes no se pudieron ilustrar")
     if preflight and preflight.get("rating") == "baja":

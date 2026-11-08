@@ -24,7 +24,8 @@ THEME_STYLE = {
     "ciencia": "clean flat vector, precise, infographic feel",
     "clasico": "clean flat vector",
 }
-NO_TEXT = "No text, no letters, no numbers, no labels, no watermark, no signature."
+NO_TEXT = ("No text, no letters, no numbers, no labels, no watermark, no signature. Speech or thought bubbles, signs, "
+           "screens, posters, lists and books show only simple pictures or symbols, never written words.")
 
 
 def normalize_subject(subject: str) -> str:

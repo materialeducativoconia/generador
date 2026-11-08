@@ -5,6 +5,7 @@ One call per sheet is the cost win (one image price for four pictures) and the c
 """
 
 import io
+import re
 from dataclasses import dataclass, field
 
 from PIL import Image
@@ -118,12 +119,21 @@ def icon_sheet_prompt(sheet: Sheet, feedback: str | None = None) -> str:
     return prompt
 
 
+QUOTED = re.compile(r"«[^»]{1,200}»|“[^”]{1,200}”|\"[^\"]{1,200}\"")
+
+
+def unquote(scene: str) -> str:
+    """Words quoted in a scene (a line said aloud, a sign, a to-do list) come out painted, in English and misspelt:
+    the painter gets a picture instead, and the printed page keeps the words."""
+    return QUOTED.sub("a simple picture, no words", scene)
+
+
 def sheet_prompt(sheet: Sheet, plan: ArtPlan, design: Design | None, feedback: str | None = None,
                  sheets: int = 0) -> str:
     if sheet.family == "icon":
         return icon_sheet_prompt(sheet, feedback)
     slots = _slots(sheet.cols)
-    panels = [f"{slot}: {plan.prompts.get(r.ref, r.subject)}{r.compose}" for slot, r in zip(slots, sheet.requests)]
+    panels = [f"{slot}: {unquote(plan.prompts.get(r.ref, r.subject))}{r.compose}" for slot, r in zip(slots, sheet.requests)]
     panels += [f"{slot}: leave this panel completely empty and white" for slot in slots[len(sheet.requests):]]
     cast = "; ".join(f"{c.name} is {c.look}" for c in plan.characters)
     if sheet.family == "line":

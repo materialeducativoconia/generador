@@ -1216,6 +1216,11 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .page-form { display: grid; gap: 14px; }
 .page-form fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
 .page-form .segmented { display: grid; gap: 6px; }
+.page-form .field-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.page-form .field-head label { font-size: 13px; color: var(--muted); }
+.page-form .removable { display: flex; gap: 6px; align-items: center; font-size: inherit; color: inherit; }
+.page-form .removable input { flex: 1; min-width: 0; }
+.page-form .add-text { justify-self: start; }
 .page-form hr { border: 0; border-top: 1px solid var(--border, rgb(12 10 9 / 0.08)); width: 100%; margin: 6px 0; }
 @media (max-width: 900px) {
   .page-editor { grid-template-columns: 1fr; }

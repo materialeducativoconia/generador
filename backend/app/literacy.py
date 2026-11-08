@@ -102,7 +102,7 @@ def check_section(content: SectionContent, allowed: set[str] | None) -> list[str
 
 
 ARRAY = re.compile(r"(\d+)\s+filas?\s+de\s+(\d+)", re.I)
-QUANTITY = re.compile(r"[+−×÷=]|\b\d{1,2}\s+[a-záéíóúñ]", re.I)  # "2 manzanas", "3 + 1"
+QUANTITY = re.compile(r"[+−×÷=]|\b\d{1,2}\s+(?!años|meses|semanas|días)[a-záéíóúñ]", re.I)  # "2 manzanas", "3 + 1"
 
 
 def check_blocks(content: SectionContent) -> list[str]:
@@ -116,7 +116,8 @@ def check_blocks(content: SectionContent) -> list[str]:
             if not any(i.rows == rows and i.count == rows * per_row for i in b.items):
                 problems.append(f"{b.id}: la instrucción pide {rows} filas de {per_row}: pon count "
                                 f"{rows * per_row} y rows {rows}")
-        elif b.type == "image" and b.kind in ("line_art", "illustration") and QUANTITY.search(b.subject):
+        elif (b.type == "image" and b.kind in ("line_art", "illustration") and b.size != "plate"
+              and QUANTITY.search(b.subject)):  # a plate is a scene to look at, not an exercise
             problems.append(f"{b.id}: una image no muestra cantidades ni operaciones («{b.subject}»); usa counting "
                             "o picture_math")
     return problems

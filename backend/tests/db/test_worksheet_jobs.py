@@ -73,7 +73,7 @@ async def test_words_still_undecodable_are_flagged_on_the_quality_card(raw_db, g
 
     card = (await client.get(f"/api/series/{sid}/quality", headers=bearer(key, user))).json()
 
-    assert any("letras que el niño aún no conoce" in r for r in card["reasons"]) and card["verdict"] == "revisar"
+    assert any("regla del texto sin cumplir" in r for r in card["reasons"]) and card["verdict"] == "revisar"
     assert any("sopa" in i["issue"] for i in card["text"]["issues"])
 
 

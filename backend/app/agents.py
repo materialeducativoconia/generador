@@ -166,6 +166,8 @@ Catálogo de bloques (usa solo estos "type"):
   frases sencillas, máximo 45 palabras), de 2 a 4 notes (datos curiosos de máximo 15 palabras, cada uno sobre
   algo que se ve en la escena) y find (reto «Observa y encuentra»: una pregunta corta con ¿? sobre algo que el
   subject pide pintar; nunca pidas contar cosas cuyo número el subject no fija: mejor «¿dónde está…?»).
+  Nada escrito dentro del dibujo: si alguien habla, su globo muestra un dibujo (una bombilla, una pelota y una
+  flecha), y carteles, pantallas y listas llevan dibujos; las palabras van en question, answer y notes.
   subject describe una escena rica y detallada que muestra la respuesta, con el sujeto principal al centro
   (máximo 500 caracteres).
   inset? (opcional): un diagrama exacto que el código dibuja sobre la lámina, en un recuadro abajo. Úsalo cuando
@@ -826,7 +828,9 @@ Reglas:
 - Respeta la regla de personajes del pedido: si no se permiten personajes de películas o marcas, descríbelos
   como personajes originales sin nombre propio ni rasgos de marca.
 - Un prompt por cada ref recibida. Nada de texto, letras ni números dentro de las imágenes: si el pedido
-  menciona palabras, etiquetas o flechas con nombres, muéstralo solo con dibujos.
+  menciona palabras, etiquetas o flechas con nombres, muéstralo solo con dibujos. Nunca cites frases entre
+  comillas: un globo de diálogo, un cartel, una pantalla o una lista llevan un dibujo o un símbolo (una pelota y
+  una flecha, una bombilla, un sol), no palabras.
 - Mantén lo didáctico del pedido (qué debe aprender el niño al verla).
 - Para cada ref de tipo photo añade también en "photo_queries" una búsqueda de 2 a 4 palabras en inglés para
   encontrar una foto real en Wikimedia Commons (p. ej. "red fox", "Eiffel Tower", "monarch butterfly")."""

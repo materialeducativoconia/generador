@@ -69,11 +69,15 @@ def test_counting_with_syllable_or_picture_blocks_is_sent_back():
                                                                           {"word": "luna", "syllable": "1"}]},
         {"id": "b2", "type": "image", "kind": "line_art", "subject": "2 manzanas + 1 manzana", "size": "half"},
         {"id": "b3", "type": "image", "kind": "photo", "subject": "Apolo 11 en la Luna", "size": "half"},
-        {"id": "b4", "type": "image", "kind": "line_art", "subject": "una ardilla feliz", "size": "half"})
+        {"id": "b4", "type": "image", "kind": "line_art", "subject": "una ardilla feliz", "size": "half"},
+        {"id": "b5", "type": "image", "kind": "illustration", "subject": "Juanito (niño de 6 años) juega",
+         "size": "half"},
+        {"id": "b6", "type": "image", "kind": "illustration", "subject": "3 robots en la sala", "size": "plate",
+         "question": "¿Qué hacen?"})
 
     problems = check_blocks(content)
 
-    assert [p.split(":")[0] for p in problems] == ["b1", "b2"]
+    assert [p.split(":")[0] for p in problems] == ["b1", "b2"]  # an age, or a plate's scene, is not a sum
 
 
 def test_tidy_drops_a_repeated_title_and_blank_pages():
