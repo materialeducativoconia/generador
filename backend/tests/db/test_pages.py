@@ -90,3 +90,22 @@ async def test_texts_dragged_on_the_page_print_where_the_user_left_them(raw_db, 
 
     cleared = await client.patch(f"/api/lessons/{lid}/pages/p1", headers=bearer(key, user), json={"place": {}})
     assert "place" not in cleared.json()["block"]  # back to the automatic layout
+
+
+async def test_a_plates_diagram_is_removed_by_hand(raw_db, google_user, client, key, engine):  # noqa: F811
+    user = await google_user()
+    sid = await _written(raw_db, client, key, engine, user)
+    lid = await _lesson(raw_db, sid)
+    await raw_db.execute(
+        """update public.lessons set content_json = jsonb_set(content_json, '{blocks,0,inset}', cast($2 as jsonb))
+            where id = $1""", lid, json.dumps({"id": "d1", "type": "sizes", "shape": "bar",
+                                                "items": [{"label": "a", "size": 1}, {"label": "b", "size": 2}]}))
+
+    response = await client.patch(f"/api/lessons/{lid}/pages/p1", headers=bearer(key, user), json={"inset": None})
+
+    assert response.status_code == 200 and "inset" not in response.json()["block"]
+    block = json.loads(await raw_db.fetchval("select content_json from public.lessons where id = $1", lid))["blocks"][0]
+    assert "inset" not in block and block["asset_id"]  # the picture stays
+    sneaked = await client.patch(f"/api/lessons/{lid}/pages/p1", headers=bearer(key, user),
+                                 json={"inset": {"id": "d2", "type": "sizes", "items": []}})
+    assert sneaked.status_code == 422  # a diagram is never written by hand

@@ -107,6 +107,7 @@ function PageView({ seriesId, page, paper, picture, story, design }: { seriesId:
   const [find, setFind] = useState<string | null>(b.find ?? null)
   const [layout, setLayout] = useState(b.layout ?? 'bleed')
   const [place, setPlace] = useState<PlatePlace>(b.place ?? {})
+  const [inset, setInset] = useState(!!b.inset)
   const [view, setView] = useState<'move' | 'print'>('move')
   const [ask, setAsk] = useState('')
   const base = `/api/lessons/${page.lessonId}/pages/${b.id}`
@@ -119,6 +120,7 @@ function PageView({ seriesId, page, paper, picture, story, design }: { seriesId:
       ...(!story ? { answer: answer ?? '', notes: notes.filter((n) => n.trim()), find: find ?? '' } : {}),
       layout,
       ...(placed ? { place } : {}),
+      ...(b.inset && !inset ? { inset: null } : {}),
     }),
     onSuccess: refresh,
   })
@@ -132,7 +134,7 @@ function PageView({ seriesId, page, paper, picture, story, design }: { seriesId:
   const placed = JSON.stringify(place) !== JSON.stringify(b.place ?? {})
   const dirty = narration !== (b.narration ?? '') || question !== (b.question ?? '') || (answer ?? '') !== (b.answer ?? '') ||
     (find ?? '') !== (b.find ?? '') || layout !== (b.layout ?? 'bleed') ||
-    notes.filter((n) => n.trim()).join('|') !== (b.notes ?? []).join('|') || placed
+    notes.filter((n) => n.trim()).join('|') !== (b.notes ?? []).join('|') || placed || inset !== !!b.inset
   // Texts lie over the picture only on a bleed page; an inset diagram keeps its own place at the foot.
   const movable = layout === 'bleed' && !!picture && !!b.asset_id
   const layouts = LAYOUTS.filter((l) => !story || l.key !== 'vignette')
@@ -164,7 +166,7 @@ function PageView({ seriesId, page, paper, picture, story, design }: { seriesId:
           <PlateStage picture={picture!} design={design} kicker={page.first ? `${page.position} · ${page.section}` : undefined}
             narration={b.narration != null || story ? narration : undefined} question={question} answer={answer ?? undefined}
             notes={notes} find={find ?? undefined} spots={preview.data?.spots} low={preview.data?.low} place={place} onPlace={setPlace}
-            looks={dirty ? undefined : preview.data?.looks} inset={!!b.inset} />
+            looks={dirty ? undefined : preview.data?.looks} inset={inset} />
         ) : preview.data ? <img src={preview.data.image} alt={`Página: ${b.narration ?? b.question ?? b.subject}`} />
           : picture && !preview.isError ? (  // the painting itself, at once, while the printed page is laid out
             <div className="page-preview-draft"><img src={picture} alt="" /><span className="notice small">Preparando la página…</span></div>
@@ -209,6 +211,13 @@ function PageView({ seriesId, page, paper, picture, story, design }: { seriesId:
             <input id="pe-find" value={find} onChange={(e) => setFind(e.target.value)} maxLength={300} />
           </div>
         ) : <button type="button" className="ghost small add-text" onClick={() => setFind('')}>+ Añadir reto «Observa y encuentra»</button>)}
+        {b.inset && (
+          <div className="field">
+            <span className="field-head"><span>Diagrama</span>
+              <button type="button" className="ghost small" onClick={() => setInset(!inset)}>{inset ? 'Quitar diagrama' : 'Conservarlo'}</button></span>
+            {!inset && <span className="muted small">Al guardar, la página se imprime sin el diagrama. Si la ilustración dejó un hueco abajo, repíntala.</span>}
+          </div>
+        )}
         {b.layout !== 'spread' && (
           <fieldset className="field"><legend>Composición</legend>
             <div className="segmented" role="radiogroup" aria-label="Composición">

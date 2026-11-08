@@ -40,6 +40,7 @@ class PageEdit(BaseModel):
     find: str | None = Field(default=None, max_length=300)
     layout: Literal["bleed", "band", "vignette", "spread"] | None = None
     place: dict[Literal["q", "f", "n0", "n1", "n2", "n3"], Spot] | None = None  # {} back to the automatic layout
+    inset: None = None  # null removes the plate's diagram; one is never written here
 
 
 class Repaint(BaseModel):
