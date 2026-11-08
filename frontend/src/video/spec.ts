@@ -1,7 +1,7 @@
 // The promotional videos' data, sizes and font (backend app/marketing.py writes the script).
 import { loadFont } from '@remotion/google-fonts/Geist'
 
-export type VideoScript = { hook: string; request: string; plan: string; cover: string; pages: string; pdf: string; cta: string; post?: string }
+export type VideoScript = { hook: string; request: string; plan: string; cover: string; pages: string; pdf: string; cta: string; post?: string; voiceover?: string }
 export type VideoTome = { title: string; kind: string; audience: string; cover: string | null; pages: string[]; sections: string[] }
 export type TopicToBookProps = { script: VideoScript; tome: VideoTome }
 

@@ -185,15 +185,42 @@ function VideoEditor({ video, title, onClose }: { video: Video; title?: string; 
           </button>
           <span className="muted small">El video se crea en este navegador (mejor en Chrome de escritorio); tarda unos minutos y la pestaña debe quedar abierta.</span>
           {renderError && <p className="error small" role="alert">{renderError}</p>}
+          <label className="field"><span>Guion para voz en off · unos 30 s</span>
+            <textarea value={script.voiceover ?? spoken(script)} onChange={(e) => setScript({ ...script, voiceover: e.target.value })} rows={6} maxLength={700} />
+            <span className="muted small">{words(script.voiceover ?? spoken(script))} palabras · pégalo en tu app de voz (ElevenLabs, CapCut…) y súmale el audio al MP4.</span>
+            <CopyButton text={script.voiceover ?? spoken(script)} label="Copiar guion de voz" />
+          </label>
+          <div className="field"><span>Textos en pantalla, por escena</span>
+            <CopyButton text={onScreen(script)} label="Copiar textos en pantalla" />
+          </div>
           {script.post && (
             <label className="field"><span>Texto para publicar</span>
               <textarea value={script.post} onChange={(e) => setScript({ ...script, post: e.target.value })} rows={5} maxLength={700} />
-              <button type="button" className="ghost small" onClick={() => void navigator.clipboard.writeText(script.post ?? '')}>Copiar texto</button>
+              <CopyButton text={script.post} label="Copiar texto" />
             </label>
           )}
           <button type="button" className="ghost small" onClick={() => remove.mutate()} disabled={remove.isPending}>Borrar este video</button>
         </div>
       </div>
     </section>
+  )
+}
+
+const words = (t: string) => t.split(/\s+/).filter(Boolean).length
+// Scripts written before the voiceover existed: their screen lines, read in order.
+const spoken = (s: VideoScript) => [s.hook, s.request, s.plan, s.cover, s.pages, s.pdf, `${s.cta}, en docs punto jelyx punto app.`]
+  .map((l) => l.trim().replace(/[.!?¿¡]*$/, '')).filter(Boolean).join('. ')
+const onScreen = (s: VideoScript) => [
+  `0–3 s · Gancho: ${s.hook}`, `3–8 s · Pedido: ${s.request}`, `8–12 s · Plan: ${s.plan}`, `12–17 s · Portada: ${s.cover}`,
+  `17–23 s · Páginas: ${s.pages}`, `23–27 s · PDF: ${s.pdf}`, `27–30 s · Cierre: ${s.cta} · docs.jelyx.app`].join('\n')
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [done, setDone] = useState(false)
+  return (
+    <button type="button" className="ghost small" onClick={async () => {
+      await navigator.clipboard.writeText(text)
+      setDone(true)
+      setTimeout(() => setDone(false), 1800)
+    }}>{done ? 'Copiado ✓' : label}</button>
   )
 }

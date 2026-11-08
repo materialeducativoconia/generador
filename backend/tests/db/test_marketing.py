@@ -9,7 +9,8 @@ from tests.fakes import ScriptedLLM
 
 SCRIPT = {"hook": "¿Otro domingo armando material?", "request": "Quiero un cuento sobre Lía y el águila para 6 años",
           "plan": "Jelyx arma el plan", "cover": "Pinta la portada", "pages": "Y cada página, ilustrada",
-          "pdf": "Tu PDF, listo para imprimir", "cta": "Pruébalo gratis", "post": "Del tema al libro. #docentes"}
+          "pdf": "Tu PDF, listo para imprimir", "cta": "Pruébalo gratis", "post": "Del tema al libro. #docentes",
+          "voiceover": "¿Otro domingo armando material? Escribe tu tema y Jelyx hace el libro."}
 
 
 async def test_the_team_gets_a_video_script_written_from_a_tome_and_edits_it(raw_db, google_user, client, key,
@@ -28,6 +29,7 @@ async def test_the_team_gets_a_video_script_written_from_a_tome_and_edits_it(raw
     assert made.status_code == 201
     video = made.json()["video"]
     assert video["script"]["hook"] == SCRIPT["hook"] and video["format"] == "16:9"
+    assert video["script"]["voiceover"] == SCRIPT["voiceover"]
     assert "Libro:" in llm.calls[0][-1]["content"]  # the tome's facts reach the scriptwriter
 
     edited = await client.patch(f"/api/admin/marketing/videos/{video['id']}", headers=bearer(key, admin),

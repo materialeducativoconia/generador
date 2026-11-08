@@ -34,6 +34,7 @@ class VideoScript(BaseModel):
     pdf: Line  # the finished PDF
     cta: Line  # the closing call to action
     post: Annotated[str, _clip(700), Field(max_length=700)] = ""  # the text to publish with it, hashtags included
+    voiceover: Annotated[str, _clip(700), Field(max_length=700)] = ""  # what a voice app reads over the 30 seconds
 
 
 SCRIPT_SYSTEM = """Eres guionista de videos cortos para redes (Reels, TikTok, Shorts) de una startup: Jelyx Docs, que
@@ -48,8 +49,12 @@ docentes y madres y padres de habla hispana. Reglas:
 - plan, cover, pages, pdf: un subtítulo por escena, máximo 40 caracteres cada uno, que cuente lo que se ve.
 - cta: máximo 40 caracteres, invita a probarlo gratis.
 - post: el texto de la publicación (3 o 4 líneas y 4 a 6 hashtags en español).
+- voiceover: la locución para leer con una app de voz sobre los 30 segundos: de 60 a 75 palabras, tono cercano y
+  natural, en el orden de las escenas (gancho, pedido, plan, portada, páginas, PDF, cierre), sin repetir palabra por
+  palabra los textos en pantalla. Escrita para el oído: sin emojis, hashtags ni símbolos; la dirección se dice
+  «docs punto jelyx punto app».
 
-Responde solo con json: {"hook", "request", "plan", "cover", "pages", "pdf", "cta", "post"}"""
+Responde solo con json: {"hook", "request", "plan", "cover", "pages", "pdf", "cta", "post", "voiceover"}"""
 
 
 async def video_script(llm: LLM, *, title: str, topic: str, kind: str, audience: str, sections: list[str],
