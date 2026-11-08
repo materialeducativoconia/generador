@@ -1,6 +1,6 @@
 -- The free book library on the landing: whole tomes the team publishes from the admin, shown as page thumbnails and
 -- downloaded as their PDF after signing in. Only the API reads or writes it.
-create table public.library_books (
+create table if not exists public.library_books (
   id uuid primary key default gen_random_uuid(),
   slug text not null unique,
   series_id uuid not null unique references public.series (id) on delete cascade,
@@ -16,8 +16,8 @@ create table public.library_books (
   created_by uuid references auth.users (id) on delete set null,
   created_at timestamptz not null default now()
 );
-create index library_books_published_idx on public.library_books (published, created_at desc);
+create index if not exists library_books_published_idx on public.library_books (published, created_at desc);
 alter table public.library_books enable row level security;
 
 -- What a tome's cover prints besides its title, as the user set it in the page editor (app.content.CoverOptions).
-alter table public.series add column cover_options jsonb not null default '{}'::jsonb;
+alter table public.series add column if not exists cover_options jsonb not null default '{}'::jsonb;
