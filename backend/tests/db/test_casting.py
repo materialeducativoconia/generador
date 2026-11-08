@@ -193,3 +193,39 @@ async def test_a_starter_whose_description_changed_gets_a_new_sheet(raw_db, engi
     row = await raw_db.fetchrow("select look, sheet_key from public.characters where id = $1", char)
     assert row["look"] == pipo["look"] and row["sheet_key"] == f"characters/{char}.jpg"
     assert await raw_db.fetchval("select count(*) from public.character_sheets where character_id = $1", char) == 0
+
+
+async def test_the_next_tome_draws_its_characters_from_the_previous_tomes_pages_and_never_casts_them_again(
+        raw_db, google_user, client, key, engine):
+    user = await google_user()
+    images, storage = FakeImages(), FakeStorage()
+    first = await picture_book(raw_db, client, key, user, engine)
+    asset = await raw_db.fetchval(
+        """insert into public.assets (kind, subject, subject_norm, style_key, storage_key, media_type, created_by, aspect)
+           values ('illustration', 'Laura', 'laura', 'tome:x', 'laura.png', 'image/png', $1, '3:4') returning id""", user)
+    await raw_db.execute("update public.lessons set content_json = $2 where series_id = $1 and position = 1", first,
+                         json.dumps({"blocks": [{"id": "p1", "type": "image", "size": "plate", "asset_id": str(asset),
+                                                 "subject": "Laura y Nilo miran el robot",
+                                                 "narration": "Laura saluda al robot."}]}))
+    storage.uploads[("images", "laura.png")] = (PNG, "image/png")
+    await raw_db.execute("delete from public.generation_jobs where series_id = $1 and status = 'queued'", first)
+    # The next tome: Nilo kept with his sheet, Laura kept without one (the first tome drew her from its text).
+    second = await picture_book(raw_db, client, key, user, engine)
+    await raw_db.execute(
+        """update public.series set source_id = $2, "cast" = $3::jsonb where id = $1""", second, first, json.dumps([
+            {"character_id": None, "name": "Nilo", "look": "a boy", "sheet_key": "characters/nilo.jpg", "extend": True},
+            {"character_id": None, "name": "Laura", "look": "a girl", "sheet_key": None, "extend": True}]))
+    storage.uploads[("images", "characters/nilo.jpg")] = (PNG, "image/png")
+    recast = {"cast": [{**NEW["cast"][0], "name": "Laura", "archetype": "niña"},
+                       {**NEW["cast"][0], "name": "nilo", "archetype": "niño"}], "reason": "los nombra el pedido"}
+
+    await run_next(engine, ScriptedLLM(json.dumps(DESIGN), json.dumps(recast), json.dumps(PLAN)), covers=True,
+                   images=images, storage=storage, references=fake_references)
+
+    sheet, cover = images.calls  # Laura's sheet, then the cover: nobody painted twice
+    assert "previous book of this series" in sheet["prompt"] and "Laura" in sheet["prompt"]
+    assert len(sheet["references"]) == 1  # the first tome's page, not a library character
+    cast = json.loads(await raw_db.fetchval('select "cast" from public.series where id = $1', second))
+    assert [c["name"] for c in cast] == ["Nilo", "Laura"]
+    assert cast[1]["sheet_key"] and ("images", cast[1]["sheet_key"]) in storage.uploads
+    assert len(cover["references"]) >= 2  # both sheets

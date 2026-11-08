@@ -194,9 +194,26 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
     style = (design.art_style if design and design.art_style else SHEET_STYLE)
     said = _words(" ".join(filter(None, [series["topic"], series["extra_instructions"]])))  # what the user wrote
     cast, cost = (list(kept), cost) if kept else ([], 0.0)
+    members = list(result.value.cast)
+    if kept:  # someone already in the cast is never cast again, whatever the director answered
+        names = {normalize_subject(c["name"]) for c in kept}
+        members = [m for m in members if normalize_subject(m.name) not in names]
+    book, told = await _previous_book(deps, series) if kept and paint and deps.images is not None else ([], set())
+
+    def drawn_before(name: str) -> bool:
+        """A character the previous tome of the series already drew: its pages are its reference."""
+        return bool(book) and bool(_words(name)) and _words(name) <= told
 
     async def paint_new(m):
-        """A new character's sheet (from its parent's when it is based on one); None when painting failed."""
+        """A new character's sheet (from the previous tome's pages when they drew it, else from its parent's when
+        it is based on one); None when painting failed."""
+        if drawn_before(m.name):
+            try:
+                return await paint_sheet(deps.images, getattr(deps, "vision", None),
+                                         FROM_BOOK.format(name=m.name) + sheet_prompt(m, style, False), book, m.name)
+            except Exception as exc:
+                log.warning("model sheet failed for %s: %s", m.name, exc)
+                return None
         parent = by_id.get(m.based_on) if m.based_on else None
         refs = []
         if parent:
@@ -212,10 +229,23 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
             return None
 
     # The new characters' sheets are painted at once: one after another they kept the cover waiting minutes.
-    new = [m for m in result.value.cast if not m.reuse] if paint and deps.images is not None else []
+    new = [m for m in members if not m.reuse or drawn_before(m.name)] if paint and deps.images is not None else []
     painted = dict(zip(map(id, new), await asyncio.gather(*map(paint_new, new))))
-    for m in result.value.cast:
-        if m.reuse:
+    for c in cast:  # kept without a sheet (the previous tome drew them from its text): painted from its pages too
+        if not c.get("sheet_key") and drawn_before(c["name"]):
+            try:
+                image, spent = await paint_sheet(deps.images, getattr(deps, "vision", None),
+                                                 FROM_BOOK.format(name=c["name"]) + sheet_prompt(c, style, False),
+                                                 book, c["name"])
+            except Exception as exc:
+                log.warning("model sheet failed for %s: %s", c["name"], exc)
+                continue
+            slug = normalize_subject(c["name"]).replace(" ", "-")
+            c["sheet_key"], cost = f"characters/{job['series_id']}-{slug}.jpg", cost + spent
+            await deps.storage.upload(c["sheet_key"], await asyncio.to_thread(_jpeg, image.data), "image/jpeg",
+                                      bucket="images")
+    for m in members:
+        if m.reuse and not drawn_before(m.name):
             row = by_id[m.reuse]
             if row["name"] == row["archetype"] and m.name != row["name"]:  # a library character without its name
                 row = {**row, "name": m.name}
@@ -235,7 +265,7 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
             cast.append(_entry(None, m.model_dump(), None))
             continue
         image, spent = painted[id(m)]
-        parent = by_id.get(m.based_on) if m.based_on else None
+        parent = by_id.get(m.based_on) if m.based_on and not drawn_before(m.name) else None
         cost += spent
         char_id = str(uuid.uuid4())
         key = f"characters/{char_id}.jpg"
@@ -266,6 +296,24 @@ async def cast_tome(deps, job: dict, series, design: Design | None, brief: Brief
         await conn.execute(text('update public.series set "cast" = cast(:c as jsonb) where id = :s'),
                            {"s": job["series_id"], "c": json.dumps(cast)})
     return cast, cost
+
+
+FROM_BOOK = ("The attached images are pages of the previous book of this series: draw {name} exactly as there (face, "
+             "skin, hair, outfit, colours, proportions); if {name} is not in them, ignore them. ")
+
+
+async def _previous_book(deps, series) -> tuple[list[bytes], set[str]]:
+    """The tome this one continues: its first painted pages and the words its pages say, to recognise the
+    characters it already drew. Nothing when the tome continues none."""
+    if not series.get("source_id"):
+        return [], set()
+    from app.jobs import _plate_images  # jobs imports this module
+
+    async with deps.engine.connect() as conn:
+        pages = (await conn.execute(text("select content_json::text from public.lessons where series_id = :s"),
+                                    {"s": series["source_id"]})).scalars().all()
+    told = _words(" ".join(p for p in pages if p))
+    return (await _plate_images(deps, series["source_id"], 3) if told else []), told
 
 
 SHEET_CHECK = ("Hoja de modelo de un solo personaje, {name}: vistas de cuerpo entero y cuatro cabezas con "
