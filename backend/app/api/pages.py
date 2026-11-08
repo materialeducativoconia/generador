@@ -77,7 +77,8 @@ async def page_preview(lesson_id: uuid.UUID, block_id: str, request: Request, us
     layout = {"spots": note_spots(plate, cells), "low": question_low(plate, cells)}
     if key in _rendered:
         _rendered.move_to_end(key)
-        return {"image": _rendered[key], **layout}
+        image, looks = _rendered[key]
+        return {"image": image, "looks": looks, **layout}
     images, busy = {}, {}
     if asset:
         try:
@@ -87,18 +88,20 @@ async def page_preview(lesson_id: uuid.UUID, block_id: str, request: Request, us
             pass
         if asset["busy"]:
             busy[block["asset_id"]] = _parse(asset["busy"])
-    jpeg = await asyncio.wait_for(asyncio.to_thread(_render_page, series, lesson, block, images, busy, paper), 60)
-    _rendered[key] = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
+    jpeg, looks = await asyncio.wait_for(asyncio.to_thread(_render_page, series, lesson, block, images, busy, paper), 60)
+    _rendered[key] = ("data:image/jpeg;base64," + base64.b64encode(jpeg).decode(), looks)
     while len(_rendered) > RENDERED:
         _rendered.popitem(last=False)
-    return {"image": _rendered[key], **layout}
+    return {"image": _rendered[key][0], "looks": looks, **layout}
 
 
-def _render_page(series, lesson, block: dict, images: dict, busy: dict, paper: str) -> bytes:
+def _render_page(series, lesson, block: dict, images: dict, busy: dict, paper: str) -> tuple[bytes, dict[str, str]]:
+    """The page as a JPEG, and how each text of a bleed plate lies on the picture (for the editor's draggable copy)."""
     import pypdfium2
     from PIL import Image as Picture
 
-    from app.render import Tome, TomeSection, _document, _pages, render_html
+    from app.printing import page_geometry
+    from app.render import Tome, TomeSection, _document, _pages, render_html, text_looks, theme_colors
 
     # The screen needs a fraction of a 4K painting: shrunk first, the page renders in a second or two, not thirty.
     images = {k: _screen_size(data) for k, (data, _) in images.items()}
@@ -121,7 +124,11 @@ def _render_page(series, lesson, block: dict, images: dict, busy: dict, paper: s
         out.paste(pages[1], (pages[0].width, 0))
     buffer = io.BytesIO()
     out.convert("RGB").save(buffer, "JPEG", quality=85)
-    return buffer.getvalue()
+    plate = tome.sections[0].content.blocks[0]
+    geo = page_geometry(paper, print_edition=False)
+    looks = text_looks(plate, tome, (geo.w, geo.h), theme_colors(design, tome.palette)[1]["ink"]) \
+        if (plate.layout or "bleed") == "bleed" else {}
+    return buffer.getvalue(), looks
 
 
 def _screen_size(data: bytes) -> tuple[bytes, str]:

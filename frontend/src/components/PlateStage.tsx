@@ -15,9 +15,10 @@ const plain = (t: string) => t.replace(/\*\*?([^*]+)\*\*?/g, '$1')
 
 /** A bleed plate laid out as the PDF prints it (same millimetres, fonts and colours), its texts dragged with a finger
  * or the cursor. The words follow the form as the user types; positions are % of the page, as the PDF reads them. */
-export function PlateStage({ picture, design, kicker, narration, question, answer, notes, find, spots, low, place, onPlace }: {
+export function PlateStage({ picture, design, kicker, narration, question, answer, notes, find, spots, low, looks = {}, place, onPlace }: {
   picture: string; design: Design | null | undefined; kicker?: string; narration?: string; question?: string; answer?: string
   notes: string[]; find?: string; spots?: Spot[]; low?: boolean; place: PlatePlace; onPlace: (p: PlatePlace) => void
+  looks?: Record<string, string>  // the saved page's texts: "open" on the picture, "open light" in white, else a card
 }) {
   useThemeFonts(design)
   const stage = useRef<HTMLDivElement>(null)
@@ -54,7 +55,7 @@ export function PlateStage({ picture, design, kicker, narration, question, answe
     <div ref={stage} className="plate-stage" style={themeVars(design).style}
       onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
       <img src={picture} alt="" draggable={false} />
-      <div data-k="q" className="ps-q movable" onPointerDown={start('q', true)}
+      <div data-k="q" className={`ps-q movable ${looks.q ?? ''}`} onPointerDown={start('q', true)}
         style={place.q ? { top: `${place.q.y}%` } : low ? { top: 'auto', bottom: `calc(var(--mm) * ${find ? 27 : 9})` } : undefined}>
         {kicker && <div className="ps-k">{kicker}</div>}
         {story ? <p className="ps-nar">{plain(narration)}</p> : <>
@@ -65,11 +66,11 @@ export function PlateStage({ picture, design, kicker, narration, question, answe
           <li key={key} data-k={key} className="movable" onPointerDown={start(key, false)}>{plain(n)}</li>))}</ul>}
       </div>
       {floating.map(({ n, i, key }) => (
-        <div key={key} data-k={key} className="ps-n movable" onPointerDown={start(key, false)}
+        <div key={key} data-k={key} className={`ps-n movable ${looks[key] ?? ''}`} onPointerDown={start(key, false)}
           style={at(key) ?? SPOTS[spots?.[i] ?? ''] ?? SPOTS.n1}>{plain(n)}</div>
       ))}
       {find?.trim() && (
-        <div data-k="f" className="ps-f movable" onPointerDown={start('f', true)}
+        <div data-k="f" className={`ps-f movable ${looks.f ?? ''}`} onPointerDown={start('f', true)}
           style={place.f ? { top: `${place.f.y}%`, bottom: 'auto' } : undefined}>
           <b>Observa y encuentra:</b> {plain(find.replace(/^\s*observa y encuentra:?\s*/i, ''))}
         </div>

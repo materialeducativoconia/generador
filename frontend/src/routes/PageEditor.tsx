@@ -83,7 +83,7 @@ function previewQuery(page: Page, paper: string) {
   const stamp = `${b.asset_id ?? 'none'}:${b.layout ?? ''}:${b.narration ?? ''}:${b.question ?? ''}:${b.answer ?? ''}:${(b.notes ?? []).join('|')}:${b.find ?? ''}:${JSON.stringify(b.place ?? {})}`
   return {
     queryKey: ['page-preview', page.lessonId, b.id, stamp, paper],
-    queryFn: () => api.get<{ image: string; spots?: (string | null)[]; low?: boolean }>(`/api/lessons/${page.lessonId}/pages/${b.id}/preview?paper=${paper}`),
+    queryFn: () => api.get<{ image: string; spots?: (string | null)[]; low?: boolean; looks?: Record<string, string> }>(`/api/lessons/${page.lessonId}/pages/${b.id}/preview?paper=${paper}`),
     staleTime: Infinity,
   }
 }
@@ -163,7 +163,8 @@ function PageView({ seriesId, page, paper, picture, story, design }: { seriesId:
         {movable && view === 'move' ? (
           <PlateStage picture={picture!} design={design} kicker={page.first ? `${page.position} · ${page.section}` : undefined}
             narration={b.narration != null || story ? narration : undefined} question={question} answer={answer ?? undefined}
-            notes={notes} find={find ?? undefined} spots={preview.data?.spots} low={preview.data?.low} place={place} onPlace={setPlace} />
+            notes={notes} find={find ?? undefined} spots={preview.data?.spots} low={preview.data?.low} place={place} onPlace={setPlace}
+            looks={dirty ? undefined : preview.data?.looks} />
         ) : preview.data ? <img src={preview.data.image} alt={`Página: ${b.narration ?? b.question ?? b.subject}`} />
           : picture && !preview.isError ? (  // the painting itself, at once, while the printed page is laid out
             <div className="page-preview-draft"><img src={picture} alt="" /><span className="notice small">Preparando la página…</span></div>

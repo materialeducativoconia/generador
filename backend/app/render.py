@@ -23,6 +23,7 @@ from app.themes import DEFAULT_PALETTE, FRAMES, ORNAMENTS, THEMES, mix, pops, th
 from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Design, Keyboard, LetterGrid, SectionContent, Tracing
 from app.diagrams import render_diagram
 from app.literacy import find_text
+from app.textlook import plate_looks
 from app.identity import mark_svg
 from app.worksheets import answers as worksheet_answers, render_worksheet, solution as worksheet_solution
 
@@ -277,6 +278,29 @@ def note_spots(block, busy: list[str] | None) -> list[str | None]:
     return [spots.get(n) for n in block.notes]
 
 
+NOTE_W = 0.31  # .plate .pn max-width
+
+
+def text_looks(block, tome: "Tome", page: tuple[float, float], ink: str) -> dict[str, str]:
+    """For a bleed plate: whether each text prints straight on the picture or on its card (app.textlook), keyed
+    "q", "f" and "n0".."n3" by the fact's place in block.notes."""
+    data = tome.images.get(block.asset_id, (None,))[0] if block.asset_id else None
+    busy = tome.busy.get(block.asset_id)
+    place = getattr(block, "place", None) or {}
+    w, h = page
+    spots = {}
+    for spot, n, _ in plate_notes(block, busy, "bleed")[0]:
+        i = block.notes.index(n)
+        height = (5 + 4.2 * -(-len(n) // 26)) / h  # about 26 characters a line
+        if spot == "at":
+            x, y = place[f"n{i}"].x / 100, place[f"n{i}"].y / 100
+        else:
+            x = 5 / w if spot in ("n1", "n3") else 1 - 5 / w - NOTE_W
+            y = 0.27 if spot in ("n1", "n2") else 0.50
+        spots[f"n{i}"] = (x, y, x + NOTE_W, y + height)
+    return plate_looks(block, data, page, ink, question_low(block, busy), spots)
+
+
 def vignette_height(block, w: float, h: float, first: bool) -> float:
     """The picture's height on a vignette plate (mm): what the question, answer, facts and the find strip leave, at
     most 56% of the page, so a long question or a third fact never runs under the find strip."""
@@ -299,7 +323,7 @@ def vignette_height(block, w: float, h: float, first: bool) -> float:
 
 
 _env.globals.update(question_low=question_low, vignette_height=vignette_height, poster_title=poster_title, poster_subtitle=poster_subtitle, age_badge=age_badge,
-                    plate_notes=plate_notes)
+                    plate_notes=plate_notes, text_looks=text_looks)
 
 
 def _look(tome: Tome) -> dict:

@@ -21,9 +21,11 @@ STORY = ["band", "bleed"]  # a story reads best with its text beside the picture
 # What the painting must leave room for, by composition (the plate's subject is extended with it).
 COMPOSE = {
     # Where the page's text will sit, so the painting leaves it calm instead of the Inspector having to dodge faces.
-    "bleed": " (the page's text card covers the top quarter and a strip runs along the bottom edge: keep the top "
-             "quarter as calm, simple background such as sky or foliage, and every face, head and the main subject "
-             "fully inside the middle half of the picture, never cut by an edge)",
+    # Plain, light and even, the words print straight on it as in an Usborne or DK page; foliage forces a card.
+    "bleed": " (the page's words are printed straight on the picture in the top quarter and along the bottom edge: "
+             "leave the top quarter as open, plain, light and even background, such as a pale sky or a bare wall, "
+             "with no leaves, objects or patterns there, and a plain floor along the bottom; every face, head and "
+             "the main subject fully inside the middle half of the picture, never cut by an edge)",
     "band": " (composition for the upper part of a page, its text goes below it: characters and subject whole and "
             "in the middle, heads and faces in the upper two thirds, a calm strip of ground along the bottom edge, "
             "nothing cut by any edge)",

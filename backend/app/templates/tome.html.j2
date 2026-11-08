@@ -310,6 +310,11 @@
   .plate .pn.n4 { right: 5mm; top: 50%; }
   .plate .pf { position: absolute; left: 9mm; right: 9mm; bottom: 9mm; background: #fff; border-radius: 7mm; padding: 3.5mm 6mm;
                font: 600 {{ 9 if geo.w < 180 else 10.5 }}pt/1.35 {{ body|safe }}; box-shadow: 0 1.5mm 4mm rgba(0,0,0,.18); }
+  /* A text over a calm, even patch of the picture prints on the art itself, as picture books set it (app.textlook):
+     dark ink with a faint paper halo, or white ink with a soft shadow over a dark patch. Busy patches keep the card. */
+  .plate .open { background: transparent; box-shadow: none; text-shadow: 0 0 .7mm rgba(255,255,255,.9), 0 0 2mm rgba(255,255,255,.55); }
+  .plate .open.light, .plate .open.light h3, .plate .open.light p, .plate .open.light .k, .plate .open.light b,
+  .plate .open.light li::marker { color: #fff; text-shadow: 0 .3mm 1.4mm rgba(0,0,0,.5); }
   /* An exact diagram drawn by code over the picture, on a white card above the "find" strip. */
   .plate .pi { position: absolute; left: 9mm; right: 9mm; bottom: 9mm; background: rgba(255, 255, 255, .95); border-radius: 6mm;
                padding: 4mm 5mm 3mm; text-align: center; }
@@ -511,15 +516,16 @@
       </div>
       {% else %}
       {% set moved = b.place or {} %}
+      {% set looks = text_looks(b, tome, (geo.w, geo.h), c.ink) %}
       <div class="plate" data-block="{{ s.position ~ ':' ~ b.id }}">
         {% if uri %}<img src="{{ uri }}" alt="{{ b.subject }}">
         {% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
-        <div class="pq"{% if moved.q %} style="top: {{ moved.q.y }}%"{% elif question_low(b, tome.busy.get(b.asset_id)) %} style="top: auto; bottom: {{ 27 if b.find else 9 }}mm"{% endif %}>{{ kicker }}
+        <div class="pq{{ (" " ~ looks.q) if looks.q }}"{% if moved.q %} style="top: {{ moved.q.y }}%"{% elif question_low(b, tome.busy.get(b.asset_id)) %} style="top: auto; bottom: {{ 27 if b.find else 9 }}mm"{% endif %}>{{ kicker }}
           {{ head }}
           {% if carded %}<ul class="pqf">{% for n in carded %}<li>{{ n|inline }}</li>{% endfor %}</ul>{% endif %}</div>
-        {% for spot, n, at in placed %}<div class="pn {{ spot }}"{% if at %} style="{{ at }}"{% endif %}>{{ n|inline }}</div>{% endfor %}
+        {% for spot, n, at in placed %}{% set look = looks.get('n' ~ b.notes.index(n)) %}<div class="pn {{ spot }}{{ (" " ~ look) if look }}"{% if at %} style="{{ at }}"{% endif %}>{{ n|inline }}</div>{% endfor %}
         {% if b.inset %}<div class="pi{% if b.find %} above{% endif %}">{{ render_diagram(b.inset, c, th.head) }}{% if b.inset.caption %}<div class="pic">{{ b.inset.caption|inline }}</div>{% endif %}</div>{% endif %}
-        {% if moved.f and b.find %}<div class="pf" style="top: {{ moved.f.y }}%; bottom: auto"><b>Observa y encuentra:</b> {{ b.find|find|inline }}</div>{% else %}{{ find }}{% endif %}
+        {% if b.find %}<div class="pf{{ (" " ~ looks.f) if looks.f }}"{% if moved.f %} style="top: {{ moved.f.y }}%; bottom: auto"{% endif %}><b>Observa y encuentra:</b> {{ b.find|find|inline }}</div>{% endif %}
       </div>
       {% endif %}
     {% elif b.type == "image" and tome.image_uri(b.asset_id) %}

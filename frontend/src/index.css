@@ -1266,5 +1266,10 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
   border-radius: calc(var(--mm) * 7); padding: calc(var(--mm) * 3.5) calc(var(--mm) * 6); color: var(--t-ink);
   font: 600 calc(var(--pt) * 9)/1.35 var(--t-body); box-shadow: 0 calc(var(--mm) * 1.5) calc(var(--mm) * 4) rgb(0 0 0 / .18); }
 .ps-f b { font-family: var(--t-head); color: var(--t-accent); margin-right: calc(var(--mm) * 1.5); }
+/* backend tome.html.j2 .plate .open: the words straight on a calm patch of the picture */
+.plate-stage .open { background: transparent; box-shadow: none;
+  text-shadow: 0 0 calc(var(--mm) * .7) rgb(255 255 255 / .9), 0 0 calc(var(--mm) * 2) rgb(255 255 255 / .55); }
+.plate-stage .open.light, .plate-stage .open.light h3, .plate-stage .open.light .ps-k, .plate-stage .open.light b,
+.plate-stage .open.light li::marker { color: #fff; text-shadow: 0 calc(var(--mm) * .3) calc(var(--mm) * 1.4) rgb(0 0 0 / .5); }
 .page-view-switch { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; }
 .segmented-inline { display: flex; gap: 6px; flex-wrap: wrap; }
