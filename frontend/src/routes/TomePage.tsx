@@ -65,10 +65,12 @@ export function TomePage() {
       {status === 'outline_ready' && <OutlineEditor key={s.version} series={s} />}
       {['generating', 'needs_attention', 'ready'].includes(status) && progress.data && (
         <>
-          {(s.genre === 'picture_book' || s.genre === 'story_book') && !s.owner && status === 'ready' && (
+          {!s.owner && status === 'ready' && (
             <Link to={`/app/tomos/${s.id}/paginas`} className="panel edit-pages">
               <span className="section-h">Editor de páginas</span>
-              <span className="muted small">Ve cada página como sale en el PDF, corrige su texto, cambia su composición o repinta una ilustración</span>
+              <span className="muted small">{s.genre === 'picture_book' || s.genre === 'story_book'
+                ? 'Ve cada página como sale en el PDF, corrige su texto, cambia su composición o repinta una ilustración; también la portada'
+                : 'Edita la portada como sale en el PDF: qué lleva además del título, o píntala de nuevo'}</span>
             </Link>
           )}
           <Sections series={s} progress={progress.data} />

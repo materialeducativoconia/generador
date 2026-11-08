@@ -115,7 +115,8 @@ async def all_series(request: Request, user_id: UserId, q: str = Query("", max_l
                         where l.series_id = s.id and l.review ? 'score') as score,
                       (select json_build_object('id', e.id, 'status', e.status, 'format', coalesce(e.options->>'format', 'pdf'),
                                                 'pages', e.page_count)
-                         from public.exports e where e.series_id = s.id order by e.created_at desc limit 1) as export
+                         from public.exports e where e.series_id = s.id order by e.created_at desc limit 1) as export,
+                      exists (select 1 from public.library_books b where b.series_id = s.id and b.published) as free_book
                  from public.series s left join public.profiles p on p.id = s.user_id
                 where (:q = '' or s.title ilike '%' || :q || '%' or s.topic ilike '%' || :q || '%' or p.email ilike '%' || :q || '%')
                   and (:status = '' or s.status::text = :status) and (:genre = '' or s.genre::text = :genre)

@@ -78,7 +78,7 @@ def test_every_cover_layout_prints(layout):
     t = tome({**DESIGN, "cover_layout": layout})
     t.cover_image = PNG
 
-    assert f'class="cover art {layout}"' in render_html(t, paper="A4", include_answer_key=False)
+    assert f'class="cover art {layout}' in render_html(t, paper="A4", include_answer_key=False)  # + the foot's look
 
 
 async def test_designer_repairs_an_unknown_theme():

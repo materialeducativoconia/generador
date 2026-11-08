@@ -21,6 +21,7 @@ import { FirstVisit, Onboarding } from './routes/Onboarding'
 import { TomePage } from './routes/TomePage'
 import { Welcome } from './routes/Welcome'
 import { Library, LibraryPlate } from './routes/Library'
+import { Book, Books } from './routes/Books'
 
 const authed = (page: ReactNode) => <RequireAuth>{page}</RequireAuth>
 
@@ -31,6 +32,8 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Welcome />} />
+            <Route path="/libros" element={<Books />} />
+            <Route path="/libros/:slug" element={<Book />} />
             <Route path="/laminas" element={<Library />} />
             <Route path="/laminas/:slug" element={<LibraryPlate />} />
             <Route path="/auth/callback" element={<AuthCallback />} />

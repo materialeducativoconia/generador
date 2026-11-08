@@ -28,7 +28,7 @@ EDITABLE = ("generated", "edited", "approved")
 REPAINT = 1  # credits: one picture, painted again
 SCREEN_PX = 1400  # the longest side of a picture in the preview: sharp at 110 dpi on a spread
 RENDERED = 64  # pages kept rendered in memory, about 200 KB each
-_rendered: OrderedDict[str, str] = OrderedDict()
+_rendered: OrderedDict[str, tuple[str, dict]] = OrderedDict()
 PAPERS = Literal["17x21", "8x10", "A4", "Letter", "6x9"]
 
 
@@ -193,3 +193,58 @@ async def repaint_page(lesson_id: uuid.UUID, block_id: str, body: Repaint, reque
             {"s": series["id"]})).scalar_one_or_none()
         await credits.charge(conn, user_id, REPAINT, "Repintar una ilustración", job_id)
     return {"job": {"id": str(job_id) if job_id else None, "kind": "illustration"}}
+
+
+@router.get("/api/series/{series_id}/cover/preview")
+async def cover_preview(series_id: uuid.UUID, request: Request, user_id: UserId, paper: PAPERS = "17x21"):
+    """The cover as the next PDF prints it (its options, the owner's signature and plan), as a picture."""
+    from app.api.exports import signature_of
+    from app.api.series import _own_series
+
+    async with request.app.state.engine.connect() as conn:
+        series = await _own_series(conn, series_id, user_id, staff=True)
+        acc, signature = await signature_of(conn, series["user_id"])
+    key = hashlib.sha256(json.dumps(["cover", str(series_id), paper, signature, acc.plan.watermark] +
+                                    [str(series[c]) for c in ("title", "topic", "genre", "audience", "cover",
+                                                              "cover_key", "cover_options", "design")],
+                                    sort_keys=True, default=str).encode()).hexdigest()
+    if key in _rendered:
+        _rendered.move_to_end(key)
+        return {"image": _rendered[key][0]}
+    storage = request.app.state.storage
+    cover = logo = None
+    if series["cover_key"]:
+        try:
+            cover = _screen_size(await storage.download(series["cover_key"]))[0]
+        except Exception:  # prints as the plain cover
+            pass
+    if signature.get("logo"):
+        try:
+            logo = (await storage.download(signature["logo"]), "image/png")
+        except Exception:
+            pass
+    jpeg = await asyncio.wait_for(asyncio.to_thread(_render_cover, series, cover, signature, logo,
+                                                    acc.plan.watermark, paper), 60)
+    _rendered[key] = ("data:image/jpeg;base64," + base64.b64encode(jpeg).decode(), {})
+    while len(_rendered) > RENDERED:
+        _rendered.popitem(last=False)
+    return {"image": _rendered[key][0]}
+
+
+def _render_cover(series, cover: bytes | None, signature: dict, logo, watermark: bool, paper: str) -> bytes:
+    import pypdfium2
+
+    from app.render import Tome, _document, render_html
+
+    design = Design.model_validate(_parse(series["design"])) if series["design"] else None
+    meta = _parse(series["cover"]) or {}
+    title = series["title"] or series["topic"]
+    tome = Tome(title=title, genre=series["genre"], audience=(_parse(series["audience"]) or {}).get("label", ""),
+                author=signature.get("author"), school=signature.get("school"), logo=logo, sections=[],
+                cover_image=cover, cover_media_type="image/jpeg", cover_lettered=bool(cover) and meta.get("lettered") == title,
+                palette=meta.get("palette"), design=design, watermark=watermark,
+                cover_options=_parse(series["cover_options"]) or {})
+    pdf = pypdfium2.PdfDocument(_document(render_html(tome, paper=paper, include_answer_key=False)).write_pdf())
+    buffer = io.BytesIO()
+    pdf[0].render(scale=110 / 72).to_pil().convert("RGB").save(buffer, "JPEG", quality=85)
+    return buffer.getvalue()

@@ -53,8 +53,8 @@ ${extra}`
 
 const LOGO = `<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="13" height="18" rx="2.5" fill="currentColor" opacity=".18"/><rect x="8" y="3" width="13" height="18" rx="2.5" fill="currentColor"/><path d="M11.5 8.5h6M11.5 12h6M11.5 15.5h3.5" stroke="var(--bg)" stroke-width="1.6" stroke-linecap="round"/></svg>`
 const HEADER = `<header class="top"><a class="brand" href="/">${LOGO}<span>${NAME}</span></a>
-<nav><a href="/material-educativo">Temas</a><a class="wide" href="/comparar">Comparar</a><a class="wide" href="/laminas">Láminas gratis</a><a href="/#planes">Planes</a><a class="btn small" href="/app">Entrar</a></nav></header>`
-const FOOTER = `<footer><p><a href="/">${NAME}</a> · <a href="/material-educativo">Material educativo por tema</a> · <a href="/laminas">Láminas gratis</a> · <a href="/comparar">Comparar apps</a> · <a href="/#planes">Planes</a></p>
+<nav><a href="/material-educativo">Temas</a><a class="wide" href="/comparar">Comparar</a><a class="wide" href="/libros">Libros gratis</a><a href="/#planes">Planes</a><a class="btn small" href="/app">Entrar</a></nav></header>`
+const FOOTER = `<footer><p><a href="/">${NAME}</a> · <a href="/material-educativo">Material educativo por tema</a> · <a href="/libros">Libros gratis</a> · <a href="/comparar">Comparar apps</a> · <a href="/#planes">Planes</a></p>
 <p class="muted">Vista previa sin registro ni tarjeta.</p></footer>`
 
 /** The example covers drifting by, as on the home page: pure CSS, two copies of the row. */
@@ -198,7 +198,7 @@ function homeShell(base: string) {
       image: OG, offers: PUBLIC_PLANS.map((p) => ({ '@type': 'Offer', name: p.label, price: p.price, priceCurrency: 'USD' })) }]
   const body = `<h1>Libros educativos ilustrados, listos en minutos.</h1><p>${esc(HOME_DESCRIPTION)}</p>
 <h2>Material educativo por tema</h2><ul>${TOPICS.map((t) => `<li><a href="${topicHref(t)}">${esc(t.title)}</a></li>`).join('')}</ul>
-<p><a href="/laminas">Láminas gratis para imprimir</a> · <a href="/material-educativo">Todos los temas</a> · <a href="/comparar">Comparar apps</a> · <a href="/#planes">Planes</a></p>`
+<p><a href="/libros">Libros gratis para imprimir</a> · <a href="/material-educativo">Todos los temas</a> · <a href="/comparar">Comparar apps</a> · <a href="/#planes">Planes</a></p>`
   return shell(base, '/', HOME_TITLE, HOME_DESCRIPTION, body, ld)
 }
 
@@ -242,6 +242,48 @@ function plateShell(base: string, p: Plate) {
 <img src="${esc(p.image_url)}" alt="${esc(p.title)}" width="717" height="960"><p>${esc(p.answer)}</p>
 <p>Estilo ${esc(p.style_name)} · PDF tamaño carta gratis.</p>`
   return shell(base, `/laminas/${p.slug}`, title, description, body, [plateLd(p), crumbs], p.image_url)
+}
+
+type FreeBook = { slug: string; title: string; topic: string; audience: string; genre_label: string; page_count: number; pages: string[] }
+
+/** The published free books, from the API; the build goes on without them when it cannot answer (a cold start). */
+async function books(): Promise<FreeBook[]> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${API}/api/books`, { signal: AbortSignal.timeout(30_000) })
+      if (res.ok) return ((await res.json()) as { books: FreeBook[] }).books
+    } catch { /* asleep: try again */ }
+  }
+  console.warn('seo: the book library did not answer; no book pages this build')
+  return []
+}
+
+const bookLd = (b: FreeBook) => ({ '@context': 'https://schema.org', '@type': 'Book', name: b.title, url: `${SITE}/libros/${b.slug}`,
+  image: b.pages[0], inLanguage: 'es', numberOfPages: b.page_count, genre: b.genre_label, about: b.topic,
+  educationalLevel: b.audience || undefined, isAccessibleForFree: true, bookFormat: 'https://schema.org/EBook',
+  publisher: { '@type': 'Organization', name: NAME } })
+
+function booksShell(base: string, list: FreeBook[]) {
+  const title = `Libros gratis para imprimir | ${NAME}`
+  const description = 'Libros ilustrados y cuadernillos completos gratis, en español: hojéalos página por página y descárgalos en PDF para imprimir.'
+  const ld = [{ '@context': 'https://schema.org', '@type': 'CollectionPage', name: title, url: `${SITE}/libros`, description,
+    hasPart: list.map((b) => ({ '@type': 'Book', name: b.title, url: `${SITE}/libros/${b.slug}` })) }]
+  const body = `<h1>Libros completos para imprimir, gratis.</h1><p>${esc(description)}</p>
+<ul>${list.map((b) => `<li><a href="/libros/${b.slug}">${esc(b.title)}</a> · ${esc(b.genre_label)} · ${b.page_count} páginas</li>`).join('')}</ul>`
+  return shell(base, '/libros', title, description, body, ld, list[0]?.pages[0])
+}
+
+function bookShell(base: string, b: FreeBook) {
+  const title = `${b.title} — libro gratis para imprimir | ${NAME}`
+  const description = `${b.genre_label} de ${b.topic}${b.audience ? ` para ${b.audience}` : ''}: ${b.page_count} páginas en PDF, gratis para imprimir.`.slice(0, 158)
+  const crumbs = { '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [
+    { '@type': 'ListItem', position: 1, name: NAME, item: `${SITE}/` },
+    { '@type': 'ListItem', position: 2, name: 'Libros gratis', item: `${SITE}/libros` },
+    { '@type': 'ListItem', position: 3, name: b.title, item: `${SITE}/libros/${b.slug}` }] }
+  const body = `<p><a href="/libros">Libros gratis</a> › ${esc(b.topic)}</p><h1>${esc(b.title)}</h1>
+${b.pages.map((p, i) => `<img src="${esc(p)}" alt="${esc(b.title)}, ${i ? `página ${i + 1}` : 'portada'}" width="480" height="593">`).join('')}
+<p>${esc(description)}</p>`
+  return shell(base, `/libros/${b.slug}`, title, description, body, [bookLd(b), crumbs], b.pages[0])
 }
 
 const CSS = `:root{--bg:#fff;--text:#0c0a09;--muted:#6b6864;--surface:#f7f7f6;--border:#e7e5e2;--accent:#5b4cf0;--accent-soft:#eeecfe}
@@ -320,6 +362,15 @@ for (const p of library) {
   mkdirSync(new URL(`laminas/${p.slug}/`, DIST), { recursive: true })
   writeFileSync(new URL(`laminas/${p.slug}/index.html`, DIST), plateShell(base, p))
   pages.push({ path: `/laminas/${p.slug}`, images: [p.image_url] })
+}
+const shelf = await books()
+mkdirSync(new URL('libros/', DIST), { recursive: true })
+writeFileSync(new URL('libros/index.html', DIST), booksShell(base, shelf))
+pages.push({ path: '/libros' })
+for (const b of shelf) {
+  mkdirSync(new URL(`libros/${b.slug}/`, DIST), { recursive: true })
+  writeFileSync(new URL(`libros/${b.slug}/index.html`, DIST), bookShell(base, b))
+  pages.push({ path: `/libros/${b.slug}`, images: b.pages.slice(0, 1) })
 }
 writeFileSync(index, homeShell(base))
 

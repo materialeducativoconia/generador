@@ -11,12 +11,12 @@ import { usePageTitle } from '../lib/seo'
 
 export type Plate = { id: string; slug: string; title: string; answer: string; topic: string; audience: string; style: string; style_name: string; image_url: string; downloads: number }
 
-function LibraryShell({ children }: { children: React.ReactNode }) {
+export function LibraryShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="library">
       <header className="library-top">
         <Link to="/" className="brand"><Logo /><span>Jelyx Docs</span></Link>
-        <nav><Link to="/laminas">Láminas gratis</Link><Link to="/#planes">Planes</Link><Link to="/#crear" className="welcome-login">Crear un libro</Link></nav>
+        <nav><Link to="/libros">Libros gratis</Link><Link to="/#planes">Planes</Link><Link to="/#crear" className="welcome-login">Crear un libro</Link></nav>
       </header>
       {children}
     </div>

@@ -447,17 +447,47 @@ async def expand_tome(series_id: uuid.UUID, body: Expand, request: Request, user
         return await _created(conn, series_id, job_id)
 
 
+class CoverAsk(BaseModel):
+    instructions: str | None = Field(default=None, max_length=400)  # the page editor's «what to change»
+
+
 @router.post("/api/series/{series_id}/cover", status_code=202)
-async def request_cover(series_id: uuid.UUID, request: Request, user_id: UserId):
+async def request_cover(series_id: uuid.UUID, request: Request, user_id: UserId, body: CoverAsk | None = None):
     async with request.app.state.engine.begin() as conn:
         series = await _own_series(conn, series_id, user_id, lock=True)
         if not series["title"]:
             raise ApiError(409, "invalid_state", "La portada se crea cuando el esquema está listo.")
-        await _new_cover(conn, series_id, user_id, "Portada nueva")
+        ask = (body.instructions or "").strip() if body else ""
+        await _new_cover(conn, series_id, user_id, "Portada nueva", ask or None)
     return {"cover_status": "queued"}
 
 
-async def _new_cover(conn, series_id, user_id, reason: str) -> None:
+class CoverEdit(BaseModel):
+    """What the cover prints besides its title. Unset: unchanged; null: back to the default for the book."""
+
+    name_line: bool | None = None  # «Nombre:» for the child; by default only where a child writes in the book
+    byline: bool | None = None  # «Elaborado por …»
+    age: bool | None = None  # a picture book's age badge
+    kicker: str | None = Field(default=None, max_length=60)  # the label above the title; "" hides it
+
+
+@router.patch("/api/series/{series_id}/cover-options")
+async def edit_cover(series_id: uuid.UUID, body: CoverEdit, request: Request, user_id: UserId):
+    """Free and instant: the next PDF prints the cover this way."""
+    async with request.app.state.engine.begin() as conn:
+        series = await _own_series(conn, series_id, user_id, lock=True)
+        options = dict(_parse(series["cover_options"]) or {})
+        for key, value in body.model_dump(exclude_unset=True).items():
+            if value is None:
+                options.pop(key, None)
+            else:
+                options[key] = " ".join(value.split()) if isinstance(value, str) else value
+        await conn.execute(text("update public.series set cover_options = cast(:o as jsonb) where id = :s"),
+                           {"o": json.dumps(options), "s": series_id})
+    return {"cover_options": options}
+
+
+async def _new_cover(conn, series_id, user_id, reason: str, instructions: str | None = None) -> None:
     busy = (await conn.execute(text(
             "select 1 from public.generation_jobs where series_id = :s and kind = 'cover'"
         " and status in ('queued', 'running')"), {"s": series_id})).first()
@@ -468,7 +498,8 @@ async def _new_cover(conn, series_id, user_id, reason: str) -> None:
         " and created_at > now() - interval '1 day'"), {"u": user_id})).scalar_one()
     if today >= COVERS_PER_DAY:
         raise ApiError(429, "quota_exceeded", f"Puedes crear hasta {COVERS_PER_DAY} portadas al día.")
-    await credits.charge(conn, user_id, COVER, reason, await enqueue_cover(conn, user_id, series_id))
+    await credits.charge(conn, user_id, COVER, reason,
+                         await enqueue_cover(conn, user_id, series_id, instructions=instructions))
 
 
 

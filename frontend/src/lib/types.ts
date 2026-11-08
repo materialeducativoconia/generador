@@ -138,7 +138,11 @@ export type Level = {
 export type TomeVariant = 'style' | 'text' | 'story' | 'next'
 export type TomeVersion = { id: string; title: string | null; topic: string; variant: TomeVariant | null; status: SeriesStatus; created_at: string; house_style: string | null }
 
+/** What the cover prints besides its title (unset: the default for the book). kicker "" hides the label. */
+export type CoverOptions = { name_line?: boolean; byline?: boolean; age?: boolean; kicker?: string }
+
 export type Series = CoverFields & {
+  cover_options?: CoverOptions
   preview: boolean  // the free preview, made at our cost before any plan
   source_id?: string | null  // the tome this one is another version of
   variant?: TomeVariant | null

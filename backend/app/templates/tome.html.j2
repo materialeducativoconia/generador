@@ -21,7 +21,7 @@
     @top-left { content: string(tome-title); font: 600 8pt {{ head|safe }}; color: #8a8580; }
     @top-right { content: string(section-title); font: 600 8pt {{ head|safe }}; color: #8a8580; }
     @bottom-center { content: counter(page); font: 700 9pt {{ head|safe }}; color: #57534e; }
-    {% if tome.watermark %}@bottom-left { content: "{{ copyright }}"; font: 600 6.5pt {{ head|safe }}; color: #a8a29e; }{% endif %}
+    {% if tome.watermark %}@bottom-left { content: "{{ copyright }}"; font: 600 5.5pt {{ body|safe }}; color: #8a8580; letter-spacing: .02em; }{% endif %}
     {% if imprint %}@bottom-right { content: "{{ imprint|safe }}"; font: 700 7.5pt {{ head|safe }}; color: {{ c.accent }}; letter-spacing: .06em; }{% endif %}
   }
   {% if print_edition %}
@@ -51,16 +51,25 @@
   .cover.art .kicker { color: {{ c.accent }}; }
   .cover.art h1 { color: {{ c.ink }}; margin: 4mm 0 3mm; }
   .cover.art .audience { color: {{ c.ink }}; opacity: .75; }
-  .cover.art .name, .cover.art .by { background: rgba(255, 255, 255, .9); padding: 2.5mm 4mm; border-radius: 3mm; border: 0; }
-  .cover.art .name { bottom: 30mm; left: 16mm; }
-  .cover.art .by { bottom: 18mm; left: 16mm; }
+  /* The foot of an art cover as publishers set it: no boxes, the words on the picture. Their colour comes from the
+     patch under them (app.textlook): dark ink with a paper halo, white, or white over a soft shade when it is busy. */
+  .cover.art .name, .cover.art .by { background: none; padding: 0; border-radius: 0; border: 0; z-index: 2; color: {{ c.ink }};
+                                     text-shadow: 0 0 .7mm rgba(255,255,255,.9), 0 0 2mm rgba(255,255,255,.6); }
+  .cover.art .name { bottom: 30mm; left: 16mm; width: 78mm; font: 600 9.5pt {{ head|safe }}; letter-spacing: .06em;
+                     text-transform: uppercase; padding-bottom: 7mm; border-bottom: .35mm solid currentColor; }
+  .cover.art .by { bottom: 16mm; left: 16mm; font: 600 9pt {{ head|safe }}; letter-spacing: .04em; }
+  .cover.foot-light .name, .cover.foot-light .by, .cover.foot-shade .name, .cover.foot-shade .by {
+    color: #fff; text-shadow: 0 .2mm 1.2mm rgba(0,0,0,.55); }
+  .cover.foot-shade::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 46mm; z-index: 1;
+                              background: linear-gradient(to top, rgba(0,0,0,.55), rgba(0,0,0,0)); }
 
   /* band: the art bleeds and the title sits on a solid accent band at the foot */
   .cover.band .cover-plate { top: auto; bottom: 0; left: 0; right: 0; border-radius: 0; padding: 10mm 16mm 30mm;
                              background: {{ c.accent }}; }
   .cover.band .kicker, .cover.band h1, .cover.band .audience { color: #fff; }
   .cover.band .name { bottom: 14mm; }
-  .cover.band .by { bottom: 6mm; background: none; color: #fff; padding: 0 4mm; }
+  .cover.band .name, .cover.band .by { color: #fff; text-shadow: none; }
+  .cover.band .by { bottom: 6mm; }
 
   /* framed: a plain tinted page, a big title and the art inside a rounded frame */
   .cover.framed { background: {{ c.tint }}; }
@@ -68,7 +77,8 @@
   .cover.framed h1 { font-size: 44pt; }
   .cover.framed .cover-art { top: auto; bottom: 46mm; left: 16mm; width: calc(100% - 32mm); height: 58%;
                              border-radius: 8mm; border: 2.4pt solid {{ c.accent }}; }
-  .cover.framed .name { bottom: 30mm; left: 16mm; border: 1.2pt solid {{ c.line }}; }
+  .cover.framed .name, .cover.framed .by { text-shadow: none; }
+  .cover.framed .name { bottom: 30mm; left: 16mm; }
 
   /* poster: a picture book's cover, as children's collections do it: the art to the edges, a series badge, a big
      outlined title, a ribbon for the subtitle and a round age sticker */
@@ -287,9 +297,12 @@
                 @bottom-right { content: none } @bottom-left { content: none } }
   .plate { page: plate; break-before: page; break-after: page; position: relative; width: {{ geo.w }}mm; height: {{ geo.h }}mm;
            overflow: hidden; background: var(--tint); }
-  {% if tome.watermark %}/* Plates have no margins for the page's foot: the copyright lies on the picture's lower edge. */
-  .plate::after { content: "{{ copyright }}"; position: absolute; right: 4mm; bottom: 1.6mm; padding: .4mm 2mm;
-                  border-radius: 2mm; background: rgba(255, 255, 255, .8); color: #57534e; font: 600 6pt {{ head|safe }}; }
+  {% if tome.watermark %}/* The copyright line as publishers print it: tiny, plain, at the foot of every page. Plates and the cover
+     have no margin, so it lies on the picture's lower edge, in dark ink with a paper halo or in white (app.textlook). */
+  .plate::after, .cover::after { content: "{{ copyright }}"; position: absolute; left: 0; right: 0; bottom: 1.8mm; z-index: 3;
+                  text-align: center; color: #44403c; font: 600 5.5pt {{ body|safe }}; letter-spacing: .02em;
+                  text-shadow: 0 0 .6mm rgba(255,255,255,.95), 0 0 1.5mm rgba(255,255,255,.7); }
+  .plate.cr-light::after, .cover.foot-light::after, .cover.foot-shade::after { color: #fff; text-shadow: 0 .2mm 1mm rgba(0,0,0,.6); }
   {% endif %}
   .plate > img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; }
   .plate .ph { position: absolute; left: 14mm; right: 14mm; top: 70mm; text-align: center; color: var(--muted);
@@ -374,34 +387,37 @@
 </div>
 {% else %}
 {% if tome.cover_data_uri and tome.genre in ("picture_book", "story_book") %}
-<div class="cover art poster">
+{% set foot = cover_foot(tome, (geo.w, geo.h), c.ink, "poster") %}
+<div class="cover art poster{{ (' ' ~ foot) if foot }}">
   <img class="cover-art" src="{{ tome.cover_data_uri }}" alt="">
   {% if tome.cover_lettered %}
   <h1><span class="sr">{{ tome.title }}</span></h1>
   {% else %}
   <div class="poster-top">
-    <div class="series">{{ tome.kicker }}</div>
+    {% if cover.kicker %}<div class="series">{{ cover.kicker }}</div>{% endif %}
     <h1>{{ poster_title(tome.title, th.head, c, geo.w - 24) }}<span class="sr">{{ tome.title }}</span></h1>
     {% if poster_subtitle(tome.title) %}<div class="ribbon">{{ poster_subtitle(tome.title) }}</div>{% endif %}
   </div>
   {% endif %}
-  <div class="age">{{ age_badge(tome.audience) }}</div>
+  {% if cover.age %}<div class="age">{{ age_badge(tome.audience) }}</div>{% endif %}
 {% elif tome.cover_data_uri %}
-<div class="cover art {{ tome.design.cover_layout if tome.design else 'plate' }}">
+{% set layout = tome.design.cover_layout if tome.design else 'plate' %}
+{% set foot = cover_foot(tome, (geo.w, geo.h), c.ink, layout) %}
+<div class="cover art {{ layout }}{{ (' ' ~ foot) if foot }}">
   <img class="cover-art" src="{{ tome.cover_data_uri }}" alt="">
   <div class="cover-plate">
-    <div class="kicker">{{ tome.kicker }}</div>
+    {% if cover.kicker %}<div class="kicker">{{ cover.kicker }}</div>{% endif %}
     <h1>{{ tome.title }}</h1>
     <div class="audience">{{ tome.audience }}</div>
   </div>
 {% else %}
 <div class="cover">
-  <div class="kicker">{{ tome.kicker }}</div>
+  {% if cover.kicker %}<div class="kicker">{{ cover.kicker }}</div>{% endif %}
   <h1>{{ tome.title }}</h1>
   <div class="audience">{{ tome.audience }}</div>
 {% endif %}
-  <div class="name">Nombre:</div>
-  {% if tome.signature or tome.logo %}<div class="by">{% if tome.logo %}<img class="logo" src="{{ tome.logo_data_uri }}" alt="">{% endif %}{% if tome.signature %}Elaborado por {{ tome.signature }}{% endif %}</div>{% endif %}
+  {% if cover.name_line %}<div class="name">Nombre:</div>{% endif %}
+  {% if cover.byline and (tome.signature or tome.logo) %}<div class="by">{% if tome.logo %}<img class="logo" src="{{ tome.logo_data_uri }}" alt="">{% endif %}{% if tome.signature %}Elaborado por {{ tome.signature }}{% endif %}</div>{% endif %}
   {% if seal %}<div class="imprint">{{ seal }}<span>{{ tome.brand.name }}</span></div>{% endif %}
 </div>
 {% endif %}
@@ -517,7 +533,7 @@
       {% else %}
       {% set moved = b.place or {} %}
       {% set looks = text_looks(b, tome, (geo.w, geo.h), c.ink) %}
-      <div class="plate" data-block="{{ s.position ~ ':' ~ b.id }}">
+      <div class="plate{{ ' cr-light' if looks.c == 'open light' }}" data-block="{{ s.position ~ ':' ~ b.id }}">
         {% if uri %}<img src="{{ uri }}" alt="{{ b.subject }}">
         {% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
         <div class="pq{{ (" " ~ looks.q) if looks.q }}"{% if moved.q %} style="top: {{ moved.q.y }}%"{% elif question_low(b, tome.busy.get(b.asset_id)) %} style="top: auto; bottom: {{ 27 if b.find else 9 }}mm"{% endif %}>{{ kicker }}

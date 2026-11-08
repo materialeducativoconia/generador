@@ -15,7 +15,7 @@ from uuid6 import uuid7
 
 from app import credits
 from app.api.deps import current_user_id
-from app.api.series import _jsonable, _own_series, is_staff
+from app.api.series import _jsonable, _own_series, _parse, is_staff
 from app.errors import ApiError
 
 router = APIRouter()
@@ -36,6 +36,17 @@ class ExportOptions(BaseModel):
         return self
 
 
+async def signature_of(conn, user_id) -> tuple:
+    """The user's plan and their «Elaborado por»: the profile's signature, the logo by plan."""
+    acc = await credits.account(conn, user_id)
+    signature = dict((await conn.execute(text(
+        """select coalesce(nullif(p.author_name, ''), p.display_name) as author, p.school,
+                  case when :logo then o.logo_key end as logo
+             from public.profiles p, public.organizations o where p.id = :u and o.id = :o"""),
+        {"u": user_id, "o": acc.org_id, "logo": acc.plan.logo})).mappings().one())
+    return acc, signature
+
+
 @router.post("/api/series/{series_id}/exports", status_code=202)
 async def create_export(series_id: uuid.UUID, body: ExportOptions, request: Request, user_id: UserId):
     async with request.app.state.engine.begin() as conn:
@@ -50,13 +61,8 @@ async def create_export(series_id: uuid.UUID, body: ExportOptions, request: Requ
                 await credits.require(conn, user_id, "word", "Descargar en Word")
             if body.edition == "print":
                 await credits.require(conn, user_id, "print_edition", "La edición para imprenta")
-        acc = await credits.account(conn, user_id)
+        acc, signature = await signature_of(conn, user_id)
         watermark, sources = acc.plan.watermark, acc.plan.sources
-        signature = dict((await conn.execute(text(  # "Elaborado por": the profile's signature, the logo by plan
-            """select coalesce(nullif(p.author_name, ''), p.display_name) as author, p.school,
-                      case when :logo then o.logo_key end as logo
-                 from public.profiles p, public.organizations o where p.id = :u and o.id = :o"""),
-            {"u": user_id, "o": acc.org_id, "logo": acc.plan.logo})).mappings().one())
         if series["status"] != "ready":
             raise ApiError(409, "invalid_state", "Todas las secciones deben estar generadas para exportar.")
         versions = (await conn.execute(text(
@@ -64,7 +70,8 @@ async def create_export(series_id: uuid.UUID, body: ExportOptions, request: Requ
         ), {"s": series_id})).all()
         content_hash = hashlib.sha256(json.dumps({
             "title": series["title"], "lessons": [[str(i), v] for i, v in versions], "options": body.model_dump(),
-            "cover": series["cover_key"], "design": _jsonable_design(series["design"]), "watermark": watermark,
+            "cover": series["cover_key"], "cover_options": _parse(series["cover_options"]) or {},
+            "design": _jsonable_design(series["design"]), "watermark": watermark,
             "sources": sources, "signature": signature,
         }, sort_keys=True).encode()).hexdigest()
         existing = (await conn.execute(text(

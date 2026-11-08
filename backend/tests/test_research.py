@@ -115,5 +115,5 @@ def test_a_classroom_copy_carries_the_copyright_on_every_page_even_over_a_plate(
 
     html = render_html(t, paper="17x21", include_answer_key=False)
 
-    assert html.count("Jelyx Docs · uso en el aula") == 2  # the page foot and the plate's lower edge
+    assert html.count("Jelyx Docs. Material para uso en el aula") == 2  # the page foot and the plate's lower edge
     assert "©" in html and 'class="pvi"' in html

@@ -174,3 +174,13 @@ export function useProgress(id: string) {
 
   return query
 }
+
+/** A whole book the team published in the free library (backend app.api.books). */
+export type FreeBook = {
+  id: string; slug: string; title: string; topic: string; audience: string; genre: string | null; genre_label: string
+  page_count: number; pages: string[]; downloads: number
+}
+
+export function useFreeBooks() {
+  return useQuery({ queryKey: ['free-books'], queryFn: () => api.get<{ books: FreeBook[] }>('/api/books') })
+}

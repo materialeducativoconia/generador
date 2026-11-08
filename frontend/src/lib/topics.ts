@@ -122,7 +122,7 @@ export const TOPICS: Topic[] = [
     audience: 'Primaria baja (6–8)', request: 'Un libro ilustrado del sistema solar para niños de 7 años, un planeta por página con datos curiosos',
     outline: ['El Sol, nuestra estrella', 'Mercurio y Venus', 'La Tierra y la Luna', 'Marte, el planeta rojo', 'Los gigantes: Júpiter y Saturno', 'Urano, Neptuno y más allá'],
     includes: ['Una lámina ilustrada por tema', 'Preguntas y datos curiosos', 'Personaje guía', 'PDF a color o para imprenta'],
-    faq: [['¿Para qué edad sirve?', 'Escribe la edad en tu pedido y el texto se ajusta a ese lector, de preescolar a secundaria.'], ['¿Puedo ver ejemplos gratis?', 'Sí, en la biblioteca de láminas gratis hay ilustraciones del sistema solar en seis estilos.']],
+    faq: [['¿Para qué edad sirve?', 'Escribe la edad en tu pedido y el texto se ajusta a ese lector, de preescolar a secundaria.'], ['¿Puedo ver ejemplos gratis?', 'Sí, en la biblioteca de libros gratis puedes hojear libros completos y descargarlos en PDF.']],
   },
   {
     slug: 'cuentos-ilustrados-para-ninos', cover: 'lectura-cuentos', name: 'Cuentos ilustrados', title: 'Cuentos ilustrados para niños, hechos a tu medida',

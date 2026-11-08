@@ -501,14 +501,17 @@ def _letters(text_: str) -> str:
     return "".join(ch for ch in text_.casefold() if ch.isalnum())
 
 
-async def enqueue_cover(conn, user_id, series_id, free: bool = False, illustrate: bool = False) -> uuid.UUID:
-    """`illustrate`: the plates are painted after the cover (a tome redone in another style)."""
+async def enqueue_cover(conn, user_id, series_id, free: bool = False, illustrate: bool = False,
+                        instructions: str | None = None) -> uuid.UUID:
+    """`illustrate`: the plates are painted after the cover (a tome redone in another style); `instructions`: what
+    the user asked of a new cover in the page editor."""
     job_id = uuid.uuid4()
     await conn.execute(text(
         """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, max_attempts)
            values (:j, :u, :s, 'cover', 'queued', cast(:p as jsonb), 3)"""),
         {"j": job_id, "u": user_id, "s": series_id,
-         "p": json.dumps({"free": True} if free else {"illustrate": True} if illustrate else {})})
+         "p": json.dumps({"free": True} if free else {"illustrate": True} if illustrate else
+                         {"instructions": instructions} if instructions else {})})
     return job_id
 
 
@@ -562,6 +565,9 @@ async def _cover(deps: Deps, job: dict) -> None:
             "select title from public.lessons where series_id = :s order by position"),
             {"s": job["series_id"]})).scalars().all()
     brief = _brief(series, None)
+    if job["payload"].get("instructions"):
+        brief.extra_instructions = "\n".join(filter(None, [brief.extra_instructions,
+                                                           f"Para la portada: {job['payload']['instructions']}"]))
     title, genre = series["title"] or series["topic"], series["genre"] or ""
     # The Designer runs with the Architect; this is the fallback when it failed there.
     design = Design.model_validate(_json(series["design"])) if series["design"] else None

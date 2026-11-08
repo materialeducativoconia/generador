@@ -7,7 +7,7 @@ import { errorText } from '../components/ErrorNote'
 import { api } from '../lib/apiClient'
 import { tomeName } from '../lib/labels'
 import { useSeries } from '../lib/queries'
-import type { Block, Design, PlatePlace } from '../lib/types'
+import type { Block, CoverOptions, Design, PlatePlace, Series } from '../lib/types'
 
 type Plate = Extract<Block, { type: 'image' }>
 type Page = { lessonId: string; position: number; section: string; block: Plate; first: boolean }
@@ -28,10 +28,11 @@ export function PageEditor() {
   const pages = useMemo<Page[]>(() => (s?.lessons ?? []).flatMap((l) =>
     (l.content_json?.blocks ?? []).filter((b): b is Plate => b.type === 'image' && b.size === 'plate')
       .map((block, i) => ({ lessonId: l.id, position: l.position, section: l.title, block, first: i === 0 }))), [s])
-  const current = pages.find((p) => p.block.id === params.get('p') && p.lessonId === params.get('s')) ?? pages[0]
+  const onCover = params.get('p') === 'portada' || (!!s && pages.length === 0)
+  const current = onCover ? undefined : pages.find((p) => p.block.id === params.get('p') && p.lessonId === params.get('s')) ?? pages[0]
   const next = current && pages[pages.indexOf(current) + 1]
   const paper = s?.genre === 'story_book' || s?.genre === 'picture_book' ? '17x21' : 'A4'
-  const painting = pages.some((p) => !p.block.asset_id)
+  const painting = pages.some((p) => !p.block.asset_id) || s?.cover_status === 'queued' || s?.cover_status === 'running'
   const { refetch } = series
 
   useEffect(() => {  // a picture being painted again: look for it every few seconds
@@ -49,11 +50,15 @@ export function PageEditor() {
         <p className="eyebrow">Editor de páginas</p>
         <h1 className="display sm">{tomeName(s)}</h1>
       </header>
-      {!current ? (
-        <p className="muted">Este tomo no tiene páginas ilustradas para editar.</p>
-      ) : (
-        <div className="page-editor">
+      <div className="page-editor">
           <ol className="page-strip" aria-label="Páginas">
+            <li>
+              <button type="button" className={onCover ? 'on' : undefined} aria-current={onCover ? 'page' : undefined}
+                onClick={() => setParams({ p: 'portada' }, { replace: true })}>
+                {s.cover_url ? <img src={s.cover_url} alt="" /> : <span className="page-strip-wait" aria-hidden="true" />}
+                <span className="page-strip-n">Portada</span>
+              </button>
+            </li>
             {pages.map((p, i) => {
               const url = p.block.asset_id ? s.assets[p.block.asset_id] : undefined
               const on = p === current
@@ -68,11 +73,12 @@ export function PageEditor() {
               )
             })}
           </ol>
-          <PageView key={`${current.lessonId}:${current.block.id}`} seriesId={id} page={current} paper={paper}
-            picture={current.block.asset_id ? s.assets[current.block.asset_id] : undefined} story={s.genre === 'story_book'} design={s.design} />
+          {current ? (
+            <PageView key={`${current.lessonId}:${current.block.id}`} seriesId={id} page={current} paper={paper}
+              picture={current.block.asset_id ? s.assets[current.block.asset_id] : undefined} story={s.genre === 'story_book'} design={s.design} />
+          ) : <CoverView series={s} paper={paper} />}
           {next && <Prefetch page={next} paper={paper} />}
         </div>
-      )}
     </AppShell>
   )
 }
@@ -243,6 +249,85 @@ function PageView({ seriesId, page, paper, picture, story, design }: { seriesId:
           {repaint.isPending ? 'Enviando…' : 'Repintar (1 crédito)'}
         </button>
         {repaint.error && <p className="error small" role="alert">{errorText(repaint.error, 'No se pudo repintar.')}</p>}
+      </aside>
+    </>
+  )
+}
+
+/** The cover: what it prints besides the title (free, at once) and a new painting from an instruction (credits). */
+function CoverView({ series: s, paper }: { series: Series; paper: string }) {
+  const qc = useQueryClient()
+  const saved = s.cover_options ?? {}
+  const picture = s.genre === 'picture_book' || s.genre === 'story_book'
+  const defaults = { name_line: s.genre === 'worksheets' || s.genre === 'coloring_book', byline: true, age: true }
+  const [opts, setOpts] = useState<Required<Omit<CoverOptions, 'kicker'>>>({
+    name_line: saved.name_line ?? defaults.name_line, byline: saved.byline ?? true, age: saved.age ?? true })
+  const [kicker, setKicker] = useState<string | null>(saved.kicker ?? null)  // null: the book's own label
+  const [ask, setAsk] = useState('')
+  const painting = s.cover_status === 'queued' || s.cover_status === 'running'
+  const stamp = `${s.cover_url}:${JSON.stringify(saved)}:${s.title}`
+  const preview = useQuery({
+    queryKey: ['cover-preview', s.id, stamp, paper], staleTime: Infinity,
+    queryFn: () => api.get<{ image: string }>(`/api/series/${s.id}/cover/preview?paper=${paper}`),
+  })
+  const refresh = () => qc.invalidateQueries({ queryKey: ['series', s.id] })
+  const save = useMutation({
+    mutationFn: () => api.patch(`/api/series/${s.id}/cover-options`, { ...opts, kicker }),
+    onSuccess: refresh,
+  })
+  const repaint = useMutation({
+    mutationFn: () => api.post(`/api/series/${s.id}/cover`, { instructions: ask.trim() }),
+    onSuccess: async () => {
+      setAsk('')
+      await Promise.all([refresh(), qc.invalidateQueries({ queryKey: ['me'] })])
+    },
+  })
+  const dirty = opts.name_line !== (saved.name_line ?? defaults.name_line) || opts.byline !== (saved.byline ?? true) ||
+    opts.age !== (saved.age ?? true) || kicker !== (saved.kicker ?? null)
+  const toggle = (key: keyof typeof opts, label: string, hint: string) => (
+    <label className="check">
+      <input type="checkbox" checked={opts[key]} onChange={(e) => setOpts({ ...opts, [key]: e.target.checked })} />
+      <span>{label}<span className="muted small"> · {hint}</span></span>
+    </label>
+  )
+
+  return (
+    <>
+      <figure className="page-preview">
+        {preview.data ? <img src={preview.data.image} alt={`Portada: ${s.title ?? s.topic}`} />
+          : <div className="page-preview-wait">{preview.isError ? 'No se pudo mostrar la portada.' : 'Preparando la portada…'}</div>}
+        {painting && <figcaption className="notice small">Pintando la portada nueva… aparecerá aquí en unos minutos.</figcaption>}
+        {dirty && <figcaption className="muted small">La vista muestra la portada guardada: guarda los cambios para verlos aquí.</figcaption>}
+      </figure>
+      <aside className="page-form">
+        <p className="muted small">Portada</p>
+        <div className="field">
+          <span className="field-head"><label htmlFor="pe-kicker">Texto sobre el título</label>
+            {kicker === '' ? <button type="button" className="ghost small" onClick={() => setKicker(null)}>Mostrarlo</button>
+              : <button type="button" className="ghost small" onClick={() => setKicker('')}>Quitar</button>}</span>
+          {kicker !== '' && <input id="pe-kicker" value={kicker ?? ''} placeholder="El de la colección o el tipo de libro"
+            onChange={(e) => setKicker(e.target.value || null)} maxLength={60} />}
+        </div>
+        <fieldset className="field"><legend>Qué más lleva</legend>
+          {toggle('name_line', 'Línea «Nombre»', 'para que el niño escriba su nombre')}
+          {toggle('byline', '«Elaborado por»', 'tu firma y tu logo')}
+          {picture && toggle('age', 'Sello de edad', 'el círculo con las edades')}
+        </fieldset>
+        <button className="primary" onClick={() => save.mutate()} disabled={!dirty || save.isPending}>
+          {save.isPending ? 'Guardando…' : 'Guardar cambios'}
+        </button>
+        {save.error && <p className="error small" role="alert">{errorText(save.error, 'No se pudo guardar la portada.')}</p>}
+        {save.isSuccess && !dirty && <p className="muted small" role="status">Guardado. El próximo PDF ya lo incluye.</p>}
+        <p className="muted small">El título se cambia desde la página del tomo.</p>
+
+        <hr />
+        <label className="field"><span>Pintar otra portada</span>
+          <textarea value={ask} onChange={(e) => setAsk(e.target.value)} rows={3} maxLength={400}
+            placeholder="Ej.: los personajes más grandes; un fondo de cielo liso abajo; de noche" /></label>
+        <button className="ghost" onClick={() => repaint.mutate()} disabled={ask.trim().length < 3 || repaint.isPending || painting}>
+          {repaint.isPending ? 'Enviando…' : 'Pintar portada nueva (4 créditos)'}
+        </button>
+        {repaint.error && <p className="error small" role="alert">{errorText(repaint.error, 'No se pudo pedir la portada.')}</p>}
       </aside>
     </>
   )

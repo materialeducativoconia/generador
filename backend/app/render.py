@@ -23,7 +23,7 @@ from app.themes import DEFAULT_PALETTE, FRAMES, ORNAMENTS, THEMES, mix, pops, th
 from app.content import DIAGRAM_TYPES, WORKSHEET_TYPES, Design, Keyboard, LetterGrid, SectionContent, Tracing
 from app.diagrams import render_diagram
 from app.literacy import find_text
-from app.textlook import plate_looks
+from app.textlook import patch_look, plate_looks
 from app.identity import mark_svg
 from app.worksheets import answers as worksheet_answers, render_worksheet, solution as worksheet_solution
 
@@ -53,6 +53,7 @@ class Tome:
     cover_image: bytes | None = None
     cover_media_type: str = "image/png"
     cover_lettered: bool = False  # the title is painted into the cover art: nothing is set over it
+    cover_options: dict = field(default_factory=dict)  # the user's choices in the page editor (app.content.CoverOptions)
     palette: list[str] | None = None  # [background, ink, accent] from the cover agent
     design: Design | None = None  # the Designer's theme; None means the classic theme
     images: dict[str, tuple[bytes, str]] = field(default_factory=dict)  # asset id -> (bytes, media type)
@@ -81,6 +82,17 @@ class Tome:
         if self.collection:
             return f"{self.collection} · Nivel {self.level}" if self.level else self.collection
         return GENRE_LABEL.get(self.genre, "Material educativo")
+
+    @property
+    def cover(self) -> SimpleNamespace:
+        """What the cover prints besides its title: the student's name line only where a child writes in the book
+        (a workbook, a colouring book), the author line, the age badge and the label above the title."""
+        o = self.cover_options or {}
+        name_line = o.get("name_line")
+        return SimpleNamespace(
+            name_line=self.genre in ("worksheets", "coloring_book") if name_line is None else name_line,
+            byline=o.get("byline", True), age=o.get("age", True),
+            kicker=self.kicker if o.get("kicker") is None else o["kicker"].strip())
 
     @property
     def brand(self):
@@ -278,6 +290,18 @@ def note_spots(block, busy: list[str] | None) -> list[str | None]:
     return [spots.get(n) for n in block.notes]
 
 
+def cover_foot(tome: "Tome", page: tuple[float, float], ink: str, layout: str) -> str:
+    """The class that colours an art cover's foot (name line, author, copyright) from the picture under it. A band
+    cover carries them on its own colour band, a framed one on its plain tint."""
+    if layout in ("band", "framed") or not tome.cover_image:
+        return ""
+    try:
+        look = patch_look(tome.cover_image, (0.08, 0.8, 0.6, 0.97), page, ink)
+    except OSError:  # an unreadable picture: the plain foot
+        return ""
+    return {"open": "", "open light": "foot-light"}.get(look, "foot-shade")
+
+
 NOTE_W = 0.31  # .plate .pn max-width
 
 
@@ -298,7 +322,10 @@ def text_looks(block, tome: "Tome", page: tuple[float, float], ink: str) -> dict
             x = 5 / w if spot in ("n1", "n3") else 1 - 5 / w - NOTE_W
             y = 0.27 if spot in ("n1", "n2") else 0.50
         spots[f"n{i}"] = (x, y, x + NOTE_W, y + height)
-    return plate_looks(block, data, page, ink, question_low(block, busy), spots)
+    looks = plate_looks(block, data, page, ink, question_low(block, busy), spots)
+    if tome.watermark and data:  # the copyright line along the foot
+        looks["c"] = patch_look(data, (0.2, 1 - 4.5 / h, 0.8, 1 - 1 / h), page, ink)
+    return looks
 
 
 def vignette_height(block, w: float, h: float, first: bool) -> float:
@@ -323,7 +350,7 @@ def vignette_height(block, w: float, h: float, first: bool) -> float:
 
 
 _env.globals.update(question_low=question_low, vignette_height=vignette_height, poster_title=poster_title, poster_subtitle=poster_subtitle, age_badge=age_badge,
-                    plate_notes=plate_notes, text_looks=text_looks)
+                    plate_notes=plate_notes, text_looks=text_looks, cover_foot=cover_foot)
 
 
 def _look(tome: Tome) -> dict:
@@ -336,7 +363,7 @@ def _look(tome: Tome) -> dict:
     seal = Markup(mark_svg(brand, colors["accent"], th.head)) if brand else ""
     imprint = brand.name.replace("\\", "\\\\").replace('"', '\\"') if brand else ""  # for CSS content strings
     return {"th": th, "c": colors, "seal": seal, "confetti": confetti(colors) if th.kids else None, "imprint": imprint,
-            "copyright": f"© {date.today().year} Jelyx Docs · uso en el aula", "head": f'"{th.head}"', "body": f'"{th.body}"', "theme_fonts": theme_fonts,
+            "cover": tome.cover, "copyright": f"© {date.today().year} Jelyx Docs. Material para uso en el aula; prohibida su venta.", "head": f'"{th.head}"', "body": f'"{th.body}"', "theme_fonts": theme_fonts,
             "fonts": (ASSETS / "fonts").as_uri(), "frame": {"border": border, "radius": radius,
                                                          "pad": 0 if border == "none" else 4}}
 
