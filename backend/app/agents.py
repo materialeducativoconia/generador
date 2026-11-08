@@ -173,7 +173,10 @@ Catálogo de bloques (usa solo estos "type"):
   inset? (opcional): un diagrama exacto que el código dibuja sobre la lámina, en un recuadro abajo. Úsalo cuando
   la respuesta depende de un dato que una pintura suele equivocar: orden o tamaño (sizes), fases (phases), un
   ciclo o proceso (cycle), fechas (timeline), cantidades (bar_chart). Lleva su propio id. Con inset, el subject
-  describe la escena y los personajes, no el dato exacto (nada de «los ocho planetas en orden»).
+  describe la escena y los personajes, no el dato exacto (nada de «los ocho planetas en orden»). El inset responde
+  a la pregunta de su lámina; si la pregunta no trata de tamaños, orden, fases, un ciclo, fechas o cantidades, la
+  lámina no lleva inset. En sizes compara cosas de tamaño parecido (de 1 a 40 veces), nunca una hormiga con un
+  árbol, y usa shape "circle" solo para cosas redondas.
 - sizes {items: [{label, size, color?}], shape: circle|bar, unit?, caption?}  ← cosas en su orden real y a
   escala (size = diámetro, altura o largo reales, en la misma unidad; color hex opcional): planetas desde el Sol,
   dinosaurios por largo, animales por altura. Datos reales, no inventados.

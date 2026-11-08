@@ -15,10 +15,11 @@ const plain = (t: string) => t.replace(/\*\*?([^*]+)\*\*?/g, '$1')
 
 /** A bleed plate laid out as the PDF prints it (same millimetres, fonts and colours), its texts dragged with a finger
  * or the cursor. The words follow the form as the user types; positions are % of the page, as the PDF reads them. */
-export function PlateStage({ picture, design, kicker, narration, question, answer, notes, find, spots, low, looks = {}, place, onPlace }: {
+export function PlateStage({ picture, design, kicker, narration, question, answer, notes, find, spots, low, looks = {}, inset, place, onPlace }: {
   picture: string; design: Design | null | undefined; kicker?: string; narration?: string; question?: string; answer?: string
   notes: string[]; find?: string; spots?: Spot[]; low?: boolean; place: PlatePlace; onPlace: (p: PlatePlace) => void
   looks?: Record<string, string>  // the saved page's texts: "open" on the picture, "open light" in white, else a card
+  inset?: boolean  // an exact diagram printed at the foot (it does not move): shown as its place, to keep texts off it
 }) {
   useThemeFonts(design)
   const stage = useRef<HTMLDivElement>(null)
@@ -53,8 +54,9 @@ export function PlateStage({ picture, design, kicker, narration, question, answe
 
   return (
     <div ref={stage} className="plate-stage" style={themeVars(design).style}
-      onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
+      onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end}>
       <img src={picture} alt="" draggable={false} />
+      {inset && <div className={find?.trim() ? 'ps-i above' : 'ps-i'} aria-hidden="true">Diagrama</div>}
       <div data-k="q" className={`ps-q movable ${looks.q ?? ''}`} onPointerDown={start('q', true)}
         style={place.q ? { top: `${place.q.y}%` } : low ? { top: 'auto', bottom: `calc(var(--mm) * ${find ? 27 : 9})` } : undefined}>
         {kicker && <div className="ps-k">{kicker}</div>}

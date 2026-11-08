@@ -133,8 +133,8 @@ function PageView({ seriesId, page, paper, picture, story, design }: { seriesId:
   const dirty = narration !== (b.narration ?? '') || question !== (b.question ?? '') || (answer ?? '') !== (b.answer ?? '') ||
     (find ?? '') !== (b.find ?? '') || layout !== (b.layout ?? 'bleed') ||
     notes.filter((n) => n.trim()).join('|') !== (b.notes ?? []).join('|') || placed
-  // Texts lie over the picture only on a bleed page (an inset diagram keeps its own place at the foot).
-  const movable = layout === 'bleed' && !!picture && !!b.asset_id && !b.inset
+  // Texts lie over the picture only on a bleed page; an inset diagram keeps its own place at the foot.
+  const movable = layout === 'bleed' && !!picture && !!b.asset_id
   const layouts = LAYOUTS.filter((l) => !story || l.key !== 'vignette')
   // A fact removed: the ones after it move up a place, and so does where the user had dragged them.
   const dropNote = (i: number) => {
@@ -164,7 +164,7 @@ function PageView({ seriesId, page, paper, picture, story, design }: { seriesId:
           <PlateStage picture={picture!} design={design} kicker={page.first ? `${page.position} · ${page.section}` : undefined}
             narration={b.narration != null || story ? narration : undefined} question={question} answer={answer ?? undefined}
             notes={notes} find={find ?? undefined} spots={preview.data?.spots} low={preview.data?.low} place={place} onPlace={setPlace}
-            looks={dirty ? undefined : preview.data?.looks} />
+            looks={dirty ? undefined : preview.data?.looks} inset={!!b.inset} />
         ) : preview.data ? <img src={preview.data.image} alt={`Página: ${b.narration ?? b.question ?? b.subject}`} />
           : picture && !preview.isError ? (  // the painting itself, at once, while the printed page is laid out
             <div className="page-preview-draft"><img src={picture} alt="" /><span className="notice small">Preparando la página…</span></div>

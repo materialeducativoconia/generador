@@ -1,7 +1,7 @@
 """Phase 8: literacy worksheets only use letters the child already knows (checked by code, not by the model)."""
 
 from app.content import Outline, SectionContent
-from app.literacy import allowed_letters, check_blocks, check_section, graphemes, tidy
+from app.literacy import allowed_letters, check_blocks, check_picture_book, check_section, graphemes, tidy
 
 OUTLINE = Outline(title="Método", genre="worksheets", known_letters=["a", "e", "i", "o", "u"], sections=[
     {"title": "La m", "letters": ["m"]}, {"title": "La p", "letters": ["p"]}, {"title": "La ch", "letters": ["ch"]}])
@@ -96,3 +96,14 @@ def test_an_array_instruction_needs_its_rows():
                        "items": [{"object": "huevo", "count": 10}]})
 
     assert check_blocks(content) == ["c1: la instrucción pide 2 filas de 5: pon count 10 y rows 2"]
+
+
+def test_a_sizes_inset_from_a_ladybird_to_a_tree_is_sent_back():
+    def plate(sizes):
+        return {"id": "p1", "type": "image", "kind": "illustration", "size": "plate", "subject": "x",
+                "question": "¿Qué es más grande?", "answer": "El perro.",
+                "inset": {"id": "d1", "type": "sizes", "shape": "bar",
+                          "items": [{"label": f"c{i}", "size": s} for i, s in enumerate(sizes)]}}
+
+    assert [p.split(":")[0] for p in check_picture_book(section(plate([0.7, 3, 60, 800])))] == ["p1"]
+    assert check_picture_book(section(plate([3, 10, 60]))) == []

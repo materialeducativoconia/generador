@@ -134,6 +134,9 @@ def tidy(content: SectionContent, section_title: str) -> None:
     content.blocks = blocks or content.blocks
 
 
+SIZES_SPREAD = 40
+
+
 def check_picture_book(content: SectionContent) -> list[str]:
     """A picture book's pages are plates: the picture to the edges with its question and answer over it."""
     problems = []
@@ -142,6 +145,12 @@ def check_picture_book(content: SectionContent) -> list[str]:
             problems.append(f"{b.id}: en un libro ilustrado cada página es una lámina: size \"plate\" con question y answer")
         elif b.type == "image" and b.size == "plate" and not (b.question and b.answer):
             problems.append(f"{b.id}: la lámina necesita question (la pregunta, con ¿?) y answer (2 o 3 frases)")
+        if b.type == "image" and b.inset and b.inset.type == "sizes":
+            sizes = [i.size for i in b.inset.items]
+            if max(sizes) > SIZES_SPREAD * min(sizes):  # a ladybird beside a tree: a dot beside a giant disc
+                problems.append(f"{b.id}: el inset sizes compara cosas de tamaños demasiado distintos (el más grande "
+                                f"mide más de {SIZES_SPREAD} veces el más pequeño) y no se ven; compara cosas "
+                                "parecidas o quita el inset")
     return problems
 
 

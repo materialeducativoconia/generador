@@ -17,6 +17,11 @@ TASTE = {
     "collage": ["vignette", "bleed", "band"],
 }
 DEFAULT = ["bleed", "band", "vignette"]
+# A plate with an exact diagram drawn by code: its card and the find strip cover the lower half of the page.
+INSET_COMPOSE = (" (a diagram card covers the whole lower half of the page and the question the top fifth: draw every "
+                 "character, face and the main subject small enough to fit whole in the band between 20% and 50% of "
+                 "the height, standing on a horizon there; the lower half is only plain, even ground, grass or floor "
+                 "with nothing important on it)")
 STORY = ["band", "bleed"]  # a story reads best with its text beside the picture, never a cut-out encyclopedia page
 # What the painting must leave room for, by composition (the plate's subject is extended with it).
 COMPOSE = {

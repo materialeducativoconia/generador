@@ -30,7 +30,7 @@ from app.artwork import ImageRequest, plan_sheets, sheet_prompt, slice_sheet
 from app.house_styles import BY_KEY, STYLE_NOTE, finish, style_references
 from app.house_styles import apply as apply_house_style
 from app.content import PLATE_GENRES
-from app.layout import COMPOSE, lay_out
+from app.layout import COMPOSE, INSET_COMPOSE, lay_out
 from app.illustrator import (ASPECT, cover_jpeg, line_art_coverage, normalize_subject, prepare_image, reference_image,
                              upscale, vectorize)
 from app.references import find_covers
@@ -730,9 +730,9 @@ def _picture_requests(lessons) -> list[ImageRequest]:
         for b in (_json(lesson["content_json"]) or {}).get("blocks", []):
             ref = f"{lesson['position']}:{b['id']}"
             if b.get("type") == "image" and not b.get("asset_id"):
-                # A plate with an exact diagram keeps its lower third calm: the inset card sits there.
-                compose = (" (keep the lower third of the picture calm: a diagram card goes there)"
-                           if b.get("inset") else "") + COMPOSE.get(b.get("layout") or "", "")
+                # A plate with an exact diagram: its card and the find strip take the lower half, the question the
+                # top fifth, so the characters live in between, never under the card.
+                compose = INSET_COMPOSE if b.get("inset") else COMPOSE.get(b.get("layout") or "", "")
                 facts = [b.get("question"), b.get("answer"), *(b.get("notes") or [])]
                 check = ". ".join(f for f in facts if f) or None
                 images.append(ImageRequest(ref=ref, lesson_id=lesson["id"], block_id=b["id"], kind=b["kind"],
