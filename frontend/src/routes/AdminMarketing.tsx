@@ -8,12 +8,15 @@ import { api } from '../lib/apiClient'
 import { GENRE_LABEL } from '../lib/labels'
 import { useMe, useSeries } from '../lib/queries'
 import type { Genre, Series } from '../lib/types'
+import { StoryboardVideo } from '../video/Storyboard'
 import { TopicToBook } from '../video/TopicToBook'
-import { DURATION, FPS, SIZES, fontsReady, type VideoScript, type VideoTome } from '../video/spec'
+import { DURATION, FPS, SCENES, SIZES, boardFrames, fontsReady, timeline, type Scene, type SceneType, type Storyboard, type VideoKind,
+  type VideoScript, type VideoTome } from '../video/spec'
 import { AdminTabs } from './AdminUsers'
 
 type Format = keyof typeof SIZES
-type Video = { id: string; template: string; series_id: string | null; format: Format; script: VideoScript; created_at: string; has_mp4: boolean; rendered_at: string | null }
+type Video = { id: string; series_id: string | null; format: Format; created_at: string; has_mp4: boolean; rendered_at: string | null }
+  & ({ template: 'storyboard'; script: Storyboard } | { template: 'topic_to_book'; script: VideoScript })
 type Tome = { id: string; title: string; genre: Genre | null; cover_url: string | null }
 
 const FIELDS: [keyof VideoScript, string, number][] = [
@@ -22,14 +25,25 @@ const FIELDS: [keyof VideoScript, string, number][] = [
   ['cta', 'Cierre', 60],
 ]
 const FORMAT_LABEL: Record<Format, string> = { '9:16': 'Vertical 9:16', '1:1': 'Cuadrado 1:1', '16:9': 'Horizontal 16:9' }
+const KIND_LABEL: Record<VideoKind, string> = { marketing: 'Marketing', explainer: 'Explicativo', tutorial: 'Tutorial' }
+const KIND_HINT: Record<VideoKind, string> = {
+  marketing: 'Ej.: anuncio para mamás que hacen homeschooling: ahorra el domingo',
+  explainer: 'Ej.: cómo funciona Jelyx, de escribir el tema al PDF',
+  tutorial: 'Ej.: tutorial para editar las páginas de un libro',
+}
+const headline = (v: Video) => v.template === 'storyboard' ? v.script.title : v.script.hook
 
 /** The tome as the video shows it: its cover, its first pictures and its sections. */
 function videoTome(s: Series): VideoTome {
   const pictures = s.lessons.flatMap((l) => (l.content_json?.blocks ?? [])
     .filter((b) => b.type === 'image' && b.asset_id).map((b) => s.assets[(b as { asset_id: string }).asset_id]))
+  type Plate = { asset_id?: string; question?: string; answer?: string; notes?: string[]; find?: string; size?: string }
+  const plate = s.lessons.flatMap((l) => (l.content_json?.blocks ?? []) as unknown as Plate[])
+    .find((b) => b.size === 'plate' && b.asset_id && b.question && s.assets[b.asset_id])
   return {
     title: s.title ?? s.topic, kind: s.genre ? GENRE_LABEL[s.genre] : 'Libro', audience: s.audience.label,
     cover: s.cover_url, pages: pictures.filter(Boolean).slice(0, 6), sections: s.lessons.map((l) => l.title),
+    plate: plate && { image: s.assets[plate.asset_id!], question: plate.question!, answer: plate.answer, notes: plate.notes ?? [], find: plate.find },
   }
 }
 
@@ -41,17 +55,19 @@ export function AdminMarketing() {
   const [open, setOpen] = useState<string | null>(null)
   const [seriesId, setSeriesId] = useState('')
   const [format, setFormat] = useState<Format>('9:16')
-  const [angle, setAngle] = useState('')
+  const [ask, setAsk] = useState('')
+  const [kind, setKind] = useState<VideoKind>('tutorial')
+  const [duration, setDuration] = useState<15 | 30 | 45 | 60>(30)
   const videos = useQuery({ queryKey: ['marketing-videos'], enabled: staff,
     queryFn: () => api.get<{ videos: Video[] }>('/api/admin/marketing/videos') })
   const tomes = useQuery({ queryKey: ['admin-series', 'ready-for-video'], enabled: staff,
     queryFn: () => api.get<{ series: Tome[] }>('/api/admin/series?status=ready&limit=96') })
   const create = useMutation({
-    mutationFn: () => api.post<{ video: Video }>('/api/admin/marketing/videos', { series_id: seriesId, format, angle: angle.trim() || null }),
+    mutationFn: () => api.post<{ video: Video }>('/api/admin/marketing/videos', { series_id: seriesId, format, ask: ask.trim() || null, kind, duration }),
     onSuccess: async ({ video }) => {
       await qc.invalidateQueries({ queryKey: ['marketing-videos'] })
       setOpen(video.id)
-      setAngle('')
+      setAsk('')
     },
   })
   const fetchMp4 = useMutation({  // the kept MP4: a short-lived link, opened as a download
@@ -67,8 +83,8 @@ export function AdminMarketing() {
       <AdminTabs />
       <header className="page-editor-head">
         <p className="eyebrow">Marketing</p>
-        <h1 className="display sm">Videos promocionales</h1>
-        <p className="muted">«De un tema a un libro en 30 s»: la app animada con un tomo real. DeepSeek escribe el guion; tú lo ajustas, lo revisas y descargas el MP4.</p>
+        <h1 className="display sm">Videos de la app</h1>
+        <p className="muted">Pide el video que necesitas: un anuncio, cómo funciona la app o un tutorial. DeepSeek dirige el storyboard con escenas de la app real y un tomo tuyo; tú lo ajustas, lo revisas y descargas el MP4.</p>
       </header>
 
       <section className="panel marketing-new">
@@ -86,11 +102,24 @@ export function AdminMarketing() {
             ))}
           </div>
         </fieldset>
-        <label className="field"><span>Enfoque (opcional)</span>
-          <input value={angle} onChange={(e) => setAngle(e.target.value)} maxLength={300}
-            placeholder="Ej.: para mamás que hacen homeschooling; ahorra el domingo" /></label>
+        <fieldset className="field"><legend>Tipo de video</legend>
+          <div className="segmented-inline">
+            {(Object.keys(KIND_LABEL) as VideoKind[]).map((k) => (
+              <button key={k} type="button" className={kind === k ? 'chip on' : 'chip'} onClick={() => setKind(k)}>{KIND_LABEL[k]}</button>
+            ))}
+          </div>
+        </fieldset>
+        <label className="field"><span>¿Qué video necesitas?</span>
+          <textarea value={ask} onChange={(e) => setAsk(e.target.value)} maxLength={500} rows={3} placeholder={KIND_HINT[kind]} /></label>
+        <fieldset className="field"><legend>Duración</legend>
+          <div className="segmented-inline">
+            {([15, 30, 45, 60] as const).map((d) => (
+              <button key={d} type="button" className={duration === d ? 'chip on' : 'chip'} onClick={() => setDuration(d)}>{d} s</button>
+            ))}
+          </div>
+        </fieldset>
         <button className="primary" onClick={() => create.mutate()} disabled={!seriesId || create.isPending}>
-          {create.isPending ? 'DeepSeek escribe el guion…' : 'Escribir guion'}
+          {create.isPending ? 'DeepSeek dirige el video…' : 'Crear storyboard'}
         </button>
         {create.error && <p className="error small" role="alert">{errorText(create.error, 'No se pudo escribir el guion.')}</p>}
       </section>
@@ -104,8 +133,8 @@ export function AdminMarketing() {
           {videos.data?.videos.map((v) => (
             <li key={v.id} className={v.id === open ? 'on' : undefined}>
               <div>
-                <strong>{v.script.hook}</strong>
-                <span className="muted small">{FORMAT_LABEL[v.format]} · {(v.series_id && titles[v.series_id]) || 'Tomo'} · {new Date(v.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}</span>
+                <strong>{headline(v)}</strong>
+                <span className="muted small">{v.template === 'storyboard' ? `${KIND_LABEL[v.script.kind]} · ${v.script.duration} s · ` : ''}{FORMAT_LABEL[v.format]} · {(v.series_id && titles[v.series_id]) || 'Tomo'} · {new Date(v.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}</span>
               </div>
               <span className={v.has_mp4 ? 'pill ok' : 'pill idle'}>{v.has_mp4 ? 'MP4 listo' : 'Sin MP4'}</span>
               <span className="marketing-actions">
@@ -115,7 +144,7 @@ export function AdminMarketing() {
             </li>
           ))}
         </ul>
-        {videos.data?.videos.length === 0 && <p className="muted">Aún no hay videos. Elige un tomo y escribe el primer guion.</p>}
+        {videos.data?.videos.length === 0 && <p className="muted">Aún no hay videos. Elige un tomo y pide el primero.</p>}
       </section>
     </AppShell>
   )
@@ -124,34 +153,48 @@ export function AdminMarketing() {
 function VideoEditor({ video, title, onClose }: { video: Video; title?: string; onClose: () => void }) {
   const qc = useQueryClient()
   const series = useSeries(video.series_id ?? '')
-  const [script, setScript] = useState<VideoScript>(video.script)
+  const [script, setScript] = useState<VideoScript | Storyboard>(video.script)
   const [format, setFormat] = useState<Format>(video.format)
   const [progress, setProgress] = useState<number | null>(null)
   const [renderError, setRenderError] = useState<string | null>(null)
   const tome = useMemo(() => series.data ? videoTome(series.data) : null, [series.data])
   const [width, height] = SIZES[format]
+  const board = video.template === 'storyboard' ? script as Storyboard : null
+  const fixed = board ? null : script as VideoScript
+  const frames = board ? boardFrames(board) : DURATION
   const dirty = JSON.stringify(script) !== JSON.stringify(video.script) || format !== video.format
   const save = useMutation({
-    mutationFn: () => api.patch(`/api/admin/marketing/videos/${video.id}`, { format, script }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['marketing-videos'] }),
+    mutationFn: () => api.patch<{ video: Video }>(`/api/admin/marketing/videos/${video.id}`, { format, script }),
+    onSuccess: async ({ video: saved }) => {
+      setScript(saved.script)  // the server evens the scenes out to the length asked for
+      await qc.invalidateQueries({ queryKey: ['marketing-videos'] })
+    },
   })
   const remove = useMutation({
     mutationFn: () => api.delete(`/api/admin/marketing/videos/${video.id}`),
     onSuccess: async () => { onClose(); await qc.invalidateQueries({ queryKey: ['marketing-videos'] }) },
   })
+  const voice = board ? board.scenes.map((sc) => sc.voice.trim()).filter(Boolean).join(' ') : fixed!.voiceover ?? spoken(fixed!)
+  const screen = board ? boardScreen(board) : onScreen(fixed!)
 
   async function render() {
     if (!tome) return
     setRenderError(null)
     setProgress(0)
     try {  // drawn and encoded in this tab (WebCodecs), then kept in storage so it is downloaded again at once
-      if (dirty) await save.mutateAsync()  // the kept MP4 always matches the saved script
+      let current = script
+      if (dirty) current = (await save.mutateAsync()).video.script  // the kept MP4 always matches the saved script
       const { renderMediaOnWeb } = await import('@remotion/web-renderer')
       await fontsReady()
-      const result = await renderMediaOnWeb({
-        composition: { id: 'topic-to-book', component: TopicToBook, durationInFrames: DURATION, fps: FPS, width, height, defaultProps: { script, tome } },
-        inputProps: { script, tome }, onProgress: (p) => setProgress(p.progress),
-      })
+      const result = video.template === 'storyboard'
+        ? await renderMediaOnWeb({
+          composition: { id: 'storyboard', component: StoryboardVideo, durationInFrames: boardFrames(current as Storyboard), fps: FPS, width, height,
+            defaultProps: { board: current as Storyboard, tome } },
+          inputProps: { board: current as Storyboard, tome }, onProgress: (p) => setProgress(p.progress) })
+        : await renderMediaOnWeb({
+          composition: { id: 'topic-to-book', component: TopicToBook, durationInFrames: DURATION, fps: FPS, width, height,
+            defaultProps: { script: current as VideoScript, tome } },
+          inputProps: { script: current as VideoScript, tome }, onProgress: (p) => setProgress(p.progress) })
       const blob = await result.getBlob()
       const url = URL.createObjectURL(blob)
       const a = Object.assign(document.createElement('a'), { href: url, download: `jelyx-${format.replace(':', 'x')}-${video.id.slice(0, 6)}.mp4` })
@@ -173,15 +216,19 @@ function VideoEditor({ video, title, onClose }: { video: Video; title?: string; 
   return (
     <section className="panel marketing-editor">
       <div className="marketing-head">
-        <span className="section-h">{title ?? 'Video'}</span>
+        <span className="section-h">{title ?? 'Video'}{board ? ` · ${KIND_LABEL[board.kind]}` : ''}</span>
         <button type="button" className="ghost small" onClick={onClose}>Cerrar</button>
       </div>
       <div className="marketing-body">
         <div className="marketing-stage" style={{ aspectRatio: `${width} / ${height}` }}>
-          {tome ? (
-            <Player component={TopicToBook} inputProps={{ script, tome }} durationInFrames={DURATION} fps={FPS}
-              compositionWidth={width} compositionHeight={height} controls loop style={{ width: '100%', height: '100%' }} />
-          ) : <div className="page-preview-wait">{series.isError ? 'No se pudo cargar el tomo.' : 'Cargando el tomo…'}</div>}
+          {!tome ? <div className="page-preview-wait">{series.isError ? 'No se pudo cargar el tomo.' : 'Cargando el tomo…'}</div>
+            : board ? (
+              <Player component={StoryboardVideo} inputProps={{ board, tome }} durationInFrames={frames} fps={FPS}
+                compositionWidth={width} compositionHeight={height} controls loop style={{ width: '100%', height: '100%' }} />
+            ) : (
+              <Player component={TopicToBook} inputProps={{ script: fixed!, tome }} durationInFrames={DURATION} fps={FPS}
+                compositionWidth={width} compositionHeight={height} controls loop style={{ width: '100%', height: '100%' }} />
+            )}
         </div>
         <div className="page-form">
           <fieldset className="field"><legend>Formato</legend>
@@ -191,11 +238,11 @@ function VideoEditor({ video, title, onClose }: { video: Video; title?: string; 
               ))}
             </div>
           </fieldset>
-          {FIELDS.map(([key, label, max]) => (
+          {board ? <BoardFields board={board} onChange={setScript} /> : FIELDS.map(([key, label, max]) => (
             <label key={key} className="field"><span>{label}</span>
               {key === 'request'
-                ? <textarea value={script[key]} onChange={(e) => setScript({ ...script, [key]: e.target.value })} rows={2} maxLength={max} />
-                : <input value={script[key]} onChange={(e) => setScript({ ...script, [key]: e.target.value })} maxLength={max} />}
+                ? <textarea value={fixed![key]} onChange={(e) => setScript({ ...fixed!, [key]: e.target.value })} rows={2} maxLength={max} />
+                : <input value={fixed![key]} onChange={(e) => setScript({ ...fixed!, [key]: e.target.value })} maxLength={max} />}
             </label>
           ))}
           <button className="primary" onClick={() => save.mutate()} disabled={!dirty || save.isPending}>{save.isPending ? 'Guardando…' : 'Guardar guion'}</button>
@@ -207,13 +254,14 @@ function VideoEditor({ video, title, onClose }: { video: Video; title?: string; 
           </button>
           <span className="muted small">El video se crea en este navegador (mejor en Chrome de escritorio); tarda unos minutos y la pestaña debe quedar abierta. Queda guardado en «Tus videos» para descargarlo cuando quieras.</span>
           {renderError && <p className="error small" role="alert">{renderError}</p>}
-          <label className="field"><span>Guion para voz en off · unos 30 s</span>
-            <textarea value={script.voiceover ?? spoken(script)} onChange={(e) => setScript({ ...script, voiceover: e.target.value })} rows={6} maxLength={700} />
-            <span className="muted small">{words(script.voiceover ?? spoken(script))} palabras · pégalo en tu app de voz (ElevenLabs, CapCut…) y súmale el audio al MP4.</span>
-            <CopyButton text={script.voiceover ?? spoken(script)} label="Copiar guion de voz" />
+          <label className="field"><span>Guion para voz en off · {Math.round(frames / FPS)} s</span>
+            {board ? <textarea value={voice} readOnly rows={6} />
+              : <textarea value={voice} onChange={(e) => setScript({ ...fixed!, voiceover: e.target.value })} rows={6} maxLength={700} />}
+            <span className="muted small">{words(voice)} palabras{board ? ' · se edita escena por escena, arriba' : ''} · pégalo en tu app de voz (ElevenLabs, CapCut…) y súmale el audio al MP4.</span>
+            <CopyButton text={voice} label="Copiar guion de voz" />
           </label>
           <div className="field"><span>Textos en pantalla, por escena</span>
-            <CopyButton text={onScreen(script)} label="Copiar textos en pantalla" />
+            <CopyButton text={screen} label="Copiar textos en pantalla" />
           </div>
           {script.post && (
             <label className="field"><span>Texto para publicar</span>
@@ -227,6 +275,55 @@ function VideoEditor({ video, title, onClose }: { video: Video; title?: string; 
     </section>
   )
 }
+
+/** The storyboard, scene by scene: what it shows, how long, its line on screen and its voice; reordered or removed. */
+function BoardFields({ board, onChange }: { board: Storyboard; onChange: (b: Storyboard) => void }) {
+  const [adding, setAdding] = useState<SceneType>('editor_open')
+  const set = (i: number, scene: Partial<Scene>) => onChange({ ...board, scenes: board.scenes.map((sc, j) => (j === i ? { ...sc, ...scene } : sc)) })
+  const move = (i: number, by: number) => {
+    const scenes = [...board.scenes]
+    ;[scenes[i], scenes[i + by]] = [scenes[i + by], scenes[i]]
+    onChange({ ...board, scenes })
+  }
+  const steps = timeline(board)
+  return (
+    <div className="field board">
+      <label className="field"><span>Título del video</span>
+        <input value={board.title} onChange={(e) => onChange({ ...board, title: e.target.value })} maxLength={80} /></label>
+      <span>Escenas · {board.duration} s en total (al guardar se ajustan a esa duración)</span>
+      <ol className="board-scenes">
+        {board.scenes.map((sc, i) => (
+          <li key={i}>
+            <div className="board-head">
+              <strong>{steps[i].step ? `Paso ${steps[i].step} · ` : ''}{SCENES[sc.type].label}</strong>
+              <input type="number" min={1} max={15} step={0.5} value={sc.seconds} aria-label="Segundos"
+                onChange={(e) => set(i, { seconds: Number(e.target.value) || 1 })} /><span className="muted small">s</span>
+              <button type="button" className="ghost small" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Subir">↑</button>
+              <button type="button" className="ghost small" disabled={i === board.scenes.length - 1} onClick={() => move(i, 1)} aria-label="Bajar">↓</button>
+              <button type="button" className="ghost small" disabled={board.scenes.length <= 2}
+                onClick={() => onChange({ ...board, scenes: board.scenes.filter((_, j) => j !== i) })} aria-label="Quitar escena">✕</button>
+            </div>
+            <input value={sc.caption} onChange={(e) => set(i, { caption: e.target.value })} maxLength={70} placeholder="Texto en pantalla" />
+            {SCENES[sc.type].types && <input value={sc.text} onChange={(e) => set(i, { text: e.target.value })} maxLength={140} placeholder={SCENES[sc.type].types} />}
+            <textarea value={sc.voice} onChange={(e) => set(i, { voice: e.target.value })} maxLength={300} rows={2} placeholder="Voz en off de esta escena" />
+          </li>
+        ))}
+      </ol>
+      <div className="board-add">
+        <select value={adding} onChange={(e) => setAdding(e.target.value as SceneType)}>
+          {(Object.keys(SCENES) as SceneType[]).map((t) => <option key={t} value={t}>{SCENES[t].label}</option>)}
+        </select>
+        <button type="button" className="ghost small" disabled={board.scenes.length >= 16} onClick={() => onChange({ ...board,
+          scenes: [...board.scenes.slice(0, -1), { type: adding, seconds: 4, caption: '', voice: '', text: '' }, ...board.scenes.slice(-1)] })}>
+          + Añadir escena</button>
+      </div>
+    </div>
+  )
+}
+
+const clock = (frames: number) => `${Math.round(frames / FPS)} s`
+const boardScreen = (b: Storyboard) => timeline(b).map(({ scene, from, frames, step }) =>
+  `${clock(from)}–${clock(from + frames)} · ${step ? `Paso ${step} · ` : ''}${SCENES[scene.type].label}: ${scene.caption}${scene.text ? ` (${scene.text})` : ''}`).join('\n')
 
 const words = (t: string) => t.split(/\s+/).filter(Boolean).length
 // Scripts written before the voiceover existed: their screen lines, read in order.

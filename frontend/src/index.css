@@ -1143,6 +1143,13 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .marketing-list li.on { border-color: var(--accent); }
 .marketing-list li > div { display: grid; gap: 2px; flex: 1; min-width: 200px; }
 .marketing-actions { display: flex; gap: 6px; }
+.board-scenes { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.board-scenes li { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.board-head { display: flex; align-items: center; gap: 6px; }
+.board-head strong { flex: 1; font-size: 13px; }
+.board-head input { width: 56px; }
+.board-add { display: flex; gap: 8px; align-items: center; }
+.board-add select { flex: 1; }
 @media (max-width: 900px) { .marketing-body { grid-template-columns: 1fr; } }
 .free-book { display: grid; gap: 4px; text-decoration: none; color: var(--text); }
 .library-grid .free-book > img { aspect-ratio: 170 / 210; object-fit: cover; margin-bottom: 0; }

@@ -24,7 +24,7 @@ async def test_the_team_gets_a_video_script_written_from_a_tome_and_edits_it(raw
 
     assert (await client.post("/api/admin/marketing/videos", json={"series_id": str(sid)},
                               headers=bearer(key, owner))).status_code == 403
-    made = await client.post("/api/admin/marketing/videos", json={"series_id": str(sid), "format": "16:9"},
+    made = await client.post("/api/admin/marketing/videos", json={"series_id": str(sid), "format": "16:9", "template": "topic_to_book"},
                              headers=bearer(key, admin))
     assert made.status_code == 201
     video = made.json()["video"]
@@ -65,7 +65,7 @@ async def test_a_rendered_mp4_is_kept_for_downloading_again_until_the_script_cha
             return f"https://signed.test/{bucket}/{k}?download={download_name}"
 
     app.state.storage = Storage()
-    video = (await client.post("/api/admin/marketing/videos", json={"series_id": str(sid)},
+    video = (await client.post("/api/admin/marketing/videos", json={"series_id": str(sid), "template": "topic_to_book"},
                                headers=bearer(key, admin))).json()["video"]
     vid = video["id"]
     assert video["has_mp4"] is False
@@ -86,3 +86,42 @@ async def test_a_rendered_mp4_is_kept_for_downloading_again_until_the_script_cha
     changed = await client.patch(f"/api/admin/marketing/videos/{vid}", headers=bearer(key, admin),
                                  json={"script": {**SCRIPT, "cta": "Otro cierre"}})
     assert changed.json()["video"]["has_mp4"] is False  # it showed the old words
+
+
+BOARD = {"title": "Cómo editar las páginas de tu libro", "post": "Edita tu libro. #docentes", "scenes": [
+    {"type": "editor_open", "seconds": 5, "caption": "Abre el Editor de páginas", "voice": "Abre el editor."},
+    {"type": "editor_move", "seconds": 5, "caption": "Arrastra la pregunta", "voice": "Arrastra la pregunta."},
+    {"type": "editor_facts", "seconds": 5, "caption": "Quita o añade datos", "voice": "Quita o añade datos."},
+    {"type": "editor_save", "seconds": 5, "caption": "Guarda", "voice": "Y guarda."}]}
+
+
+async def test_the_director_turns_a_request_into_a_tutorial_storyboard_of_the_apps_scenes(raw_db, google_user, client,
+                                                                                         key, engine):  # noqa: F811
+    owner = await google_user()
+    sid = await _written(raw_db, client, key, engine, owner)
+    admin = await google_user(email="director@jelyx.test")
+    await raw_db.execute("update public.profiles set platform_role = 'admin' where id = $1", admin)
+    llm = ScriptedLLM(json.dumps(BOARD))
+    client._transport.app.state.llm = llm
+
+    made = await client.post("/api/admin/marketing/videos", headers=bearer(key, admin), json={
+        "series_id": str(sid), "ask": "Tutorial para editar páginas", "kind": "tutorial", "duration": 30})
+
+    assert made.status_code == 201
+    video = made.json()["video"]
+    board = video["script"]
+    assert video["template"] == "storyboard" and board["kind"] == "tutorial" and board["duration"] == 30
+    assert "Tutorial para editar páginas" in llm.calls[0][-1]["content"] and "editor_move" in llm.calls[0][0]["content"]
+    types = [s["type"] for s in board["scenes"]]
+    assert types[0] == "title" and types[-1] == "cta"  # the code opens on a title and closes on the call to action
+    assert types[1:-1] == ["editor_open", "editor_move", "editor_facts", "editor_save"]
+    assert abs(sum(s["seconds"] for s in board["scenes"]) - 30) < 0.2  # exactly the length asked for
+    assert board["scenes"][3]["text"]  # a typing scene always has something to type
+
+    reordered = {**board, "scenes": [board["scenes"][0], board["scenes"][2], board["scenes"][1], *board["scenes"][3:]]}
+    edited = await client.patch(f"/api/admin/marketing/videos/{video['id']}", headers=bearer(key, admin),
+                                json={"script": reordered})
+    assert [s["type"] for s in edited.json()["video"]["script"]["scenes"]][1:3] == ["editor_move", "editor_open"]
+    bad = await client.patch(f"/api/admin/marketing/videos/{video['id']}", headers=bearer(key, admin),
+                             json={"script": {**board, "scenes": [{"type": "explosion"}]}})
+    assert bad.status_code == 422  # only scenes that exist

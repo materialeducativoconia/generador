@@ -7,14 +7,14 @@ import uuid
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import text
 
 from app.agents import AgentFailed
 from app.api.admin import _staff
 from app.api.deps import current_user_id
 from app.errors import ApiError
-from app.marketing import VideoScript, video_script
+from app.marketing import Storyboard, VideoScript, director, tidy_storyboard, video_script
 from app.render import GENRE_LABEL
 
 log = logging.getLogger("api")
@@ -45,12 +45,16 @@ async def list_videos(request: Request, user_id: UserId):
 class NewVideo(BaseModel):
     series_id: uuid.UUID
     format: Format = "9:16"
-    angle: str | None = Field(default=None, max_length=300)  # what the team wants the video to stress
+    # The director (any video asked for in words) or the first fixed template, «De un tema a un libro en 30 s».
+    template: Literal["storyboard", "topic_to_book"] = "storyboard"
+    ask: str | None = Field(default=None, max_length=500)  # what video the team needs (for the fixed one: its angle)
+    kind: Literal["marketing", "explainer", "tutorial"] = "marketing"
+    duration: Literal[15, 30, 45, 60] = 30
 
 
 @router.post("/api/admin/marketing/videos", status_code=201)
 async def new_video(body: NewVideo, request: Request, user_id: UserId):
-    """A new video of a tome: DeepSeek writes its script (a few seconds)."""
+    """A new video of a tome: DeepSeek directs it (a few seconds)."""
     llm = request.app.state.llm
     if llm is None:
         raise ApiError(503, "unavailable", "El guionista no está configurado.")
@@ -59,34 +63,52 @@ async def new_video(body: NewVideo, request: Request, user_id: UserId):
         series = (await conn.execute(text(
             """select coalesce(title, topic) as title, topic, genre::text as genre,
                       coalesce(audience->>'label', '') as audience,
-                      array(select l.title from public.lessons l where l.series_id = s.id order by l.position) as sections
+                      array(select l.title from public.lessons l where l.series_id = s.id order by l.position) as sections,
+                      (select concat_ws(' | ', b->>'question', b->>'answer', b->'notes'->>0)
+                         from public.lessons l, jsonb_array_elements(l.content_json->'blocks') b
+                        where l.series_id = s.id and b->>'size' = 'plate' and b ? 'question'
+                        order by l.position limit 1) as sample
                  from public.series s where id = :s"""), {"s": body.series_id})).mappings().first()
     if series is None:
         raise ApiError(404, "not_found", "Ese tomo no existe.")
+    book = dict(title=series["title"], topic=series["topic"], audience=series["audience"], sections=list(series["sections"]))
+    book_kind = GENRE_LABEL.get(series["genre"] or "", "Libro")
     try:
-        result = await video_script(llm, title=series["title"], topic=series["topic"],
-                                    kind=GENRE_LABEL.get(series["genre"] or "", "Libro"), audience=series["audience"],
-                                    sections=list(series["sections"]), angle=body.angle)
+        if body.template == "storyboard":
+            result = await director(llm, ask=(body.ask or "").strip() or "Un video que muestre cómo funciona la app",
+                                    kind=body.kind, duration=body.duration, book_kind=book_kind,
+                                    sample=series["sample"], **book)
+        else:
+            result = await video_script(llm, kind=book_kind, angle=body.ask, **book)
     except AgentFailed as exc:
         log.warning("video script failed: %s", [(a.outcome, (a.error or "")[:300]) for a in exc.attempts])
         raise ApiError(502, "upstream_error", "DeepSeek no pudo escribir el guion; inténtalo de nuevo.") from exc
     async with request.app.state.engine.begin() as conn:
         row = (await conn.execute(text(
-            f"""insert into public.marketing_videos (series_id, format, script, created_by)
-                values (:s, :f, cast(:sc as jsonb), :u) returning {FIELDS}"""),
-            {"s": body.series_id, "f": body.format, "sc": result.value.model_dump_json(), "u": user_id})).mappings().one()
+            f"""insert into public.marketing_videos (series_id, template, format, script, created_by)
+                values (:s, :t, :f, cast(:sc as jsonb), :u) returning {FIELDS}"""),
+            {"s": body.series_id, "t": body.template, "f": body.format, "sc": result.value.model_dump_json(),
+             "u": user_id})).mappings().one()
     return {"video": _out(row)}
 
 
 class VideoEdit(BaseModel):
     format: Format | None = None
-    script: VideoScript | None = None
+    script: dict | None = None  # a VideoScript or a Storyboard, by the video's template
 
 
 @router.patch("/api/admin/marketing/videos/{video_id}")
 async def edit_video(video_id: uuid.UUID, body: VideoEdit, request: Request, user_id: UserId):
     async with request.app.state.engine.begin() as conn:
         await _staff(conn, user_id)
+        script = None
+        if body.script is not None:
+            template = (await _video(conn, video_id))["template"]
+            try:
+                script = (tidy_storyboard(Storyboard.model_validate(body.script)) if template == "storyboard"
+                          else VideoScript.model_validate(body.script)).model_dump_json()
+            except ValidationError as exc:
+                raise ApiError(422, "validation_error", "Revisa el guion.", {"errors": exc.errors()}) from exc
         row = (await conn.execute(text(
             f"""update public.marketing_videos set format = coalesce(:f, format),
                        script = coalesce(cast(:sc as jsonb), script), updated_at = now(),
@@ -94,7 +116,7 @@ async def edit_video(video_id: uuid.UUID, body: VideoEdit, request: Request, use
                        mp4_key = case when coalesce(:f, format) = format and (cast(:sc as jsonb) is null
                                        or cast(:sc as jsonb) = script) then mp4_key end
                  where id = :id returning {FIELDS}"""),
-            {"id": video_id, "f": body.format, "sc": body.script.model_dump_json() if body.script else None}
+            {"id": video_id, "f": body.format, "sc": script}
         )).mappings().first()
     if row is None:
         raise ApiError(404, "not_found", "Ese video no existe.")

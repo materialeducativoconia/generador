@@ -2,7 +2,10 @@
 import { loadFont } from '@remotion/google-fonts/Geist'
 
 export type VideoScript = { hook: string; request: string; plan: string; cover: string; pages: string; pdf: string; cta: string; post?: string; voiceover?: string }
-export type VideoTome = { title: string; kind: string; audience: string; cover: string | null; pages: string[]; sections: string[] }
+export type VideoTome = {
+  title: string; kind: string; audience: string; cover: string | null; pages: string[]; sections: string[]
+  plate?: { image: string; question: string; answer?: string; notes: string[]; find?: string }  // one real page, for the editor scenes
+}
 export type TopicToBookProps = { script: VideoScript; tome: VideoTome }
 
 export const FPS = 30
@@ -15,3 +18,34 @@ export const SITE = 'docs.jelyx.app'
 const geist = loadFont('normal', { weights: ['500', '600', '700'], subsets: ['latin', 'latin-ext'] })
 export const FONT = `${geist.fontFamily}, system-ui, sans-serif`
 export const fontsReady = geist.waitUntilDone
+
+// The director's storyboard (backend app/marketing.py Storyboard): any video, scene by scene.
+export type SceneType = 'title' | 'compose' | 'plan' | 'cover' | 'pages' | 'pdf' | 'editor_open' | 'editor_move' | 'editor_facts'
+  | 'editor_repaint' | 'editor_cover' | 'editor_save' | 'cta'
+export type Scene = { type: SceneType; seconds: number; caption: string; voice: string; text: string }
+export type VideoKind = 'marketing' | 'explainer' | 'tutorial'
+export type Storyboard = { kind: VideoKind; duration: 15 | 30 | 45 | 60; title: string; scenes: Scene[]; post: string }
+export type StoryboardProps = { board: Storyboard; tome: VideoTome }
+
+export const SCENES: Record<SceneType, { label: string; types?: string }> = {
+  title: { label: 'Texto grande' }, compose: { label: 'Escribir el pedido', types: 'Pedido que se escribe' },
+  plan: { label: 'El plan del libro' }, cover: { label: 'La portada se pinta' }, pages: { label: 'Las páginas pasan' },
+  pdf: { label: 'El PDF listo' }, editor_open: { label: 'Editor: abrir una página' }, editor_move: { label: 'Editor: mover textos' },
+  editor_facts: { label: 'Editor: quitar y añadir datos', types: 'Dato nuevo' },
+  editor_repaint: { label: 'Editor: repintar la ilustración', types: 'Qué cambiar' },
+  editor_cover: { label: 'Editor: la portada' }, editor_save: { label: 'Editor: guardar' }, cta: { label: 'Cierre' },
+}
+
+/** Each scene's first frame and length; tutorial steps numbered (every scene but the title and the close). */
+export function timeline(board: Storyboard) {
+  let from = 0
+  let n = 0
+  return board.scenes.map((scene) => {
+    const frames = Math.max(15, Math.round(scene.seconds * FPS))
+    const step = board.kind === 'tutorial' && scene.type !== 'title' && scene.type !== 'cta' ? ++n : undefined
+    const out = { scene, from, frames, step }
+    from += frames
+    return out
+  })
+}
+export const boardFrames = (board: Storyboard) => timeline(board).reduce((sum, t) => sum + t.frames, 0)
