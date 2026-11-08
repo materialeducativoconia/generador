@@ -36,3 +36,11 @@ async def test_the_team_gets_a_video_script_written_from_a_tome_and_edits_it(raw
     listed = (await client.get("/api/admin/marketing/videos", headers=bearer(key, admin))).json()["videos"]
     assert any(v["id"] == video["id"] for v in listed)
     assert (await client.delete(f"/api/admin/marketing/videos/{video['id']}", headers=bearer(key, admin))).status_code == 204
+
+
+def test_a_script_line_a_little_too_long_is_cut_at_a_whole_word_not_rejected():
+    from app.marketing import VideoScript
+
+    script = VideoScript.model_validate({**SCRIPT, "hook": "¿Otro domingo armando material para tu clase de primaria? Hay otra forma"})
+
+    assert script.hook == "¿Otro domingo armando material para tu clase de primaria?"

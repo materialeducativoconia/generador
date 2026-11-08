@@ -3,25 +3,37 @@ itself is drawn and rendered in the admin's browser (frontend/src/video)."""
 
 from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
 
 from app.agents import AgentResult, _json_call
 from app.llm import LLM
 
-Line = Annotated[str, Field(min_length=2, max_length=60)]
+
+
+def _clip(limit: int):
+    """A line a little too long is cut at its last whole word, never a reason to throw the whole script away."""
+    def clip(v):
+        if not isinstance(v, str):
+            return v
+        v = " ".join(v.split())
+        return v if len(v) <= limit else v[:limit].rsplit(" ", 1)[0].rstrip(" ,;:")
+    return BeforeValidator(clip)
+
+
+Line = Annotated[str, _clip(60), Field(min_length=2, max_length=60)]
 
 
 class VideoScript(BaseModel):
     """«De un tema a un libro en 30 s»: the words on screen, scene by scene."""
 
     hook: Line  # the first two seconds: stops the scroll
-    request: Annotated[str, Field(min_length=10, max_length=140)]  # what the teacher types in the composer
+    request: Annotated[str, _clip(140), Field(min_length=10, max_length=140)]  # what the teacher types in the composer
     plan: Line  # caption while the outline appears
     cover: Line  # while the cover is painted
     pages: Line  # while the pages go by
     pdf: Line  # the finished PDF
     cta: Line  # the closing call to action
-    post: Annotated[str, Field(max_length=700)] = ""  # the text to publish with it, hashtags included
+    post: Annotated[str, _clip(700), Field(max_length=700)] = ""  # the text to publish with it, hashtags included
 
 
 SCRIPT_SYSTEM = """Eres guionista de videos cortos para redes (Reels, TikTok, Shorts) de una startup: Jelyx Docs, que

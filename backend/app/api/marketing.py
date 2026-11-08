@@ -2,6 +2,7 @@
 previews the video and renders the MP4 in the browser."""
 
 import json
+import logging
 import uuid
 from typing import Annotated, Literal
 
@@ -16,6 +17,7 @@ from app.errors import ApiError
 from app.marketing import VideoScript, video_script
 from app.render import GENRE_LABEL
 
+log = logging.getLogger("api")
 router = APIRouter()
 UserId = Annotated[uuid.UUID, Depends(current_user_id)]
 FIELDS = "id::text, template, series_id::text, format, script, created_at, updated_at"
@@ -64,6 +66,7 @@ async def new_video(body: NewVideo, request: Request, user_id: UserId):
                                     kind=GENRE_LABEL.get(series["genre"] or "", "Libro"), audience=series["audience"],
                                     sections=list(series["sections"]), angle=body.angle)
     except AgentFailed as exc:
+        log.warning("video script failed: %s", [(a.outcome, (a.error or "")[:300]) for a in exc.attempts])
         raise ApiError(502, "upstream_error", "DeepSeek no pudo escribir el guion; inténtalo de nuevo.") from exc
     async with request.app.state.engine.begin() as conn:
         row = (await conn.execute(text(
