@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import type { ReactNode } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { AuthProvider } from './auth/AuthProvider'
 import { RequireAuth } from './auth/RequireAuth'
@@ -22,6 +22,8 @@ import { TomePage } from './routes/TomePage'
 import { Welcome } from './routes/Welcome'
 import { Library, LibraryPlate } from './routes/Library'
 import { Book, Books } from './routes/Books'
+// Remotion only loads for the team's video studio, never for teachers.
+const AdminMarketing = lazy(() => import('./routes/AdminMarketing').then((m) => ({ default: m.AdminMarketing })))
 
 const authed = (page: ReactNode) => <RequireAuth>{page}</RequireAuth>
 
@@ -51,6 +53,7 @@ export default function App() {
             <Route path="/admin/tomos" element={authed(<AdminTomes />)} />
             <Route path="/admin/estilos" element={authed(<AdminStyles />)} />
             <Route path="/admin/analytics" element={authed(<Analytics />)} />
+            <Route path="/admin/marketing" element={authed(<Suspense fallback={null}><AdminMarketing /></Suspense>)} />
             <Route path="/adminpanel" element={<Navigate to="/admin" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

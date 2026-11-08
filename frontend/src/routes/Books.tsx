@@ -14,7 +14,7 @@ import { LibraryShell } from './Library'
 export function BookCard({ book }: { book: FreeBook }) {
   const [cover, ...inside] = book.pages
   return (
-    <Link to={`/libros/${book.slug}`} className="book-card">
+    <Link to={`/libros/${book.slug}`} className="free-book">
       {cover && <img src={cover} alt={`Portada de ${book.title}`} loading="lazy" width={480} height={593} />}
       {inside.length > 0 && <span className="book-minis" aria-hidden="true">
         {inside.slice(0, 3).map((p) => <img key={p} src={p} alt="" loading="lazy" />)}

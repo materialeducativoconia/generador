@@ -28,6 +28,7 @@ export function AdminTabs() {
       <NavLink to="/admin/tomos">Tomos</NavLink>
       <NavLink to="/admin/estilos">Estilos</NavLink>
       <NavLink to="/admin/analytics">Analítica</NavLink>
+      <NavLink to="/admin/marketing">Marketing</NavLink>
     </nav>
   )
 }

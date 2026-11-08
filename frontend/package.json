@@ -11,11 +11,15 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@remotion/google-fonts": "4.0.538",
+    "@remotion/player": "4.0.538",
+    "@remotion/web-renderer": "4.0.538",
     "@supabase/supabase-js": "^2.118.0",
     "@tanstack/react-query": "^5.105.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-router": "^8.5.0"
+    "react-router": "^8.5.0",
+    "remotion": "4.0.538"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
