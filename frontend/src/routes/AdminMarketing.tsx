@@ -184,6 +184,7 @@ function VideoEditor({ video, title, onClose }: { video: Video; title?: string; 
     try {  // drawn and encoded in this tab (WebCodecs), then kept in storage so it is downloaded again at once
       let current = script
       if (dirty) current = (await save.mutateAsync()).video.script  // the kept MP4 always matches the saved script
+      disposable()
       const { renderMediaOnWeb } = await import('@remotion/web-renderer')
       await fontsReady()
       const result = video.template === 'storyboard'
@@ -207,7 +208,8 @@ function VideoEditor({ video, title, onClose }: { video: Video; title?: string; 
       await api.post(`/api/admin/marketing/videos/${video.id}/rendered`, { key })
       await qc.invalidateQueries({ queryKey: ['marketing-videos'] })
     } catch (e) {
-      setRenderError(e instanceof Error ? e.message : 'No se pudo crear el video en este navegador.')
+      const why = e instanceof Error ? e.message : ''
+      setRenderError(`No se pudo crear el video en este navegador${why ? ` (${why})` : ''}. Prueba en Chrome de escritorio.`)
     } finally {
       setProgress(null)
     }
@@ -319,6 +321,16 @@ function BoardFields({ board, onChange }: { board: Storyboard; onChange: (b: Sto
       </div>
     </div>
   )
+}
+
+/** Safari on iPhone (and other browsers without Symbol.dispose): the web renderer reads its objects' disposers under
+ * Symbol.for('Symbol.dispose') but its own polyfill names the symbol Symbol.for('dispose'), so every render failed with
+ * «Object not disposable». Defining the symbol first, under the key it reads, makes both agree. */
+function disposable() {
+  const symbols = Symbol as unknown as Record<string, unknown>
+  for (const name of ['dispose', 'asyncDispose']) {
+    if (typeof symbols[name] !== 'symbol') Object.defineProperty(Symbol, name, { value: Symbol.for(`Symbol.${name}`) })
+  }
 }
 
 const clock = (frames: number) => `${Math.round(frames / FPS)} s`
