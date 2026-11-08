@@ -1137,9 +1137,12 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .marketing-body { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
 .marketing-stage { width: 100%; max-height: 78vh; margin: 0 auto; border-radius: 12px; overflow: hidden; background: #000; }
 .marketing-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.marketing-list button { width: 100%; text-align: left; display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px;
-  border: 1px solid var(--border); background: var(--card); font: inherit; color: var(--text); cursor: pointer; }
-.marketing-list button.on { border-color: var(--accent); }
+.marketing-videos { margin: 8px 0 24px; }
+.marketing-list li { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--card); }
+.marketing-list li.on { border-color: var(--accent); }
+.marketing-list li > div { display: grid; gap: 2px; flex: 1; min-width: 200px; }
+.marketing-actions { display: flex; gap: 6px; }
 @media (max-width: 900px) { .marketing-body { grid-template-columns: 1fr; } }
 .free-book { display: grid; gap: 4px; text-decoration: none; color: var(--text); }
 .library-grid .free-book > img { aspect-ratio: 170 / 210; object-fit: cover; margin-bottom: 0; }

@@ -20,7 +20,8 @@ from app.render import GENRE_LABEL
 log = logging.getLogger("api")
 router = APIRouter()
 UserId = Annotated[uuid.UUID, Depends(current_user_id)]
-FIELDS = "id::text, template, series_id::text, format, script, created_at, updated_at"
+FIELDS = "id::text, template, series_id::text, format, script, created_at, updated_at, mp4_key, rendered_at"
+BUCKET = "marketing"
 Format = Literal["9:16", "1:1", "16:9"]
 
 
@@ -28,6 +29,7 @@ def _out(row) -> dict:
     video = dict(row)
     if isinstance(video["script"], str):
         video["script"] = json.loads(video["script"])
+    video["has_mp4"] = bool(video.pop("mp4_key"))
     return video
 
 
@@ -87,7 +89,10 @@ async def edit_video(video_id: uuid.UUID, body: VideoEdit, request: Request, use
         await _staff(conn, user_id)
         row = (await conn.execute(text(
             f"""update public.marketing_videos set format = coalesce(:f, format),
-                       script = coalesce(cast(:sc as jsonb), script), updated_at = now()
+                       script = coalesce(cast(:sc as jsonb), script), updated_at = now(),
+                       -- the kept MP4 shows the old words or size: it is made again
+                       mp4_key = case when coalesce(:f, format) = format and (cast(:sc as jsonb) is null
+                                       or cast(:sc as jsonb) = script) then mp4_key end
                  where id = :id returning {FIELDS}"""),
             {"id": video_id, "f": body.format, "sc": body.script.model_dump_json() if body.script else None}
         )).mappings().first()
@@ -101,3 +106,52 @@ async def delete_video(video_id: uuid.UUID, request: Request, user_id: UserId):
     async with request.app.state.engine.begin() as conn:
         await _staff(conn, user_id)
         await conn.execute(text("delete from public.marketing_videos where id = :id"), {"id": video_id})
+
+
+async def _video(conn, video_id) -> dict:
+    row = (await conn.execute(text(f"select {FIELDS} from public.marketing_videos where id = :id"),
+                              {"id": video_id})).mappings().first()
+    if row is None:
+        raise ApiError(404, "not_found", "Ese video no existe.")
+    return dict(row)
+
+
+@router.post("/api/admin/marketing/videos/{video_id}/upload")
+async def mp4_upload(video_id: uuid.UUID, request: Request, user_id: UserId):
+    """Where the browser puts the MP4 it just rendered (straight to storage, never through this server)."""
+    async with request.app.state.engine.connect() as conn:
+        await _staff(conn, user_id)
+        await _video(conn, video_id)
+    key = f"{video_id}/{uuid.uuid4().hex[:8]}.mp4"
+    return {"key": key, "upload_url": await request.app.state.storage.upload_url(key, bucket=BUCKET)}
+
+
+class Rendered(BaseModel):
+    key: str = Field(pattern=r"^[0-9a-f-]{36}/[0-9a-f]{8}\.mp4$")
+
+
+@router.post("/api/admin/marketing/videos/{video_id}/rendered")
+async def mp4_rendered(video_id: uuid.UUID, body: Rendered, request: Request, user_id: UserId):
+    """The MP4 is up: the video keeps it until its script or format changes."""
+    if not body.key.startswith(f"{video_id}/"):
+        raise ApiError(422, "invalid_request", "Ese archivo no es de este video.")
+    async with request.app.state.engine.begin() as conn:
+        await _staff(conn, user_id)
+        row = (await conn.execute(text(
+            f"""update public.marketing_videos set mp4_key = :k, rendered_at = now() where id = :id
+                returning {FIELDS}"""), {"id": video_id, "k": body.key})).mappings().first()
+    if row is None:
+        raise ApiError(404, "not_found", "Ese video no existe.")
+    return {"video": _out(row)}
+
+
+@router.get("/api/admin/marketing/videos/{video_id}/mp4")
+async def mp4_download(video_id: uuid.UUID, request: Request, user_id: UserId):
+    async with request.app.state.engine.connect() as conn:
+        await _staff(conn, user_id)
+        video = await _video(conn, video_id)
+    if not video["mp4_key"]:
+        raise ApiError(404, "not_found", "Este video aún no tiene MP4: créalo con «Crear MP4».")
+    name = f"jelyx-{video['format'].replace(':', 'x')}-{str(video_id)[:6]}.mp4"
+    return {"url": await request.app.state.storage.signed_url(video["mp4_key"], expires_in=300, download_name=name,
+                                                              bucket=BUCKET)}

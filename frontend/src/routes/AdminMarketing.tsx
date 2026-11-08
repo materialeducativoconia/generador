@@ -13,7 +13,7 @@ import { DURATION, FPS, SIZES, fontsReady, type VideoScript, type VideoTome } fr
 import { AdminTabs } from './AdminUsers'
 
 type Format = keyof typeof SIZES
-type Video = { id: string; template: string; series_id: string | null; format: Format; script: VideoScript; created_at: string }
+type Video = { id: string; template: string; series_id: string | null; format: Format; script: VideoScript; created_at: string; has_mp4: boolean; rendered_at: string | null }
 type Tome = { id: string; title: string; genre: Genre | null; cover_url: string | null }
 
 const FIELDS: [keyof VideoScript, string, number][] = [
@@ -54,6 +54,10 @@ export function AdminMarketing() {
       setAngle('')
     },
   })
+  const fetchMp4 = useMutation({  // the kept MP4: a short-lived link, opened as a download
+    mutationFn: (id: string) => api.get<{ url: string }>(`/api/admin/marketing/videos/${id}/mp4`),
+    onSuccess: ({ url }) => window.location.assign(url),
+  })
   if (me && !staff) return <Navigate to="/app" replace />
   const current = videos.data?.videos.find((v) => v.id === open)
   const titles = Object.fromEntries((tomes.data?.series ?? []).map((t) => [t.id, t.title]))
@@ -93,17 +97,26 @@ export function AdminMarketing() {
 
       {videos.error && <p className="error">{errorText(videos.error, 'No pudimos cargar los videos.')}</p>}
       {current && <VideoEditor key={current.id} video={current} title={current.series_id ? titles[current.series_id] : undefined} onClose={() => setOpen(null)} />}
-      <ul className="marketing-list">
-        {videos.data?.videos.map((v) => (
-          <li key={v.id}>
-            <button type="button" className={v.id === open ? 'on' : undefined} onClick={() => setOpen(v.id)}>
-              <strong>{v.script.hook}</strong>
-              <span className="muted small">{FORMAT_LABEL[v.format]} · {(v.series_id && titles[v.series_id]) || 'Tomo'} · {new Date(v.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      {videos.data?.videos.length === 0 && <p className="muted">Aún no hay videos. Elige un tomo y escribe el primer guion.</p>}
+      <section className="marketing-videos">
+        <h2 className="section-h">Tus videos</h2>
+        {fetchMp4.error && <p className="error small" role="alert">{errorText(fetchMp4.error, 'No se pudo descargar.')}</p>}
+        <ul className="marketing-list">
+          {videos.data?.videos.map((v) => (
+            <li key={v.id} className={v.id === open ? 'on' : undefined}>
+              <div>
+                <strong>{v.script.hook}</strong>
+                <span className="muted small">{FORMAT_LABEL[v.format]} · {(v.series_id && titles[v.series_id]) || 'Tomo'} · {new Date(v.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}</span>
+              </div>
+              <span className={v.has_mp4 ? 'pill ok' : 'pill idle'}>{v.has_mp4 ? 'MP4 listo' : 'Sin MP4'}</span>
+              <span className="marketing-actions">
+                {v.has_mp4 && <button type="button" className="primary small" onClick={() => fetchMp4.mutate(v.id)} disabled={fetchMp4.isPending}>Descargar MP4</button>}
+                <button type="button" className="ghost small" onClick={() => setOpen(v.id)}>{v.id === open ? 'Abierto' : 'Abrir'}</button>
+              </span>
+            </li>
+          ))}
+        </ul>
+        {videos.data?.videos.length === 0 && <p className="muted">Aún no hay videos. Elige un tomo y escribe el primer guion.</p>}
+      </section>
     </AppShell>
   )
 }
@@ -127,21 +140,29 @@ function VideoEditor({ video, title, onClose }: { video: Video; title?: string; 
     onSuccess: async () => { onClose(); await qc.invalidateQueries({ queryKey: ['marketing-videos'] }) },
   })
 
-  async function download() {
+  async function render() {
     if (!tome) return
     setRenderError(null)
     setProgress(0)
-    try {  // drawn and encoded in this tab (WebCodecs): no server, nothing uploaded
+    try {  // drawn and encoded in this tab (WebCodecs), then kept in storage so it is downloaded again at once
+      if (dirty) await save.mutateAsync()  // the kept MP4 always matches the saved script
       const { renderMediaOnWeb } = await import('@remotion/web-renderer')
       await fontsReady()
       const result = await renderMediaOnWeb({
         composition: { id: 'topic-to-book', component: TopicToBook, durationInFrames: DURATION, fps: FPS, width, height, defaultProps: { script, tome } },
         inputProps: { script, tome }, onProgress: (p) => setProgress(p.progress),
       })
-      const url = URL.createObjectURL(await result.getBlob())
+      const blob = await result.getBlob()
+      const url = URL.createObjectURL(blob)
       const a = Object.assign(document.createElement('a'), { href: url, download: `jelyx-${format.replace(':', 'x')}-${video.id.slice(0, 6)}.mp4` })
       a.click()
       setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      setProgress(1)
+      const { key, upload_url } = await api.post<{ key: string; upload_url: string }>(`/api/admin/marketing/videos/${video.id}/upload`)
+      const put = await fetch(upload_url, { method: 'PUT', body: blob, headers: { 'Content-Type': 'video/mp4' } })
+      if (!put.ok) throw new Error('El MP4 se descargó, pero no se pudo guardar en la sección.')
+      await api.post(`/api/admin/marketing/videos/${video.id}/rendered`, { key })
+      await qc.invalidateQueries({ queryKey: ['marketing-videos'] })
     } catch (e) {
       setRenderError(e instanceof Error ? e.message : 'No se pudo crear el video en este navegador.')
     } finally {
@@ -180,10 +201,11 @@ function VideoEditor({ video, title, onClose }: { video: Video; title?: string; 
           <button className="primary" onClick={() => save.mutate()} disabled={!dirty || save.isPending}>{save.isPending ? 'Guardando…' : 'Guardar guion'}</button>
           {save.error && <p className="error small" role="alert">{errorText(save.error, 'No se pudo guardar.')}</p>}
           <hr />
-          <button className="primary" onClick={download} disabled={!tome || progress !== null}>
-            {progress !== null ? `Creando el MP4… ${Math.round(progress * 100)} %` : 'Descargar MP4'}
+          <button className="primary" onClick={render} disabled={!tome || progress !== null}>
+            {progress === 1 ? 'Guardando el MP4…' : progress !== null ? `Creando el MP4… ${Math.round(progress * 100)} %`
+              : video.has_mp4 && !dirty ? 'Crear el MP4 otra vez' : 'Crear MP4'}
           </button>
-          <span className="muted small">El video se crea en este navegador (mejor en Chrome de escritorio); tarda unos minutos y la pestaña debe quedar abierta.</span>
+          <span className="muted small">El video se crea en este navegador (mejor en Chrome de escritorio); tarda unos minutos y la pestaña debe quedar abierta. Queda guardado en «Tus videos» para descargarlo cuando quieras.</span>
           {renderError && <p className="error small" role="alert">{renderError}</p>}
           <label className="field"><span>Guion para voz en off · unos 30 s</span>
             <textarea value={script.voiceover ?? spoken(script)} onChange={(e) => setScript({ ...script, voiceover: e.target.value })} rows={6} maxLength={700} />
