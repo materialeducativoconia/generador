@@ -1,10 +1,10 @@
 import { AbsoluteFill, Easing, interpolate, Sequence, useCurrentFrame } from 'remotion'
 import { ComposeScene, CoverScene, CtaScene, EditorCoverScene, EditorFactsScene, EditorMoveScene, EditorOpenScene, EditorRepaintScene,
-  EditorSaveScene, ListScene, NumberScene, PagesScene, PdfScene, PlanScene, ScreenScene, TitleScene, VersusScene } from './scenes'
-import { FONT, LOOKS, timeline, type Capture, type Look, type Scene, type StoryboardProps, type Transition, type VideoTome } from './spec'
+  EditorSaveScene, ListScene, NumberScene, PagesScene, PdfScene, PlanScene, ScreenScene, FormatsScene, CharactersScene, TitleScene, VersusScene } from './scenes'
+import { FONT, LOOKS, timeline, type Capture, type Look, type Scene, type ShelfBook, type StoryboardProps, type Transition, type VideoTome } from './spec'
 
 /** Any video the director wrote: its scenes one after another, each the real app animated with the tome. */
-export function StoryboardVideo({ board, tome, captures = {} }: StoryboardProps) {
+export function StoryboardVideo({ board, tome, captures = {}, shelf = [] }: StoryboardProps) {
   const look = board.look ?? 'claro'
   const steps = timeline(board)
   return (
@@ -19,7 +19,7 @@ export function StoryboardVideo({ board, tome, captures = {} }: StoryboardProps)
             <Move bg={scene.type === 'plan' || scene.type === 'pages' ? '#ffffff' : undefined} enter={enter} exit={over ? kind : 'corte'} frames={frames} over={over}
               enterOver={i > 0 ? Math.min(OVER, Math.floor(frames / 3)) : 0}>
               <SceneView scene={scene} dur={over ? frames + over + 10 : frames} step={step} tome={tome} look={look}
-                capture={scene.capture ? captures[scene.capture] : undefined} />
+                capture={scene.capture ? captures[scene.capture] : undefined} shelf={shelf} />
             </Move>
           </Sequence>
         )
@@ -56,13 +56,15 @@ function Move({ bg, enter, exit, frames, over, enterOver, children }: { bg?: str
   return <AbsoluteFill style={style}>{children}</AbsoluteFill>
 }
 
-function SceneView({ scene, dur, step, tome, look, capture }: { scene: Scene; dur: number; step?: number; tome: VideoTome; look: Look; capture?: Capture }) {
+function SceneView({ scene, dur, step, tome, look, capture, shelf }: { scene: Scene; dur: number; step?: number; tome: VideoTome; look: Look; capture?: Capture; shelf: ShelfBook[] }) {
   const p = { dur, caption: scene.caption, step, tome, text: scene.text, look: LOOKS[look] }
   switch (scene.type) {
     case 'title': return <TitleScene {...p} />
     case 'list': return <ListScene {...p} />
     case 'versus': return <VersusScene {...p} />
     case 'number': return <NumberScene {...p} />
+    case 'formats': return <FormatsScene {...p} shelf={shelf} />
+    case 'characters': return <CharactersScene {...p} />
     case 'screen': return <ScreenScene {...p} capture={capture} focus={scene.focus ?? 0} />
     case 'compose': return <ComposeScene {...p} />
     case 'plan': return <PlanScene {...p} />

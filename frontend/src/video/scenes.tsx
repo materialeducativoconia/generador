@@ -1,5 +1,5 @@
 import { AbsoluteFill, Easing, Img, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
-import { LOOKS, SITE, type Capture, type VideoTome } from './spec'
+import { LOOKS, SITE, type Capture, type ShelfBook, type VideoTome } from './spec'
 
 /** The scenes every video is made of, each the real app animated with a real tome. `dur` is the scene's length in
  * frames: timings are fractions of it, so the director can give a scene 2 s or 8 s. Drawn with transforms, opacity
@@ -320,6 +320,95 @@ export function CtaScene({ caption = '' }: Base) {
         opacity: ease(frame, 10, 22) }}>{caption}</div>
       <div style={{ background: ACCENT, borderRadius: 999, padding: `${18 * u}px ${40 * u}px`, fontSize: 40 * u, fontWeight: 700,
         opacity: ease(frame, 20, 32) }}>{SITE}</div>
+    </AbsoluteFill>
+  )
+}
+
+const SWATCH = ['#5b4cf0', '#e8590c', '#2f8f4e', '#c2255c', '#1971c2', '#c98a12']
+
+/** The kinds of book the app makes, each a real cover landing on the table; the one this video shows is lifted last. */
+export function FormatsScene({ dur, caption, step, tome, shelf = [] }: Base & { tome: VideoTome; shelf?: ShelfBook[] }) {
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+  const { u, k, wide } = useUnit()
+  const books = shelf.slice(0, 6)
+  const cols = wide ? Math.min(6, books.length) : Math.min(3, books.length)
+  const cardW = wide ? Math.min(270, 1720 / Math.max(1, cols) - 30) * u : 300 * u
+  const gap = Math.max(4, Math.min(9, (dur * 0.5) / Math.max(1, books.length)))
+  const lift = ease(frame, dur * 0.62, dur * 0.62 + 14)
+  const mine = books.findIndex((b) => b.label === tome.kind)
+  return (
+    <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', background: SOFT, opacity: fadeOut(frame, dur) }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, ${cardW}px)`, gap: `${(wide ? 34 : 30) * u}px ${30 * u}px`,
+        marginTop: (wide ? -80 : -170) * u }}>
+        {books.map((b, i) => {
+          const s = spring({ frame: frame - 4 - i * gap, fps, config: { damping: 13, mass: 0.7 } })
+          const on = i === mine ? lift : 0
+          const tilt = (i % 2 ? 1 : -1) * (1 - s) * 10
+          return (
+            <div key={b.genre} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 * u, opacity: s * (mine >= 0 && i !== mine ? 1 - lift * 0.55 : 1),
+              transform: `translateY(${(1 - s) * 120 * u - on * 24 * u}px) rotate(${tilt}deg) scale(${1 + on * 0.1})`, zIndex: i === mine ? 2 : 1 }}>
+              <div style={{ width: cardW, aspectRatio: '3 / 4', borderRadius: 12 * u, overflow: 'hidden', background: SWATCH[i % SWATCH.length],
+                boxShadow: `0 ${18 * u}px ${40 * u}px rgba(12,10,9,${0.18 + on * 0.12})`, outline: on ? `${6 * u * on}px solid ${ACCENT}` : 'none' }}>
+                {b.cover && <Img src={b.cover} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+              </div>
+              <span style={{ fontSize: (wide ? 26 : 30) * u * (wide ? 1 : k * 0.85), fontWeight: 700, color: INK, textAlign: 'center', lineHeight: 1.1 }}>{b.label}</span>
+            </div>
+          )
+        })}
+      </div>
+      <Caption text={caption} at={Math.min(dur - 20, dur * 0.4)} step={step} />
+    </AbsoluteFill>
+  )
+}
+
+/** The book's recurring characters: their model sheets land with their names, then the same faces walk through its pages. */
+export function CharactersScene({ dur, caption, step, tome }: Base & { tome: VideoTome }) {
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+  const { u, k, wide } = useUnit()
+  const cast = (tome.cast ?? []).slice(0, 3)
+  const pages = tome.pages.slice(0, 3)
+  const half = cast.length && pages.length ? dur * 0.48 : cast.length ? dur : 0
+  const swap = ease(frame, half, half + 14)  // the sheets become a row of portraits; the pages come in
+  const sheetW = (wide ? 420 : 320) * u * (cast.length < 3 ? 1.25 : 1)
+  const pageW = (wide ? 440 : 500) * u
+  return (
+    <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', background: SOFT, opacity: fadeOut(frame, dur) }}>
+      {cast.length > 0 && (
+        <div style={{ position: 'absolute', top: (wide ? 60 : 180) * u + (1 - swap) * (wide ? 120 : 300) * u, display: 'flex', gap: (30 - swap * 14) * u }}>
+          {cast.map((c, i) => {
+            const s = spring({ frame: frame - 4 - i * 7, fps, config: { damping: 14, mass: 0.7 } })
+            const w = sheetW + ((wide ? 110 : 150) * u - sheetW) * swap
+            return (
+              <div key={c.name} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 * u, opacity: s, transform: `translateY(${(1 - s) * 80 * u}px)` }}>
+                <div style={{ width: w, height: w, borderRadius: 18 * u + swap * 60 * u, overflow: 'hidden', background: '#fff',
+                  boxShadow: `0 ${14 * u}px ${36 * u}px rgba(12,10,9,.16)`, border: `${4 * u}px solid #fff` }}>
+                  <Img src={c.sheet} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: swap > 0.5 ? '20% 15%' : 'center' }} />
+                </div>
+                <span style={{ background: INK, color: '#fff', borderRadius: 999, padding: `${8 * u}px ${20 * u}px`, fontSize: (34 - swap * 10) * u * k, fontWeight: 700 }}>{c.name}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {pages.length > 0 && (
+        <div style={{ position: 'absolute', top: wide ? 330 * u : (cast.length ? 470 : 360) * u, display: 'flex', flexDirection: wide ? 'row' : 'column',
+          alignItems: 'center', gap: (wide ? 30 : 0) * u }}>
+          {pages.map((src, i) => {
+            const s = cast.length ? ease(frame, half + 6 + i * 6, half + 20 + i * 6) : spring({ frame: frame - 4 - i * 8, fps, config: { damping: 14 } })
+            const tilt = [-4, 3, -2][i]
+            return (
+              <div key={i} style={{ width: pageW, aspectRatio: '4 / 3', borderRadius: 12 * u, overflow: 'hidden', background: '#fff', border: `${6 * u}px solid #fff`,
+                boxShadow: `0 ${16 * u}px ${40 * u}px rgba(12,10,9,.2)`, opacity: s, marginTop: wide || i === 0 ? 0 : -50 * u,
+                transform: `translateY(${(1 - s) * 90 * u}px) rotate(${tilt}deg)`, zIndex: i }}>
+                <Img src={src} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </div>
+            )
+          })}
+        </div>
+      )}
+      <Caption text={caption} at={Math.min(dur - 20, Math.max(12, half))} step={step} />
     </AbsoluteFill>
   )
 }

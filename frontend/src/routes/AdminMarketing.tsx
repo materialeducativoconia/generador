@@ -11,7 +11,7 @@ import type { Genre, Series } from '../lib/types'
 import { StoryboardVideo } from '../video/Storyboard'
 import { TopicToBook } from '../video/TopicToBook'
 import { DURATION, FPS, LOOKS, SCENES, SIZES, TRANSITIONS, boardFrames, fontsReady, timeline, type Capture, type Look, type Scene, type SceneType,
-  type Storyboard, type Transition, type VideoKind, type VideoScript, type VideoTome } from '../video/spec'
+  type ShelfBook, type Storyboard, type Transition, type VideoKind, type VideoScript, type VideoTome } from '../video/spec'
 import { AdminTabs } from './AdminUsers'
 
 type Format = keyof typeof SIZES
@@ -44,6 +44,7 @@ function videoTome(s: Series): VideoTome {
   return {
     title: s.title ?? s.topic, kind: s.genre ? GENRE_LABEL[s.genre] : 'Libro', audience: s.audience.label,
     cover: s.cover_url, pages: pictures.filter(Boolean).slice(0, 6), sections: s.lessons.map((l) => l.title),
+    cast: (s.cast ?? []).filter((c) => c.sheet_url).map((c) => ({ name: c.name, sheet: c.sheet_url! })),
     plate: plate && { image: s.assets[plate.asset_id!], question: plate.question!, answer: plate.answer, notes: plate.notes ?? [], find: plate.find },
   }
 }
@@ -68,6 +69,7 @@ export function AdminMarketing() {
   const structures = useQuery({ queryKey: ['marketing-structures'], enabled: staff, staleTime: Infinity,
     queryFn: () => api.get<{ structures: Structure[] }>('/api/admin/marketing/structures') })
   const captures = useCaptures(staff)
+  const shelf = useMemo(() => bookShelf(tomes.data?.series ?? []), [tomes.data])
   const ways = (structures.data?.structures ?? []).filter((st) => st.kinds.includes(kind))
   const asked = { series_id: seriesId, format, ask: ask.trim() || null, kind, duration }
   const propose = useMutation({
@@ -148,10 +150,10 @@ export function AdminMarketing() {
 
       {draft && <Draft board={draft} seriesId={seriesId} format={format} onChange={setDraft} onAgain={() => propose.mutate()} again={propose.isPending}
         onCreate={() => create.mutate()} creating={create.isPending} error={create.error} onDiscard={() => setDraft(null)}
-        structure={structures.data?.structures.find((st) => st.key === draft.structure)?.label} captures={captures} />}
+        structure={structures.data?.structures.find((st) => st.key === draft.structure)?.label} captures={captures} shelf={shelf} />}
 
       {videos.error && <p className="error">{errorText(videos.error, 'No pudimos cargar los videos.')}</p>}
-      {current && <VideoEditor key={current.id} captures={captures} video={current} title={current.series_id ? titles[current.series_id] : undefined} onClose={() => setOpen(null)} />}
+      {current && <VideoEditor key={current.id} captures={captures} shelf={shelf} video={current} title={current.series_id ? titles[current.series_id] : undefined} onClose={() => setOpen(null)} />}
       <section className="marketing-videos">
         <h2 className="section-h">Tus videos</h2>
         {fetchMp4.error && <p className="error small" role="alert">{errorText(fetchMp4.error, 'No se pudo descargar.')}</p>}
@@ -178,8 +180,8 @@ export function AdminMarketing() {
 }
 
 /** The proposed storyboard before it is a video: its structure at a glance, playing, and changed scene by scene. */
-function Draft({ board, seriesId, format, structure, captures, onChange, onAgain, again, onCreate, creating, error, onDiscard }: {
-  board: Storyboard; seriesId: string; format: Format; structure?: string; captures: Record<string, Capture>; onChange: (b: Storyboard) => void
+function Draft({ board, seriesId, format, structure, captures, shelf, onChange, onAgain, again, onCreate, creating, error, onDiscard }: {
+  board: Storyboard; seriesId: string; format: Format; structure?: string; captures: Record<string, Capture>; shelf: ShelfBook[]; onChange: (b: Storyboard) => void
   onAgain: () => void; again: boolean; onCreate: () => void; creating: boolean; error: unknown; onDiscard: () => void
 }) {
   const series = useSeries(seriesId)
@@ -194,7 +196,7 @@ function Draft({ board, seriesId, format, structure, captures, onChange, onAgain
       </div>
       <div className="marketing-body">
         <div className="marketing-stage" style={{ aspectRatio: `${width} / ${height}` }}>
-          {tome ? <Player component={StoryboardVideo} inputProps={{ board, tome, captures }} durationInFrames={boardFrames(board)} fps={FPS}
+          {tome ? <Player component={StoryboardVideo} inputProps={{ board, tome, captures, shelf }} durationInFrames={boardFrames(board)} fps={FPS}
             compositionWidth={width} compositionHeight={height} controls loop style={{ width: '100%', height: '100%' }} />
             : <div className="page-preview-wait">Cargando el tomo…</div>}
         </div>
@@ -223,7 +225,7 @@ function Draft({ board, seriesId, format, structure, captures, onChange, onAgain
   )
 }
 
-function VideoEditor({ video, title, captures, onClose }: { video: Video; title?: string; captures: Record<string, Capture>; onClose: () => void }) {
+function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video; title?: string; captures: Record<string, Capture>; shelf: ShelfBook[]; onClose: () => void }) {
   const qc = useQueryClient()
   const series = useSeries(video.series_id ?? '')
   const [script, setScript] = useState<VideoScript | Storyboard>(video.script)
@@ -263,8 +265,8 @@ function VideoEditor({ video, title, captures, onClose }: { video: Video; title?
       const result = video.template === 'storyboard'
         ? await renderMediaOnWeb({
           composition: { id: 'storyboard', component: StoryboardVideo, durationInFrames: boardFrames(current as Storyboard), fps: FPS, width, height,
-            defaultProps: { board: current as Storyboard, tome, captures } },
-          inputProps: { board: current as Storyboard, tome, captures }, onProgress: (p) => setProgress(p.progress) })
+            defaultProps: { board: current as Storyboard, tome, captures, shelf } },
+          inputProps: { board: current as Storyboard, tome, captures, shelf }, onProgress: (p) => setProgress(p.progress) })
         : await renderMediaOnWeb({
           composition: { id: 'topic-to-book', component: TopicToBook, durationInFrames: DURATION, fps: FPS, width, height,
             defaultProps: { script: current as VideoScript, tome } },
@@ -298,7 +300,7 @@ function VideoEditor({ video, title, captures, onClose }: { video: Video; title?
         <div className="marketing-stage" style={{ aspectRatio: `${width} / ${height}` }}>
           {!tome ? <div className="page-preview-wait">{series.isError ? 'No se pudo cargar el tomo.' : 'Cargando el tomo…'}</div>
             : board ? (
-              <Player component={StoryboardVideo} inputProps={{ board, tome, captures }} durationInFrames={frames} fps={FPS}
+              <Player component={StoryboardVideo} inputProps={{ board, tome, captures, shelf }} durationInFrames={frames} fps={FPS}
                 compositionWidth={width} compositionHeight={height} controls loop style={{ width: '100%', height: '100%' }} />
             ) : (
               <Player component={TopicToBook} inputProps={{ script: fixed!, tome }} durationInFrames={DURATION} fps={FPS}
@@ -408,6 +410,14 @@ function BoardFields({ board, onChange, captures }: { board: Storyboard; onChang
       </div>
     </div>
   )
+}
+
+/** One finished tome per kind of book, its cover first, for the formats scene. */
+function bookShelf(tomes: Tome[]): ShelfBook[] {
+  return Object.keys(GENRE_LABEL).map((genre) => {
+    const mine = tomes.filter((t) => t.genre === genre)
+    return { genre, label: GENRE_LABEL[genre], cover: (mine.find((t) => t.cover_url) ?? mine[0])?.cover_url ?? null }
+  })
 }
 
 function useCaptures(enabled: boolean) {

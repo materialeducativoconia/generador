@@ -143,6 +143,7 @@ async def test_a_storyboard_is_proposed_seen_and_asked_again_before_the_video_is
                                json={**ask, "structure": "antes_despues"})).json()["script"]
     assert first["structure"] == "antes_despues" and first["look"] in ("claro", "oscuro", "color")
     assert "Antes y después" in llm.calls[0][-1]["content"]
+    assert "personajes" in llm.calls[0][-1]["content"].lower()  # the director knows whether the book has a cast
     listed = (await client.get("/api/admin/marketing/videos", headers=bearer(key, admin))).json()["videos"]
     assert not any(v["series_id"] == str(sid) for v in listed)  # not saved
 

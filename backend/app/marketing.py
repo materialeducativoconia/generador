@@ -90,13 +90,17 @@ SCENES = {
               "«3 horas en Word | 5 minutos con Jelyx»)",
     "number": "un número enorme que cuenta hasta su valor (text: el número con su unidad, p. ej. «5 min» o «24 "
               "páginas»; caption: lo que significa)",
+    "formats": "los tipos de libro que hace la app (libro ilustrado, cuento, para colorear, cuadernillo de fichas, "
+               "método paso a paso, secuencia didáctica), cada uno con la portada real de un libro hecho con la app",
+    "characters": "los personajes del libro: sus hojas de modelo aparecen con su nombre y luego salen iguales en "
+                  "varias páginas (los mismos personajes en todo el libro)",
     "screen": "una captura REAL de la app en un teléfono o una laptop: la cámara se acerca al punto marcado y el "
               "cursor hace clic (capture: el id de la captura; focus: el número del punto, desde 0). Solo con las "
               "capturas de la lista; es lo más creíble para tutoriales y explicativos",
     "cta": "cierre con la marca, la llamada a la acción y la dirección de la app",
 }
 SceneType = Literal["title", "compose", "plan", "cover", "pages", "pdf", "editor_open", "editor_move", "editor_facts",
-                    "editor_repaint", "editor_cover", "editor_save", "list", "versus", "number", "screen", "cta"]
+                    "editor_repaint", "editor_cover", "editor_save", "list", "versus", "number", "formats", "characters", "screen", "cta"]
 # The scenes that show a text of their own, and what they show when the director left it empty.
 TEXT_SCENES = {"compose": "Quiero un libro ilustrado para mi grupo", "editor_facts": "Dato nuevo para la lámina",
                "editor_repaint": "más luz de mañana", "list": "Portada | Ilustraciones | Actividades | Solucionario",
@@ -216,7 +220,7 @@ Responde solo con json:
 
 
 async def director(llm: LLM, *, ask: str, kind: str, duration: int, title: str, topic: str, book_kind: str,
-                   audience: str, sections: list[str], sample: str | None, structure: str,
+                   audience: str, sections: list[str], sample: str | None, structure: str, cast: str | None = None,
                    recent: list[dict] = (), captures: list[dict] = ()) -> AgentResult[Storyboard]:
     """`recent`: the last storyboards ({title, scenes: [types]}), so this one is told another way. `captures`: the
     real screenshots of the app ({id, name, description, focus: [labels]}) its screen scenes may show."""
@@ -227,6 +231,7 @@ async def director(llm: LLM, *, ask: str, kind: str, duration: int, title: str, 
              f"Secciones: {'; '.join(sections[:8]) or 'sin secciones'}")
     if sample:
         facts += f"\nUna de sus láminas: {sample}"
+    facts += (f"\nPersonajes: {cast}" if cast else "\nEste libro no tiene personajes fijos: no uses la escena characters.")
     if recent:
         facts += ("\n\nVideos ya hechos: no repitas su secuencia de escenas, su gancho ni sus frases.\n"
                   + "\n".join(f"- «{r['title']}»: {' → '.join(r['scenes'])}" for r in recent))

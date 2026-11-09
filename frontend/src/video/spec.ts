@@ -5,7 +5,10 @@ export type VideoScript = { hook: string; request: string; plan: string; cover: 
 export type VideoTome = {
   title: string; kind: string; audience: string; cover: string | null; pages: string[]; sections: string[]
   plate?: { image: string; question: string; answer?: string; notes: string[]; find?: string }  // one real page, for the editor scenes
+  cast?: { name: string; sheet: string }[]  // its recurring characters, each with its model sheet
 }
+/** One real tome per kind of book the app makes, for the formats scene. */
+export type ShelfBook = { genre: string; label: string; cover: string | null }
 export type TopicToBookProps = { script: VideoScript; tome: VideoTome }
 
 export const FPS = 30
@@ -21,7 +24,7 @@ export const fontsReady = geist.waitUntilDone
 
 // The director's storyboard (backend app/marketing.py Storyboard): any video, scene by scene.
 export type SceneType = 'title' | 'compose' | 'plan' | 'cover' | 'pages' | 'pdf' | 'editor_open' | 'editor_move' | 'editor_facts'
-  | 'editor_repaint' | 'editor_cover' | 'editor_save' | 'list' | 'versus' | 'number' | 'screen' | 'cta'
+  | 'editor_repaint' | 'editor_cover' | 'editor_save' | 'list' | 'versus' | 'number' | 'formats' | 'characters' | 'screen' | 'cta'
 export type Scene = { type: SceneType; seconds: number; caption: string; voice: string; text: string; capture?: string; focus?: number }
 /** A real screenshot of the app (backend marketing_captures): shown in a device, the camera zooming to its points. */
 export type Capture = { id: string; name: string; description: string; url: string | null; width: number; height: number
@@ -38,7 +41,7 @@ export const LOOKS: Record<Look, { label: string; bg: string; ink: string; accen
   oscuro: { label: 'Oscuro', bg: '#0c0a09', ink: '#ffffff', accent: '#a99cff' },
   color: { label: 'Color', bg: '#5b4cf0', ink: '#ffffff', accent: '#ffd166' },
 }
-export type StoryboardProps = { board: Storyboard; tome: VideoTome; captures?: Record<string, Capture> }
+export type StoryboardProps = { board: Storyboard; tome: VideoTome; captures?: Record<string, Capture>; shelf?: ShelfBook[] }
 
 export const SCENES: Record<SceneType, { label: string; types?: string }> = {
   title: { label: 'Texto grande' }, compose: { label: 'Escribir el pedido', types: 'Pedido que se escribe' },
@@ -48,7 +51,8 @@ export const SCENES: Record<SceneType, { label: string; types?: string }> = {
   editor_repaint: { label: 'Editor: repintar la ilustración', types: 'Qué cambiar' },
   editor_cover: { label: 'Editor: la portada' }, editor_save: { label: 'Editor: guardar' },
   list: { label: 'Lista animada', types: 'Puntos separados por |' }, versus: { label: 'Antes y después', types: 'Antes | después' },
-  number: { label: 'Número grande', types: 'El número, p. ej. 5 min' }, screen: { label: 'Pantalla real (captura)' }, cta: { label: 'Cierre' },
+  number: { label: 'Número grande', types: 'El número, p. ej. 5 min' }, formats: { label: 'Tipos de libro' }, characters: { label: 'Personajes' },
+  screen: { label: 'Pantalla real (captura)' }, cta: { label: 'Cierre' },
 }
 
 /** Each scene's first frame and length; tutorial steps numbered (every scene but the title and the close). */

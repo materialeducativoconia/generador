@@ -70,7 +70,9 @@ async def _write(request: Request, user_id: uuid.UUID, body: NewVideo) -> Storyb
                       (select concat_ws(' | ', b->>'question', b->>'answer', b->'notes'->>0)
                          from public.lessons l, jsonb_array_elements(l.content_json->'blocks') b
                         where l.series_id = s.id and b->>'size' = 'plate' and b ? 'question'
-                        order by l.position limit 1) as sample
+                        order by l.position limit 1) as sample,
+                      (select string_agg(c->>'name', ', ') from jsonb_array_elements(
+                          case when jsonb_typeof(s."cast") = 'array' then s."cast" else '[]'::jsonb end) c) as cast_names
                  from public.series s where id = :s"""), {"s": body.series_id})).mappings().first()
         # The last storyboards, so the next one is told another way.
         recent = (await conn.execute(text(
@@ -93,7 +95,7 @@ async def _write(request: Request, user_id: uuid.UUID, body: NewVideo) -> Storyb
             structure = pick_structure(body.kind, last) if body.structure == "auto" else body.structure
             result = await director(llm, ask=(body.ask or "").strip() or "Un video que muestre cómo funciona la app",
                                     kind=body.kind, duration=body.duration, book_kind=book_kind,
-                                    sample=series["sample"], structure=structure,
+                                    sample=series["sample"], structure=structure, cast=series["cast_names"],
                                     recent=[dict(title=r["title"], scenes=list(r["scenes"])) for r in recent],
                                     captures=captures, **book)
         else:
