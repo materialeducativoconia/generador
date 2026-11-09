@@ -166,3 +166,46 @@ def test_a_video_may_open_on_the_finished_book_instead_of_a_title():
 
     assert [s.type for s in board.scenes] == ["pdf", "versus", "number", "cta"]
     assert board.scenes[1].text and board.scenes[2].text
+
+
+async def test_real_screenshots_are_kept_with_their_zoom_points_and_the_director_shows_them(raw_db, google_user, client,
+                                                                                           key, engine):  # noqa: F811
+    owner = await google_user()
+    sid = await _written(raw_db, client, key, engine, owner)
+    admin = await google_user(email="captures@jelyx.test")
+    await raw_db.execute("update public.profiles set platform_role = 'admin' where id = $1", admin)
+    app = client._transport.app
+    deleted = []
+
+    class Storage:
+        async def upload_url(self, k, bucket):
+            return f"https://upload.test/{bucket}/{k}"
+
+        async def signed_urls(self, keys, bucket, expires_in=3600):
+            return {k: f"https://signed.test/{bucket}/{k}" for k in keys}
+
+        async def delete(self, k, bucket):
+            deleted.append(k)
+
+    app.state.storage = Storage()
+    up = (await client.post("/api/admin/marketing/captures/upload?ext=png", headers=bearer(key, admin))).json()
+    made = (await client.post("/api/admin/marketing/captures", headers=bearer(key, admin),
+                              json={"key": up["key"], "name": "Editor de páginas", "width": 1440, "height": 900})).json()
+    cap = made["capture"]
+    assert cap["url"] == f"https://signed.test/marketing/{up['key']}" and cap["focus"] == []
+    edited = (await client.patch(f"/api/admin/marketing/captures/{cap['id']}", headers=bearer(key, admin), json={
+        "description": "la tira de páginas y el formulario", "focus": [{"x": 0.7, "y": 0.4, "label": "Añadir dato"}]})).json()
+    assert edited["capture"]["focus"][0]["label"] == "Añadir dato"
+
+    board = {**BOARD, "scenes": [*BOARD["scenes"], {"type": "screen", "capture": cap["id"], "focus": 5, "caption": "Así"},
+                                 {"type": "screen", "capture": "inventada", "caption": "No"}]}
+    llm = ScriptedLLM(json.dumps(board))
+    app.state.llm = llm
+    script = (await client.post("/api/admin/marketing/storyboard", headers=bearer(key, admin), json={
+        "series_id": str(sid), "kind": "tutorial"})).json()["script"]
+    assert f"{cap['id']}: Editor de páginas" in llm.calls[0][-1]["content"] and "0 Añadir dato" in llm.calls[0][-1]["content"]
+    screens = [s for s in script["scenes"] if s["type"] == "screen"]
+    assert [(s["capture"], s["focus"]) for s in screens] == [(cap["id"], 0)]  # a made-up capture is dropped, the point kept in range
+
+    assert (await client.delete(f"/api/admin/marketing/captures/{cap['id']}", headers=bearer(key, admin))).status_code == 204
+    assert deleted == [up["key"]]

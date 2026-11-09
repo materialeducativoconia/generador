@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Player } from '@remotion/player'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Navigate } from 'react-router'
 import { AppShell } from '../components/AppShell'
 import { errorText } from '../components/ErrorNote'
@@ -10,8 +10,8 @@ import { useMe, useSeries } from '../lib/queries'
 import type { Genre, Series } from '../lib/types'
 import { StoryboardVideo } from '../video/Storyboard'
 import { TopicToBook } from '../video/TopicToBook'
-import { DURATION, FPS, LOOKS, SCENES, SIZES, boardFrames, fontsReady, timeline, type Look, type Scene, type SceneType, type Storyboard,
-  type VideoKind, type VideoScript, type VideoTome } from '../video/spec'
+import { DURATION, FPS, LOOKS, SCENES, SIZES, TRANSITIONS, boardFrames, fontsReady, timeline, type Capture, type Look, type Scene, type SceneType,
+  type Storyboard, type Transition, type VideoKind, type VideoScript, type VideoTome } from '../video/spec'
 import { AdminTabs } from './AdminUsers'
 
 type Format = keyof typeof SIZES
@@ -67,6 +67,7 @@ export function AdminMarketing() {
     queryFn: () => api.get<{ series: Tome[] }>('/api/admin/series?status=ready&limit=96') })
   const structures = useQuery({ queryKey: ['marketing-structures'], enabled: staff, staleTime: Infinity,
     queryFn: () => api.get<{ structures: Structure[] }>('/api/admin/marketing/structures') })
+  const captures = useCaptures(staff)
   const ways = (structures.data?.structures ?? []).filter((st) => st.kinds.includes(kind))
   const asked = { series_id: seriesId, format, ask: ask.trim() || null, kind, duration }
   const propose = useMutation({
@@ -147,10 +148,10 @@ export function AdminMarketing() {
 
       {draft && <Draft board={draft} seriesId={seriesId} format={format} onChange={setDraft} onAgain={() => propose.mutate()} again={propose.isPending}
         onCreate={() => create.mutate()} creating={create.isPending} error={create.error} onDiscard={() => setDraft(null)}
-        structure={structures.data?.structures.find((st) => st.key === draft.structure)?.label} />}
+        structure={structures.data?.structures.find((st) => st.key === draft.structure)?.label} captures={captures} />}
 
       {videos.error && <p className="error">{errorText(videos.error, 'No pudimos cargar los videos.')}</p>}
-      {current && <VideoEditor key={current.id} video={current} title={current.series_id ? titles[current.series_id] : undefined} onClose={() => setOpen(null)} />}
+      {current && <VideoEditor key={current.id} captures={captures} video={current} title={current.series_id ? titles[current.series_id] : undefined} onClose={() => setOpen(null)} />}
       <section className="marketing-videos">
         <h2 className="section-h">Tus videos</h2>
         {fetchMp4.error && <p className="error small" role="alert">{errorText(fetchMp4.error, 'No se pudo descargar.')}</p>}
@@ -171,13 +172,14 @@ export function AdminMarketing() {
         </ul>
         {videos.data?.videos.length === 0 && <p className="muted">Aún no hay videos. Elige un tomo y pide el primero.</p>}
       </section>
+      <CaptureLibrary captures={captures} />
     </AppShell>
   )
 }
 
 /** The proposed storyboard before it is a video: its structure at a glance, playing, and changed scene by scene. */
-function Draft({ board, seriesId, format, structure, onChange, onAgain, again, onCreate, creating, error, onDiscard }: {
-  board: Storyboard; seriesId: string; format: Format; structure?: string; onChange: (b: Storyboard) => void
+function Draft({ board, seriesId, format, structure, captures, onChange, onAgain, again, onCreate, creating, error, onDiscard }: {
+  board: Storyboard; seriesId: string; format: Format; structure?: string; captures: Record<string, Capture>; onChange: (b: Storyboard) => void
   onAgain: () => void; again: boolean; onCreate: () => void; creating: boolean; error: unknown; onDiscard: () => void
 }) {
   const series = useSeries(seriesId)
@@ -192,7 +194,7 @@ function Draft({ board, seriesId, format, structure, onChange, onAgain, again, o
       </div>
       <div className="marketing-body">
         <div className="marketing-stage" style={{ aspectRatio: `${width} / ${height}` }}>
-          {tome ? <Player component={StoryboardVideo} inputProps={{ board, tome }} durationInFrames={boardFrames(board)} fps={FPS}
+          {tome ? <Player component={StoryboardVideo} inputProps={{ board, tome, captures }} durationInFrames={boardFrames(board)} fps={FPS}
             compositionWidth={width} compositionHeight={height} controls loop style={{ width: '100%', height: '100%' }} />
             : <div className="page-preview-wait">Cargando el tomo…</div>}
         </div>
@@ -203,30 +205,25 @@ function Draft({ board, seriesId, format, structure, onChange, onAgain, again, o
               <li key={i}>
                 <span className="muted small">{clock(from)}–{clock(from + frames)}</span>
                 <strong>{step ? `Paso ${step} · ` : ''}{SCENES[scene.type].label}</strong>
+                {scene.type === 'screen' && <span className="muted small">{(scene.capture && captures[scene.capture]?.name) || 'sin captura'}</span>}
                 {scene.caption && <span>«{scene.caption}»</span>}
                 {scene.text && <span className="muted small">{scene.text}</span>}
               </li>
             ))}
           </ol>
-          <fieldset className="field"><legend>Colores de los textos</legend>
-            <div className="segmented-inline">
-              {(Object.keys(LOOKS) as Look[]).map((l) => (
-                <button key={l} type="button" className={(board.look ?? 'claro') === l ? 'chip on' : 'chip'} onClick={() => onChange({ ...board, look: l })}>{LOOKS[l].label}</button>
-              ))}
-            </div>
-          </fieldset>
+          <Styling board={board} onChange={onChange} />
           <button className="primary" onClick={onCreate} disabled={creating}>{creating ? 'Guardando…' : 'Crear este video'}</button>
           {error ? <p className="error small" role="alert">{errorText(error, 'No se pudo crear el video.')}</p> : null}
           <button type="button" className="ghost small" onClick={onAgain} disabled={again}>{again ? 'DeepSeek dirige otra…' : 'Otra estructura'}</button>
           <button type="button" className="ghost small" onClick={() => setEditing(!editing)}>{editing ? 'Ocultar escenas' : 'Editar escenas'}</button>
-          {editing && <BoardFields board={board} onChange={onChange} />}
+          {editing && <BoardFields board={board} onChange={onChange} captures={captures} />}
         </div>
       </div>
     </section>
   )
 }
 
-function VideoEditor({ video, title, onClose }: { video: Video; title?: string; onClose: () => void }) {
+function VideoEditor({ video, title, captures, onClose }: { video: Video; title?: string; captures: Record<string, Capture>; onClose: () => void }) {
   const qc = useQueryClient()
   const series = useSeries(video.series_id ?? '')
   const [script, setScript] = useState<VideoScript | Storyboard>(video.script)
@@ -266,8 +263,8 @@ function VideoEditor({ video, title, onClose }: { video: Video; title?: string; 
       const result = video.template === 'storyboard'
         ? await renderMediaOnWeb({
           composition: { id: 'storyboard', component: StoryboardVideo, durationInFrames: boardFrames(current as Storyboard), fps: FPS, width, height,
-            defaultProps: { board: current as Storyboard, tome } },
-          inputProps: { board: current as Storyboard, tome }, onProgress: (p) => setProgress(p.progress) })
+            defaultProps: { board: current as Storyboard, tome, captures } },
+          inputProps: { board: current as Storyboard, tome, captures }, onProgress: (p) => setProgress(p.progress) })
         : await renderMediaOnWeb({
           composition: { id: 'topic-to-book', component: TopicToBook, durationInFrames: DURATION, fps: FPS, width, height,
             defaultProps: { script: current as VideoScript, tome } },
@@ -301,7 +298,7 @@ function VideoEditor({ video, title, onClose }: { video: Video; title?: string; 
         <div className="marketing-stage" style={{ aspectRatio: `${width} / ${height}` }}>
           {!tome ? <div className="page-preview-wait">{series.isError ? 'No se pudo cargar el tomo.' : 'Cargando el tomo…'}</div>
             : board ? (
-              <Player component={StoryboardVideo} inputProps={{ board, tome }} durationInFrames={frames} fps={FPS}
+              <Player component={StoryboardVideo} inputProps={{ board, tome, captures }} durationInFrames={frames} fps={FPS}
                 compositionWidth={width} compositionHeight={height} controls loop style={{ width: '100%', height: '100%' }} />
             ) : (
               <Player component={TopicToBook} inputProps={{ script: fixed!, tome }} durationInFrames={DURATION} fps={FPS}
@@ -316,16 +313,8 @@ function VideoEditor({ video, title, onClose }: { video: Video; title?: string; 
               ))}
             </div>
           </fieldset>
-          {board && (
-            <fieldset className="field"><legend>Colores de los textos</legend>
-              <div className="segmented-inline">
-                {(Object.keys(LOOKS) as Look[]).map((l) => (
-                  <button key={l} type="button" className={(board.look ?? 'claro') === l ? 'chip on' : 'chip'} onClick={() => setScript({ ...board, look: l })}>{LOOKS[l].label}</button>
-                ))}
-              </div>
-            </fieldset>
-          )}
-          {board ? <BoardFields board={board} onChange={setScript} /> : FIELDS.map(([key, label, max]) => (
+          {board && <Styling board={board} onChange={setScript} />}
+          {board ? <BoardFields board={board} onChange={setScript} captures={captures} /> : FIELDS.map(([key, label, max]) => (
             <label key={key} className="field"><span>{label}</span>
               {key === 'request'
                 ? <textarea value={fixed![key]} onChange={(e) => setScript({ ...fixed!, [key]: e.target.value })} rows={2} maxLength={max} />
@@ -364,7 +353,7 @@ function VideoEditor({ video, title, onClose }: { video: Video; title?: string; 
 }
 
 /** The storyboard, scene by scene: what it shows, how long, its line on screen and its voice; reordered or removed. */
-function BoardFields({ board, onChange }: { board: Storyboard; onChange: (b: Storyboard) => void }) {
+function BoardFields({ board, onChange, captures }: { board: Storyboard; onChange: (b: Storyboard) => void; captures: Record<string, Capture> }) {
   const [adding, setAdding] = useState<SceneType>('editor_open')
   const set = (i: number, scene: Partial<Scene>) => onChange({ ...board, scenes: board.scenes.map((sc, j) => (j === i ? { ...sc, ...scene } : sc)) })
   const move = (i: number, by: number) => {
@@ -391,6 +380,19 @@ function BoardFields({ board, onChange }: { board: Storyboard; onChange: (b: Sto
                 onClick={() => onChange({ ...board, scenes: board.scenes.filter((_, j) => j !== i) })} aria-label="Quitar escena">✕</button>
             </div>
             <input value={sc.caption} onChange={(e) => set(i, { caption: e.target.value })} maxLength={70} placeholder="Texto en pantalla" />
+            {sc.type === 'screen' && (
+              <div className="board-head">
+                <select value={sc.capture ?? ''} onChange={(e) => set(i, { capture: e.target.value, focus: 0 })} aria-label="Captura">
+                  <option value="">Elige una captura…</option>
+                  {Object.values(captures).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                {sc.capture && (captures[sc.capture]?.focus.length ?? 0) > 1 && (
+                  <select value={sc.focus ?? 0} onChange={(e) => set(i, { focus: Number(e.target.value) })} aria-label="Punto del zoom">
+                    {captures[sc.capture].focus.map((f, j) => <option key={j} value={j}>Zoom: {f.label || `punto ${j + 1}`}</option>)}
+                  </select>
+                )}
+              </div>
+            )}
             {SCENES[sc.type].types && <input value={sc.text} onChange={(e) => set(i, { text: e.target.value })} maxLength={140} placeholder={SCENES[sc.type].types} />}
             <textarea value={sc.voice} onChange={(e) => set(i, { voice: e.target.value })} maxLength={300} rows={2} placeholder="Voz en off de esta escena" />
           </li>
@@ -403,6 +405,138 @@ function BoardFields({ board, onChange }: { board: Storyboard; onChange: (b: Sto
         <button type="button" className="ghost small" disabled={board.scenes.length >= 16} onClick={() => onChange({ ...board,
           scenes: [...board.scenes.slice(0, -1), { type: adding, seconds: 4, caption: '', voice: '', text: '' }, ...board.scenes.slice(-1)] })}>
           + Añadir escena</button>
+      </div>
+    </div>
+  )
+}
+
+function useCaptures(enabled: boolean) {
+  const { data } = useQuery({ queryKey: ['marketing-captures'], enabled, staleTime: 60 * 60_000,
+    queryFn: () => api.get<{ captures: Capture[] }>('/api/admin/marketing/captures') })
+  return useMemo(() => Object.fromEntries((data?.captures ?? []).map((c) => [c.id, c])), [data])
+}
+
+/** The text scenes' colours and how one scene gives way to the next. */
+function Styling({ board, onChange }: { board: Storyboard; onChange: (b: Storyboard) => void }) {
+  return (
+    <>
+      <fieldset className="field"><legend>Colores de los textos</legend>
+        <div className="segmented-inline">
+          {(Object.keys(LOOKS) as Look[]).map((l) => (
+            <button key={l} type="button" className={(board.look ?? 'claro') === l ? 'chip on' : 'chip'} onClick={() => onChange({ ...board, look: l })}>{LOOKS[l].label}</button>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="field"><legend>Transiciones</legend>
+        <div className="segmented-inline">
+          {(Object.keys(TRANSITIONS) as Transition[]).map((t) => (
+            <button key={t} type="button" className={(board.transition ?? 'mixta') === t ? 'chip on' : 'chip'} onClick={() => onChange({ ...board, transition: t })}>{TRANSITIONS[t]}</button>
+          ))}
+        </div>
+      </fieldset>
+    </>
+  )
+}
+
+/** Real screenshots of the app, uploaded once: each with a name the director reads and the points the camera zooms to. */
+function CaptureLibrary({ captures }: { captures: Record<string, Capture> }) {
+  const qc = useQueryClient()
+  const input = useRef<HTMLInputElement>(null)
+  const [open, setOpen] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  const list = Object.values(captures)
+  async function upload(files: FileList | null) {
+    if (!files?.length) return
+    setBusy(true)
+    setError(null)
+    try {
+      for (const file of Array.from(files)) {
+        const ext = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : 'png'
+        const { width, height } = await createImageBitmap(file)
+        const { key, upload_url } = await api.post<{ key: string; upload_url: string }>(`/api/admin/marketing/captures/upload?ext=${ext}`)
+        const put = await fetch(upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'image/png' } })
+        if (!put.ok) throw new Error(`No se pudo subir ${file.name}.`)
+        const name = file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').slice(0, 80) || 'Captura'
+        await api.post('/api/admin/marketing/captures', { key, name, width, height })
+      }
+      await qc.invalidateQueries({ queryKey: ['marketing-captures'] })
+    } catch (e) {
+      setError(e)
+    } finally {
+      setBusy(false)
+      if (input.current) input.current.value = ''
+    }
+  }
+  const current = open ? captures[open] : null
+  return (
+    <section className="marketing-videos">
+      <h2 className="section-h">Capturas de la app</h2>
+      <p className="muted small">Sube capturas reales de la app (de la computadora o del teléfono) y marca dónde debe acercarse la cámara. El director las usa en la escena «Pantalla real», dentro de un teléfono o una laptop.</p>
+      <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={(e) => upload(e.target.files)} />
+      <button type="button" className="primary small" onClick={() => input.current?.click()} disabled={busy}>{busy ? 'Subiendo…' : '+ Subir capturas'}</button>
+      {error ? <p className="error small" role="alert">{error instanceof Error && !(error as { code?: string }).code ? error.message : errorText(error, 'No se pudo subir la captura.')}</p> : null}
+      <ul className="capture-grid">
+        {list.map((c) => (
+          <li key={c.id} className={c.id === open ? 'on' : undefined}>
+            <button type="button" onClick={() => setOpen(c.id === open ? null : c.id)}>
+              {c.url && <img src={c.url} alt="" loading="lazy" />}
+              <span className="small">{c.name}</span>
+              <span className={c.focus.length ? 'muted small' : 'error small'}>{c.focus.length ? `${c.focus.length} punto${c.focus.length > 1 ? 's' : ''} de zoom` : 'Sin puntos de zoom'}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {current && <CaptureEditor key={current.id} capture={current} onClose={() => setOpen(null)} />}
+    </section>
+  )
+}
+
+function CaptureEditor({ capture, onClose }: { capture: Capture; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [name, setName] = useState(capture.name)
+  const [description, setDescription] = useState(capture.description)
+  const [focus, setFocus] = useState(capture.focus)
+  const save = useMutation({
+    mutationFn: () => api.patch(`/api/admin/marketing/captures/${capture.id}`, { name, description, focus }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['marketing-captures'] }),
+  })
+  const remove = useMutation({
+    mutationFn: () => api.delete(`/api/admin/marketing/captures/${capture.id}`),
+    onSuccess: async () => { onClose(); await qc.invalidateQueries({ queryKey: ['marketing-captures'] }) },
+  })
+  const mark = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (focus.length >= 12) return
+    const r = e.currentTarget.getBoundingClientRect()
+    const x = Math.round(((e.clientX - r.left) / r.width) * 1000) / 1000
+    const y = Math.round(((e.clientY - r.top) / r.height) * 1000) / 1000
+    setFocus([...focus, { x, y, label: '' }])
+  }
+  return (
+    <div className="panel capture-editor">
+      <div className="capture-shot" onClick={mark} style={{ aspectRatio: `${capture.width} / ${capture.height}` }}>
+        {capture.url && <img src={capture.url} alt="" draggable={false} />}
+        {focus.map((f, i) => <span key={i} className="capture-dot" style={{ left: `${f.x * 100}%`, top: `${f.y * 100}%` }}>{i + 1}</span>)}
+      </div>
+      <div className="page-form">
+        <label className="field"><span>Nombre</span><input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} /></label>
+        <label className="field"><span>Qué muestra (lo lee el director)</span>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} rows={2} placeholder="Ej.: el Editor de páginas con la tira de miniaturas y el formulario" /></label>
+        <div className="field"><span>Puntos de zoom · toca la captura para marcar uno</span>
+          <ol className="board-outline">
+            {focus.map((f, i) => (
+              <li key={i}>
+                <input value={f.label} maxLength={60} placeholder="Qué hay ahí, p. ej. «Añadir dato»"
+                  onChange={(e) => setFocus(focus.map((g, j) => (j === i ? { ...g, label: e.target.value } : g)))} />
+                <button type="button" className="ghost small" onClick={() => setFocus(focus.filter((_, j) => j !== i))} aria-label="Quitar punto">✕</button>
+              </li>
+            ))}
+          </ol>
+        </div>
+        <button className="primary" onClick={() => save.mutate()} disabled={save.isPending}>{save.isPending ? 'Guardando…' : save.isSuccess ? 'Guardado ✓' : 'Guardar captura'}</button>
+        {save.error && <p className="error small" role="alert">{errorText(save.error, 'No se pudo guardar.')}</p>}
+        <button type="button" className="ghost small" onClick={onClose}>Cerrar</button>
+        <button type="button" className="ghost small" onClick={() => remove.mutate()} disabled={remove.isPending}>Borrar captura</button>
       </div>
     </div>
   )

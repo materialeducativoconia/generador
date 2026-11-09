@@ -1143,6 +1143,16 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .marketing-list li.on { border-color: var(--accent); }
 .marketing-list li > div { display: grid; gap: 2px; flex: 1; min-width: 200px; }
 .marketing-actions { display: flex; gap: 6px; }
+.capture-grid { list-style: none; margin: 12px 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.capture-grid button { width: 100%; display: grid; gap: 4px; padding: 6px; text-align: left; border: 1px solid var(--border); border-radius: 12px; background: var(--card); cursor: pointer; }
+.capture-grid li.on button { border-color: var(--accent, #5b4cf0); }
+.capture-grid img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; object-position: top; border-radius: 8px; background: #f4f2f0; }
+.capture-editor { display: grid; gap: 16px; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: start; }
+@media (max-width: 760px) { .capture-editor { grid-template-columns: 1fr; } }
+.capture-shot { position: relative; cursor: crosshair; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); max-height: 70vh; }
+.capture-shot img { width: 100%; height: 100%; object-fit: cover; display: block; user-select: none; }
+.capture-dot { position: absolute; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 99px; background: #5b4cf0; color: #fff;
+  font: 700 13px/28px system-ui; text-align: center; box-shadow: 0 0 0 4px rgba(91, 76, 240, .3); pointer-events: none; }
 .board-outline { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
 .board-outline li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
 .board-scenes { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }

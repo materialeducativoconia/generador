@@ -78,6 +78,11 @@ async def _write(request: Request, user_id: uuid.UUID, body: NewVideo) -> Storyb
                       array(select e->>'type' from jsonb_array_elements(script->'scenes') e) as scenes
                  from public.marketing_videos where template = 'storyboard'
                 order by created_at desc limit 6"""))).mappings().all()
+        captures = [dict(id=r["id"], name=r["name"], description=r["description"],
+                         focus=[(f.get("label") or "") for f in (json.loads(r["focus"]) if isinstance(r["focus"], str) else r["focus"])])
+                    for r in (await conn.execute(text(
+                        "select id::text, name, description, focus from public.marketing_captures order by created_at"
+                    ))).mappings().all()]
     if series is None:
         raise ApiError(404, "not_found", "Ese tomo no existe.")
     book = dict(title=series["title"], topic=series["topic"], audience=series["audience"], sections=list(series["sections"]))
@@ -89,7 +94,8 @@ async def _write(request: Request, user_id: uuid.UUID, body: NewVideo) -> Storyb
             result = await director(llm, ask=(body.ask or "").strip() or "Un video que muestre cómo funciona la app",
                                     kind=body.kind, duration=body.duration, book_kind=book_kind,
                                     sample=series["sample"], structure=structure,
-                                    recent=[dict(title=r["title"], scenes=list(r["scenes"])) for r in recent], **book)
+                                    recent=[dict(title=r["title"], scenes=list(r["scenes"])) for r in recent],
+                                    captures=captures, **book)
         else:
             result = await video_script(llm, kind=book_kind, angle=body.ask, **book)
     except AgentFailed as exc:
@@ -217,3 +223,94 @@ async def mp4_download(video_id: uuid.UUID, request: Request, user_id: UserId):
     name = f"jelyx-{video['format'].replace(':', 'x')}-{str(video_id)[:6]}.mp4"
     return {"url": await request.app.state.storage.signed_url(video["mp4_key"], expires_in=300, download_name=name,
                                                               bucket=BUCKET)}
+
+
+# Real screenshots of the app: uploaded once, each with the points the camera zooms to.
+CAPTURE_FIELDS = "id::text, name, description, image_key, width, height, focus, created_at"
+
+
+class Point(BaseModel):
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    label: str = Field(default="", max_length=60)
+
+
+class NewCapture(BaseModel):
+    key: str = Field(pattern=r"^captures/[0-9a-f]{12}\.(png|jpg|webp)$")
+    name: str = Field(min_length=1, max_length=80)
+    width: int = Field(gt=0, le=8000)
+    height: int = Field(gt=0, le=8000)
+
+
+class CaptureEdit(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    description: str | None = Field(default=None, max_length=300)
+    focus: list[Point] | None = Field(default=None, max_length=12)
+
+
+async def _captures_out(request: Request, rows) -> list[dict]:
+    urls = await request.app.state.storage.signed_urls([r["image_key"] for r in rows], bucket=BUCKET, expires_in=6 * 3600)
+    out = []
+    for r in rows:
+        c = dict(r)
+        c["focus"] = json.loads(c["focus"]) if isinstance(c["focus"], str) else c["focus"]
+        c["url"] = urls.get(c.pop("image_key"))
+        out.append(c)
+    return out
+
+
+@router.get("/api/admin/marketing/captures")
+async def list_captures(request: Request, user_id: UserId):
+    async with request.app.state.engine.connect() as conn:
+        await _staff(conn, user_id)
+        rows = (await conn.execute(text(
+            f"select {CAPTURE_FIELDS} from public.marketing_captures order by created_at"))).mappings().all()
+    return {"captures": await _captures_out(request, rows)}
+
+
+@router.post("/api/admin/marketing/captures/upload")
+async def capture_upload(request: Request, user_id: UserId, ext: Literal["png", "jpg", "webp"] = "png"):
+    """Where the browser puts a screenshot (straight to storage)."""
+    async with request.app.state.engine.connect() as conn:
+        await _staff(conn, user_id)
+    key = f"captures/{uuid.uuid4().hex[:12]}.{ext}"
+    return {"key": key, "upload_url": await request.app.state.storage.upload_url(key, bucket=BUCKET)}
+
+
+@router.post("/api/admin/marketing/captures", status_code=201)
+async def new_capture(body: NewCapture, request: Request, user_id: UserId):
+    async with request.app.state.engine.begin() as conn:
+        await _staff(conn, user_id)
+        row = (await conn.execute(text(
+            f"""insert into public.marketing_captures (name, image_key, width, height, created_by)
+                values (:n, :k, :w, :h, :u) returning {CAPTURE_FIELDS}"""),
+            {"n": body.name, "k": body.key, "w": body.width, "h": body.height, "u": user_id})).mappings().one()
+    return {"capture": (await _captures_out(request, [row]))[0]}
+
+
+@router.patch("/api/admin/marketing/captures/{capture_id}")
+async def edit_capture(capture_id: uuid.UUID, body: CaptureEdit, request: Request, user_id: UserId):
+    async with request.app.state.engine.begin() as conn:
+        await _staff(conn, user_id)
+        row = (await conn.execute(text(
+            f"""update public.marketing_captures set name = coalesce(:n, name), description = coalesce(:d, description),
+                       focus = coalesce(cast(:f as jsonb), focus)
+                 where id = :id returning {CAPTURE_FIELDS}"""),
+            {"id": capture_id, "n": body.name, "d": body.description,
+             "f": None if body.focus is None else json.dumps([p.model_dump() for p in body.focus])})).mappings().first()
+    if row is None:
+        raise ApiError(404, "not_found", "Esa captura no existe.")
+    return {"capture": (await _captures_out(request, [row]))[0]}
+
+
+@router.delete("/api/admin/marketing/captures/{capture_id}", status_code=204)
+async def delete_capture(capture_id: uuid.UUID, request: Request, user_id: UserId):
+    async with request.app.state.engine.begin() as conn:
+        await _staff(conn, user_id)
+        key = (await conn.execute(text("delete from public.marketing_captures where id = :id returning image_key"),
+                                  {"id": capture_id})).scalar()
+    if key:
+        try:
+            await request.app.state.storage.delete(key, bucket=BUCKET)
+        except Exception:  # the row is gone; a stray file in the bucket harms nothing
+            log.warning("capture file %s not deleted", key)

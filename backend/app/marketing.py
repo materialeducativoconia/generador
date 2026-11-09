@@ -90,10 +90,13 @@ SCENES = {
               "«3 horas en Word | 5 minutos con Jelyx»)",
     "number": "un número enorme que cuenta hasta su valor (text: el número con su unidad, p. ej. «5 min» o «24 "
               "páginas»; caption: lo que significa)",
+    "screen": "una captura REAL de la app en un teléfono o una laptop: la cámara se acerca al punto marcado y el "
+              "cursor hace clic (capture: el id de la captura; focus: el número del punto, desde 0). Solo con las "
+              "capturas de la lista; es lo más creíble para tutoriales y explicativos",
     "cta": "cierre con la marca, la llamada a la acción y la dirección de la app",
 }
 SceneType = Literal["title", "compose", "plan", "cover", "pages", "pdf", "editor_open", "editor_move", "editor_facts",
-                    "editor_repaint", "editor_cover", "editor_save", "list", "versus", "number", "cta"]
+                    "editor_repaint", "editor_cover", "editor_save", "list", "versus", "number", "screen", "cta"]
 # The scenes that show a text of their own, and what they show when the director left it empty.
 TEXT_SCENES = {"compose": "Quiero un libro ilustrado para mi grupo", "editor_facts": "Dato nuevo para la lámina",
                "editor_repaint": "más luz de mañana", "list": "Portada | Ilustraciones | Actividades | Solucionario",
@@ -147,6 +150,8 @@ class Scene(BaseModel):
     caption: Annotated[str, _clip(70), Field(max_length=70)] = ""  # the line on screen
     voice: Annotated[str, _clip(300), Field(max_length=300)] = ""  # what the voiceover says meanwhile
     text: Annotated[str, _clip(140), Field(max_length=140)] = ""  # what the scene types (TEXT_SCENES)
+    capture: str = ""  # a screen scene's capture (marketing_captures id)
+    focus: int = Field(default=0, ge=0, le=20)  # and which of its marked points the camera goes to
 
 
 class Storyboard(BaseModel):
@@ -154,6 +159,7 @@ class Storyboard(BaseModel):
     duration: Literal[15, 30, 45, 60] = 30
     structure: str = ""  # a key of STRUCTURES
     look: Literal["claro", "oscuro", "color"] = "claro"  # the colours of the text scenes
+    transition: Literal["mixta", "deslizar", "zoom", "barrido", "corte"] = "mixta"  # how one scene gives way to the next
     title: Annotated[str, _clip(80), Field(min_length=2, max_length=80)]
     scenes: list[Scene] = Field(min_length=2, max_length=16)
     post: Annotated[str, _clip(700), Field(max_length=700)] = ""
@@ -205,13 +211,15 @@ sin emojis ni símbolos; la dirección se dice «docs punto jelyx punto app»). 
 post: el texto para publicar (3 o 4 líneas y 4 a 6 hashtags).
 
 Responde solo con json:
-{"title": "…", "scenes": [{"type": "…", "seconds": 4, "caption": "…", "voice": "…", "text": "…"}], "post": "…"}"""
+{"title": "…", "scenes": [{"type": "…", "seconds": 4, "caption": "…", "voice": "…", "text": "…", "capture": "…",
+"focus": 0}], "post": "…"}"""
 
 
 async def director(llm: LLM, *, ask: str, kind: str, duration: int, title: str, topic: str, book_kind: str,
                    audience: str, sections: list[str], sample: str | None, structure: str,
-                   recent: list[dict] = ()) -> AgentResult[Storyboard]:
-    """`recent`: the last storyboards ({title, scenes: [types]}), so this one is told another way."""
+                   recent: list[dict] = (), captures: list[dict] = ()) -> AgentResult[Storyboard]:
+    """`recent`: the last storyboards ({title, scenes: [types]}), so this one is told another way. `captures`: the
+    real screenshots of the app ({id, name, description, focus: [labels]}) its screen scenes may show."""
     name, _, how = STRUCTURES[structure]
     facts = (f"Pedido del equipo: {ask}\nTipo de video: {kind}\nDuración: {duration} segundos\n"
              f"Estructura: {name}: {how}\n\n"
@@ -222,8 +230,20 @@ async def director(llm: LLM, *, ask: str, kind: str, duration: int, title: str, 
     if recent:
         facts += ("\n\nVideos ya hechos: no repitas su secuencia de escenas, su gancho ni sus frases.\n"
                   + "\n".join(f"- «{r['title']}»: {' → '.join(r['scenes'])}" for r in recent))
+    if captures:
+        facts += ("\n\nCapturas reales de la app para las escenas screen (id: qué muestra; sus puntos, desde 0):\n"
+                  + "\n".join(f"- {c['id']}: {c['name']}{' — ' + c['description'] if c['description'] else ''}"
+                               f" | puntos: {'; '.join(f'{i} {p}' for i, p in enumerate(c['focus'])) or '0 centro'}"
+                               for c in captures))
+    else:
+        facts += "\n\nNo hay capturas reales: no uses escenas screen."
     messages = [{"role": "system", "content": DIRECTOR_SYSTEM}, {"role": "user", "content": facts}]
     result = await _json_call(llm, messages, Storyboard, temperature=1.0, max_tokens=3000)
+    known = {c["id"]: len(c["focus"]) for c in captures}
+    result.value.scenes = [s for s in result.value.scenes if s.type != "screen" or s.capture in known] or result.value.scenes
+    for s in result.value.scenes:
+        if s.type == "screen":
+            s.focus = min(s.focus, max(0, known[s.capture] - 1))
     result.value.kind, result.value.duration = kind, duration  # what the team asked, not what the model echoed
     result.value.structure, result.value.look = structure, random.choice(LOOKS)
     result.value = tidy_storyboard(result.value)

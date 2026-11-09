@@ -21,18 +21,24 @@ export const fontsReady = geist.waitUntilDone
 
 // The director's storyboard (backend app/marketing.py Storyboard): any video, scene by scene.
 export type SceneType = 'title' | 'compose' | 'plan' | 'cover' | 'pages' | 'pdf' | 'editor_open' | 'editor_move' | 'editor_facts'
-  | 'editor_repaint' | 'editor_cover' | 'editor_save' | 'list' | 'versus' | 'number' | 'cta'
-export type Scene = { type: SceneType; seconds: number; caption: string; voice: string; text: string }
+  | 'editor_repaint' | 'editor_cover' | 'editor_save' | 'list' | 'versus' | 'number' | 'screen' | 'cta'
+export type Scene = { type: SceneType; seconds: number; caption: string; voice: string; text: string; capture?: string; focus?: number }
+/** A real screenshot of the app (backend marketing_captures): shown in a device, the camera zooming to its points. */
+export type Capture = { id: string; name: string; description: string; url: string | null; width: number; height: number
+  focus: { x: number; y: number; label: string }[] }
 export type VideoKind = 'marketing' | 'explainer' | 'tutorial'
 export type Look = 'claro' | 'oscuro' | 'color'
-export type Storyboard = { kind: VideoKind; duration: 15 | 30 | 45 | 60; title: string; scenes: Scene[]; post: string; structure?: string; look?: Look }
+export type Storyboard = { kind: VideoKind; duration: 15 | 30 | 45 | 60; title: string; scenes: Scene[]; post: string; structure?: string; look?: Look
+  transition?: Transition }
+export type Transition = 'mixta' | 'deslizar' | 'zoom' | 'barrido' | 'corte'
+export const TRANSITIONS: Record<Transition, string> = { mixta: 'Mixta', deslizar: 'Deslizar', zoom: 'Zoom', barrido: 'Barrido', corte: 'Fundido' }
 /** The text scenes' colours: background, ink and the accent of the key word. */
 export const LOOKS: Record<Look, { label: string; bg: string; ink: string; accent: string }> = {
   claro: { label: 'Claro', bg: '#ffffff', ink: '#0c0a09', accent: '#5b4cf0' },
   oscuro: { label: 'Oscuro', bg: '#0c0a09', ink: '#ffffff', accent: '#a99cff' },
   color: { label: 'Color', bg: '#5b4cf0', ink: '#ffffff', accent: '#ffd166' },
 }
-export type StoryboardProps = { board: Storyboard; tome: VideoTome }
+export type StoryboardProps = { board: Storyboard; tome: VideoTome; captures?: Record<string, Capture> }
 
 export const SCENES: Record<SceneType, { label: string; types?: string }> = {
   title: { label: 'Texto grande' }, compose: { label: 'Escribir el pedido', types: 'Pedido que se escribe' },
@@ -42,7 +48,7 @@ export const SCENES: Record<SceneType, { label: string; types?: string }> = {
   editor_repaint: { label: 'Editor: repintar la ilustración', types: 'Qué cambiar' },
   editor_cover: { label: 'Editor: la portada' }, editor_save: { label: 'Editor: guardar' },
   list: { label: 'Lista animada', types: 'Puntos separados por |' }, versus: { label: 'Antes y después', types: 'Antes | después' },
-  number: { label: 'Número grande', types: 'El número, p. ej. 5 min' }, cta: { label: 'Cierre' },
+  number: { label: 'Número grande', types: 'El número, p. ej. 5 min' }, screen: { label: 'Pantalla real (captura)' }, cta: { label: 'Cierre' },
 }
 
 /** Each scene's first frame and length; tutorial steps numbered (every scene but the title and the close). */

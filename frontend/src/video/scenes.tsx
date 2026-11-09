@@ -1,5 +1,5 @@
 import { AbsoluteFill, Easing, Img, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
-import { LOOKS, SITE, type VideoTome } from './spec'
+import { LOOKS, SITE, type Capture, type VideoTome } from './spec'
 
 /** The scenes every video is made of, each the real app animated with a real tome. `dur` is the scene's length in
  * frames: timings are fractions of it, so the director can give a scene 2 s or 8 s. Drawn with transforms, opacity
@@ -320,6 +320,82 @@ export function CtaScene({ caption = '' }: Base) {
         opacity: ease(frame, 10, 22) }}>{caption}</div>
       <div style={{ background: ACCENT, borderRadius: 999, padding: `${18 * u}px ${40 * u}px`, fontSize: 40 * u, fontWeight: 700,
         opacity: ease(frame, 20, 32) }}>{SITE}</div>
+    </AbsoluteFill>
+  )
+}
+
+/** A real screenshot of the app in a phone (tall) or a laptop (wide), as Screen Studio films it: the device lands, the
+ * camera glides in to the marked point, the cursor comes and clicks, and the camera holds there. */
+export function ScreenScene({ dur, caption, step, capture, focus = 0, look = LOOKS.claro }: Base & { capture?: Capture; focus?: number; look?: Palette }) {
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+  const { u, wide, width: W, height: H } = useUnit()
+  const dark = look.bg !== '#ffffff'
+  const backdrop = dark ? `radial-gradient(circle at 30% 20%, ${look.accent}55, transparent 60%), ${look.bg}`
+    : 'radial-gradient(circle at 30% 15%, #e4e0ff, transparent 55%), radial-gradient(circle at 80% 90%, #ffe7d6, transparent 50%), #f7f6f4'
+  if (!capture?.url) {
+    return <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', background: backdrop, color: dark ? '#fff' : INK, fontSize: 48 * u }}>
+      Elige una captura para esta escena</AbsoluteFill>
+  }
+  const laptop = capture.width > capture.height
+  const ratio = capture.width / capture.height
+  // The device fits the frame above the caption.
+  const maxW = W * (laptop ? (wide ? 0.72 : 0.9) : (wide ? 0.4 : 0.74))
+  const maxH = H * (wide ? 0.72 : 0.68)
+  const bezel = (laptop ? 14 : 22) * u
+  let sw = maxW - bezel * 2
+  let sh = sw / ratio
+  const base = laptop ? 34 * u : 0
+  if (sh + bezel * 2 + base > maxH) { sh = maxH - bezel * 2 - base; sw = sh * ratio }
+  const dw = sw + bezel * 2
+  const dh = sh + bezel * 2
+  const left = (W - dw) / 2
+  const top = (H - dh - base) / 2 - (wide ? 30 : 90) * u
+  const point = capture.focus[Math.min(focus, capture.focus.length - 1)] ?? { x: 0.5, y: 0.5, label: '' }
+  const px = left + bezel + point.x * sw
+  const py = top + bezel + point.y * sh
+  // The camera: in from 15 % to 45 % of the scene, to a zoom that still shows some context around the point.
+  const land = spring({ frame, fps, config: { damping: 16, mass: 0.8 } })
+  const e = ease(frame, dur * 0.15, dur * 0.45)
+  // A laptop's screen is zoomed until about half of it fills the frame; a phone less, so its frame still shows.
+  const Z = laptop ? Math.min(2, Math.max(1.4, (0.95 * W) / (sw * 0.6))) : (wide ? 1.7 : 1.45)
+  const z = 1 + (Z - 1) * e
+  const cx = W / 2
+  const cy = H * (wide ? 0.42 : 0.4)
+  const tx = px + e * (cx - px) - px * z
+  const ty = py + e * (cy - py) - py * z
+  // The cursor glides to the point and clicks.
+  const glide = ease(frame, dur * 0.35, dur * 0.6)
+  const click = frame - dur * 0.62
+  const press = click > 0 && click < 8 ? 0.85 : 1
+  const ring = click > 0 ? ease(click, 0, 16) : 0
+  const startX = left + dw * 0.92
+  const startY = top + dh * 0.95
+  const curX = startX + (px - startX) * glide
+  const curY = startY + (py - startY) * glide
+  const cs = 64 * u / Math.sqrt(z)
+  return (
+    <AbsoluteFill style={{ background: backdrop, overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', inset: 0, transformOrigin: '0 0', transform: `translate(${tx}px, ${ty}px) scale(${z})` }}>
+        <div style={{ position: 'absolute', left, top, width: dw, height: dh, borderRadius: laptop ? 18 * u : 64 * u, background: '#141414',
+          boxShadow: `0 ${40 * u}px ${100 * u}px rgba(12,10,9,.28)`, opacity: land, transform: `translateY(${(1 - land) * 80 * u}px) scale(${0.94 + land * 0.06})` }}>
+          <div style={{ position: 'absolute', left: bezel, top: bezel, width: sw, height: sh, borderRadius: laptop ? 6 * u : 46 * u, overflow: 'hidden', background: '#fff' }}>
+            <Img src={capture.url} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          </div>
+          {!laptop && <div style={{ position: 'absolute', left: '50%', top: bezel + 14 * u, width: 120 * u, height: 34 * u, marginLeft: -60 * u, borderRadius: 99, background: '#141414' }} />}
+          {laptop && <div style={{ position: 'absolute', left: -dw * 0.08, right: -dw * 0.08, top: dh, height: base, borderRadius: `0 0 ${24 * u}px ${24 * u}px`,
+            background: 'linear-gradient(#d6d3d1, #a8a29e)' }}>
+            <div style={{ width: dw * 0.16, height: 10 * u, margin: '0 auto', borderRadius: `0 0 ${10 * u}px ${10 * u}px`, background: '#8a8580' }} />
+          </div>}
+        </div>
+        {ring > 0 && ring < 1 && <div style={{ position: 'absolute', left: px - 50 * u * ring / Math.sqrt(z), top: py - 50 * u * ring / Math.sqrt(z),
+          width: 100 * u * ring / Math.sqrt(z), height: 100 * u * ring / Math.sqrt(z), borderRadius: 999, border: `${4 * u / Math.sqrt(z)}px solid ${ACCENT}`, opacity: 1 - ring }} />}
+        <svg width={cs} height={cs} viewBox="0 0 24 24" style={{ position: 'absolute', left: curX - cs * 0.2, top: curY - cs * 0.12, opacity: ease(frame, dur * 0.3, dur * 0.36),
+          transform: `scale(${press})`, transformOrigin: '20% 12%', filter: 'drop-shadow(0 2px 3px rgba(0,0,0,.3))' }}>
+          <path d="M5 3l14 8-6 1.5L10 19z" fill={INK} stroke="#fff" strokeWidth="1.4" strokeLinejoin="round" />
+        </svg>
+      </div>
+      <Caption text={caption} at={Math.min(dur - 20, dur * 0.45)} step={step} />
     </AbsoluteFill>
   )
 }
