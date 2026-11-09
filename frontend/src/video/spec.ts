@@ -21,10 +21,17 @@ export const fontsReady = geist.waitUntilDone
 
 // The director's storyboard (backend app/marketing.py Storyboard): any video, scene by scene.
 export type SceneType = 'title' | 'compose' | 'plan' | 'cover' | 'pages' | 'pdf' | 'editor_open' | 'editor_move' | 'editor_facts'
-  | 'editor_repaint' | 'editor_cover' | 'editor_save' | 'cta'
+  | 'editor_repaint' | 'editor_cover' | 'editor_save' | 'list' | 'versus' | 'number' | 'cta'
 export type Scene = { type: SceneType; seconds: number; caption: string; voice: string; text: string }
 export type VideoKind = 'marketing' | 'explainer' | 'tutorial'
-export type Storyboard = { kind: VideoKind; duration: 15 | 30 | 45 | 60; title: string; scenes: Scene[]; post: string }
+export type Look = 'claro' | 'oscuro' | 'color'
+export type Storyboard = { kind: VideoKind; duration: 15 | 30 | 45 | 60; title: string; scenes: Scene[]; post: string; structure?: string; look?: Look }
+/** The text scenes' colours: background, ink and the accent of the key word. */
+export const LOOKS: Record<Look, { label: string; bg: string; ink: string; accent: string }> = {
+  claro: { label: 'Claro', bg: '#ffffff', ink: '#0c0a09', accent: '#5b4cf0' },
+  oscuro: { label: 'Oscuro', bg: '#0c0a09', ink: '#ffffff', accent: '#a99cff' },
+  color: { label: 'Color', bg: '#5b4cf0', ink: '#ffffff', accent: '#ffd166' },
+}
 export type StoryboardProps = { board: Storyboard; tome: VideoTome }
 
 export const SCENES: Record<SceneType, { label: string; types?: string }> = {
@@ -33,7 +40,9 @@ export const SCENES: Record<SceneType, { label: string; types?: string }> = {
   pdf: { label: 'El PDF listo' }, editor_open: { label: 'Editor: abrir una página' }, editor_move: { label: 'Editor: mover textos' },
   editor_facts: { label: 'Editor: quitar y añadir datos', types: 'Dato nuevo' },
   editor_repaint: { label: 'Editor: repintar la ilustración', types: 'Qué cambiar' },
-  editor_cover: { label: 'Editor: la portada' }, editor_save: { label: 'Editor: guardar' }, cta: { label: 'Cierre' },
+  editor_cover: { label: 'Editor: la portada' }, editor_save: { label: 'Editor: guardar' },
+  list: { label: 'Lista animada', types: 'Puntos separados por |' }, versus: { label: 'Antes y después', types: 'Antes | después' },
+  number: { label: 'Número grande', types: 'El número, p. ej. 5 min' }, cta: { label: 'Cierre' },
 }
 
 /** Each scene's first frame and length; tutorial steps numbered (every scene but the title and the close). */

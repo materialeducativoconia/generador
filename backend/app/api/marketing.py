@@ -14,7 +14,7 @@ from app.agents import AgentFailed
 from app.api.admin import _staff
 from app.api.deps import current_user_id
 from app.errors import ApiError
-from app.marketing import Storyboard, VideoScript, director, tidy_storyboard, video_script
+from app.marketing import STRUCTURES, Storyboard, VideoScript, director, pick_structure, tidy_storyboard, video_script
 from app.render import GENRE_LABEL
 
 log = logging.getLogger("api")
@@ -50,14 +50,17 @@ class NewVideo(BaseModel):
     ask: str | None = Field(default=None, max_length=500)  # what video the team needs (for the fixed one: its angle)
     kind: Literal["marketing", "explainer", "tutorial"] = "marketing"
     duration: Literal[15, 30, 45, 60] = 30
+    structure: str = "auto"  # a key of STRUCTURES, or the director picks one the last video did not use
+    script: dict | None = None  # a storyboard already proposed and reviewed: saved as it is, without asking again
 
 
-@router.post("/api/admin/marketing/videos", status_code=201)
-async def new_video(body: NewVideo, request: Request, user_id: UserId):
-    """A new video of a tome: DeepSeek directs it (a few seconds)."""
+async def _write(request: Request, user_id: uuid.UUID, body: NewVideo) -> Storyboard | VideoScript:
+    """DeepSeek directs the video of a tome (a few seconds); nothing is saved."""
     llm = request.app.state.llm
     if llm is None:
         raise ApiError(503, "unavailable", "El guionista no está configurado.")
+    if body.structure != "auto" and body.structure not in STRUCTURES:
+        raise ApiError(422, "invalid_request", "Esa estructura no existe.")
     async with request.app.state.engine.connect() as conn:
         await _staff(conn, user_id)
         series = (await conn.execute(text(
@@ -69,25 +72,62 @@ async def new_video(body: NewVideo, request: Request, user_id: UserId):
                         where l.series_id = s.id and b->>'size' = 'plate' and b ? 'question'
                         order by l.position limit 1) as sample
                  from public.series s where id = :s"""), {"s": body.series_id})).mappings().first()
+        # The last storyboards, so the next one is told another way.
+        recent = (await conn.execute(text(
+            """select script->>'title' as title, script->>'structure' as structure, script->>'kind' as kind,
+                      array(select e->>'type' from jsonb_array_elements(script->'scenes') e) as scenes
+                 from public.marketing_videos where template = 'storyboard'
+                order by created_at desc limit 6"""))).mappings().all()
     if series is None:
         raise ApiError(404, "not_found", "Ese tomo no existe.")
     book = dict(title=series["title"], topic=series["topic"], audience=series["audience"], sections=list(series["sections"]))
     book_kind = GENRE_LABEL.get(series["genre"] or "", "Libro")
     try:
         if body.template == "storyboard":
+            last = next((r["structure"] for r in recent if r["kind"] == body.kind), None)
+            structure = pick_structure(body.kind, last) if body.structure == "auto" else body.structure
             result = await director(llm, ask=(body.ask or "").strip() or "Un video que muestre cómo funciona la app",
                                     kind=body.kind, duration=body.duration, book_kind=book_kind,
-                                    sample=series["sample"], **book)
+                                    sample=series["sample"], structure=structure,
+                                    recent=[dict(title=r["title"], scenes=list(r["scenes"])) for r in recent], **book)
         else:
             result = await video_script(llm, kind=book_kind, angle=body.ask, **book)
     except AgentFailed as exc:
         log.warning("video script failed: %s", [(a.outcome, (a.error or "")[:300]) for a in exc.attempts])
         raise ApiError(502, "upstream_error", "DeepSeek no pudo escribir el guion; inténtalo de nuevo.") from exc
+    return result.value
+
+
+@router.get("/api/admin/marketing/structures")
+async def structures(request: Request, user_id: UserId):
+    async with request.app.state.engine.connect() as conn:
+        await _staff(conn, user_id)
+    return {"structures": [dict(key=k, label=label, kinds=list(kinds), how=how)
+                           for k, (label, kinds, how) in STRUCTURES.items()]}
+
+
+@router.post("/api/admin/marketing/storyboard")
+async def propose(body: NewVideo, request: Request, user_id: UserId):
+    """A storyboard to look at, change or ask again before the video exists."""
+    return {"script": (await _write(request, user_id, body.model_copy(update={"template": "storyboard"}))).model_dump()}
+
+
+@router.post("/api/admin/marketing/videos", status_code=201)
+async def new_video(body: NewVideo, request: Request, user_id: UserId):
+    if body.template == "storyboard" and body.script is not None:
+        try:
+            script = tidy_storyboard(Storyboard.model_validate(body.script))
+        except ValidationError as exc:
+            raise ApiError(422, "validation_error", "Revisa el guion.", {"errors": exc.errors()}) from exc
+        async with request.app.state.engine.connect() as conn:
+            await _staff(conn, user_id)
+    else:
+        script = await _write(request, user_id, body)
     async with request.app.state.engine.begin() as conn:
         row = (await conn.execute(text(
             f"""insert into public.marketing_videos (series_id, template, format, script, created_by)
                 values (:s, :t, :f, cast(:sc as jsonb), :u) returning {FIELDS}"""),
-            {"s": body.series_id, "t": body.template, "f": body.format, "sc": result.value.model_dump_json(),
+            {"s": body.series_id, "t": body.template, "f": body.format, "sc": script.model_dump_json(),
              "u": user_id})).mappings().one()
     return {"video": _out(row)}
 

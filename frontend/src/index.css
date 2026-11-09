@@ -1143,6 +1143,8 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .marketing-list li.on { border-color: var(--accent); }
 .marketing-list li > div { display: grid; gap: 2px; flex: 1; min-width: 200px; }
 .marketing-actions { display: flex; gap: 6px; }
+.board-outline { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
+.board-outline li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
 .board-scenes { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .board-scenes li { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
 .board-head { display: flex; align-items: center; gap: 6px; }

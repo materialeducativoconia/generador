@@ -10,14 +10,15 @@ import { useMe, useSeries } from '../lib/queries'
 import type { Genre, Series } from '../lib/types'
 import { StoryboardVideo } from '../video/Storyboard'
 import { TopicToBook } from '../video/TopicToBook'
-import { DURATION, FPS, SCENES, SIZES, boardFrames, fontsReady, timeline, type Scene, type SceneType, type Storyboard, type VideoKind,
-  type VideoScript, type VideoTome } from '../video/spec'
+import { DURATION, FPS, LOOKS, SCENES, SIZES, boardFrames, fontsReady, timeline, type Look, type Scene, type SceneType, type Storyboard,
+  type VideoKind, type VideoScript, type VideoTome } from '../video/spec'
 import { AdminTabs } from './AdminUsers'
 
 type Format = keyof typeof SIZES
 type Video = { id: string; series_id: string | null; format: Format; created_at: string; has_mp4: boolean; rendered_at: string | null }
   & ({ template: 'storyboard'; script: Storyboard } | { template: 'topic_to_book'; script: VideoScript })
 type Tome = { id: string; title: string; genre: Genre | null; cover_url: string | null }
+type Structure = { key: string; label: string; kinds: VideoKind[]; how: string }
 
 const FIELDS: [keyof VideoScript, string, number][] = [
   ['hook', 'Gancho (los primeros 3 s)', 60], ['request', 'Lo que escribe la docente', 140], ['plan', 'Subtítulo: el plan', 60],
@@ -58,15 +59,26 @@ export function AdminMarketing() {
   const [ask, setAsk] = useState('')
   const [kind, setKind] = useState<VideoKind>('tutorial')
   const [duration, setDuration] = useState<15 | 30 | 45 | 60>(30)
+  const [structure, setStructure] = useState('auto')
+  const [draft, setDraft] = useState<Storyboard | null>(null)  // proposed, seen and changed before the video exists
   const videos = useQuery({ queryKey: ['marketing-videos'], enabled: staff,
     queryFn: () => api.get<{ videos: Video[] }>('/api/admin/marketing/videos') })
   const tomes = useQuery({ queryKey: ['admin-series', 'ready-for-video'], enabled: staff,
     queryFn: () => api.get<{ series: Tome[] }>('/api/admin/series?status=ready&limit=96') })
+  const structures = useQuery({ queryKey: ['marketing-structures'], enabled: staff, staleTime: Infinity,
+    queryFn: () => api.get<{ structures: Structure[] }>('/api/admin/marketing/structures') })
+  const ways = (structures.data?.structures ?? []).filter((st) => st.kinds.includes(kind))
+  const asked = { series_id: seriesId, format, ask: ask.trim() || null, kind, duration }
+  const propose = useMutation({
+    mutationFn: () => api.post<{ script: Storyboard }>('/api/admin/marketing/storyboard', { ...asked, structure }),
+    onSuccess: ({ script }) => { setDraft(script); setOpen(null) },
+  })
   const create = useMutation({
-    mutationFn: () => api.post<{ video: Video }>('/api/admin/marketing/videos', { series_id: seriesId, format, ask: ask.trim() || null, kind, duration }),
+    mutationFn: () => api.post<{ video: Video }>('/api/admin/marketing/videos', { ...asked, script: draft }),
     onSuccess: async ({ video }) => {
       await qc.invalidateQueries({ queryKey: ['marketing-videos'] })
       setOpen(video.id)
+      setDraft(null)
       setAsk('')
     },
   })
@@ -105,7 +117,7 @@ export function AdminMarketing() {
         <fieldset className="field"><legend>Tipo de video</legend>
           <div className="segmented-inline">
             {(Object.keys(KIND_LABEL) as VideoKind[]).map((k) => (
-              <button key={k} type="button" className={kind === k ? 'chip on' : 'chip'} onClick={() => setKind(k)}>{KIND_LABEL[k]}</button>
+              <button key={k} type="button" className={kind === k ? 'chip on' : 'chip'} onClick={() => { setKind(k); setStructure('auto') }}>{KIND_LABEL[k]}</button>
             ))}
           </div>
         </fieldset>
@@ -118,11 +130,24 @@ export function AdminMarketing() {
             ))}
           </div>
         </fieldset>
-        <button className="primary" onClick={() => create.mutate()} disabled={!seriesId || create.isPending}>
-          {create.isPending ? 'DeepSeek dirige el video…' : 'Crear storyboard'}
+        <fieldset className="field"><legend>Estructura</legend>
+          <div className="segmented-inline">
+            <button type="button" className={structure === 'auto' ? 'chip on' : 'chip'} onClick={() => setStructure('auto')}>Automática</button>
+            {ways.map((st) => (
+              <button key={st.key} type="button" className={structure === st.key ? 'chip on' : 'chip'} title={st.how} onClick={() => setStructure(st.key)}>{st.label}</button>
+            ))}
+          </div>
+          <span className="muted small">{structure === 'auto' ? 'DeepSeek elige una distinta a la del último video.' : ways.find((st) => st.key === structure)?.how}</span>
+        </fieldset>
+        <button className="primary" onClick={() => propose.mutate()} disabled={!seriesId || propose.isPending}>
+          {propose.isPending ? 'DeepSeek dirige el video…' : draft ? 'Proponer otra estructura' : 'Ver la estructura'}
         </button>
-        {create.error && <p className="error small" role="alert">{errorText(create.error, 'No se pudo escribir el guion.')}</p>}
+        {propose.error && <p className="error small" role="alert">{errorText(propose.error, 'No se pudo escribir el guion.')}</p>}
       </section>
+
+      {draft && <Draft board={draft} seriesId={seriesId} format={format} onChange={setDraft} onAgain={() => propose.mutate()} again={propose.isPending}
+        onCreate={() => create.mutate()} creating={create.isPending} error={create.error} onDiscard={() => setDraft(null)}
+        structure={structures.data?.structures.find((st) => st.key === draft.structure)?.label} />}
 
       {videos.error && <p className="error">{errorText(videos.error, 'No pudimos cargar los videos.')}</p>}
       {current && <VideoEditor key={current.id} video={current} title={current.series_id ? titles[current.series_id] : undefined} onClose={() => setOpen(null)} />}
@@ -147,6 +172,57 @@ export function AdminMarketing() {
         {videos.data?.videos.length === 0 && <p className="muted">Aún no hay videos. Elige un tomo y pide el primero.</p>}
       </section>
     </AppShell>
+  )
+}
+
+/** The proposed storyboard before it is a video: its structure at a glance, playing, and changed scene by scene. */
+function Draft({ board, seriesId, format, structure, onChange, onAgain, again, onCreate, creating, error, onDiscard }: {
+  board: Storyboard; seriesId: string; format: Format; structure?: string; onChange: (b: Storyboard) => void
+  onAgain: () => void; again: boolean; onCreate: () => void; creating: boolean; error: unknown; onDiscard: () => void
+}) {
+  const series = useSeries(seriesId)
+  const tome = useMemo(() => series.data ? videoTome(series.data) : null, [series.data])
+  const [width, height] = SIZES[format]
+  const [editing, setEditing] = useState(false)
+  return (
+    <section className="panel marketing-editor">
+      <div className="marketing-head">
+        <span className="section-h">Propuesta · {board.title}</span>
+        <button type="button" className="ghost small" onClick={onDiscard}>Descartar</button>
+      </div>
+      <div className="marketing-body">
+        <div className="marketing-stage" style={{ aspectRatio: `${width} / ${height}` }}>
+          {tome ? <Player component={StoryboardVideo} inputProps={{ board, tome }} durationInFrames={boardFrames(board)} fps={FPS}
+            compositionWidth={width} compositionHeight={height} controls loop style={{ width: '100%', height: '100%' }} />
+            : <div className="page-preview-wait">Cargando el tomo…</div>}
+        </div>
+        <div className="page-form">
+          <p className="muted small">{KIND_LABEL[board.kind]} · {board.duration} s{structure ? ` · ${structure}` : ''} · {board.scenes.length} escenas. Aún no se guarda: revísala, cámbiala o pide otra.</p>
+          <ol className="board-outline">
+            {timeline(board).map(({ scene, from, frames, step }, i) => (
+              <li key={i}>
+                <span className="muted small">{clock(from)}–{clock(from + frames)}</span>
+                <strong>{step ? `Paso ${step} · ` : ''}{SCENES[scene.type].label}</strong>
+                {scene.caption && <span>«{scene.caption}»</span>}
+                {scene.text && <span className="muted small">{scene.text}</span>}
+              </li>
+            ))}
+          </ol>
+          <fieldset className="field"><legend>Colores de los textos</legend>
+            <div className="segmented-inline">
+              {(Object.keys(LOOKS) as Look[]).map((l) => (
+                <button key={l} type="button" className={(board.look ?? 'claro') === l ? 'chip on' : 'chip'} onClick={() => onChange({ ...board, look: l })}>{LOOKS[l].label}</button>
+              ))}
+            </div>
+          </fieldset>
+          <button className="primary" onClick={onCreate} disabled={creating}>{creating ? 'Guardando…' : 'Crear este video'}</button>
+          {error ? <p className="error small" role="alert">{errorText(error, 'No se pudo crear el video.')}</p> : null}
+          <button type="button" className="ghost small" onClick={onAgain} disabled={again}>{again ? 'DeepSeek dirige otra…' : 'Otra estructura'}</button>
+          <button type="button" className="ghost small" onClick={() => setEditing(!editing)}>{editing ? 'Ocultar escenas' : 'Editar escenas'}</button>
+          {editing && <BoardFields board={board} onChange={onChange} />}
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -240,6 +316,15 @@ function VideoEditor({ video, title, onClose }: { video: Video; title?: string; 
               ))}
             </div>
           </fieldset>
+          {board && (
+            <fieldset className="field"><legend>Colores de los textos</legend>
+              <div className="segmented-inline">
+                {(Object.keys(LOOKS) as Look[]).map((l) => (
+                  <button key={l} type="button" className={(board.look ?? 'claro') === l ? 'chip on' : 'chip'} onClick={() => setScript({ ...board, look: l })}>{LOOKS[l].label}</button>
+                ))}
+              </div>
+            </fieldset>
+          )}
           {board ? <BoardFields board={board} onChange={setScript} /> : FIELDS.map(([key, label, max]) => (
             <label key={key} className="field"><span>{label}</span>
               {key === 'request'

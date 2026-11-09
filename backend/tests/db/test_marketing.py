@@ -125,3 +125,44 @@ async def test_the_director_turns_a_request_into_a_tutorial_storyboard_of_the_ap
     bad = await client.patch(f"/api/admin/marketing/videos/{video['id']}", headers=bearer(key, admin),
                              json={"script": {**board, "scenes": [{"type": "explosion"}]}})
     assert bad.status_code == 422  # only scenes that exist
+
+
+async def test_a_storyboard_is_proposed_seen_and_asked_again_before_the_video_is_made(raw_db, google_user, client,
+                                                                                     key, engine):  # noqa: F811
+    owner = await google_user()
+    sid = await _written(raw_db, client, key, engine, owner)
+    admin = await google_user(email="proposal@jelyx.test")
+    await raw_db.execute("update public.profiles set platform_role = 'admin' where id = $1", admin)
+    llm = ScriptedLLM(json.dumps(BOARD), json.dumps(BOARD))
+    client._transport.app.state.llm = llm
+    ask = {"series_id": str(sid), "ask": "Anuncio para mamás", "kind": "marketing", "duration": 15}
+
+    kinds = (await client.get("/api/admin/marketing/structures", headers=bearer(key, admin))).json()["structures"]
+    assert {"antes_despues", "pasos"} <= {s["key"] for s in kinds}
+    first = (await client.post("/api/admin/marketing/storyboard", headers=bearer(key, admin),
+                               json={**ask, "structure": "antes_despues"})).json()["script"]
+    assert first["structure"] == "antes_despues" and first["look"] in ("claro", "oscuro", "color")
+    assert "Antes y después" in llm.calls[0][-1]["content"]
+    listed = (await client.get("/api/admin/marketing/videos", headers=bearer(key, admin))).json()["videos"]
+    assert not any(v["series_id"] == str(sid) for v in listed)  # not saved
+
+    made = await client.post("/api/admin/marketing/videos", headers=bearer(key, admin),
+                             json={**ask, "script": {**first, "title": "Mi título"}})
+    assert made.status_code == 201 and made.json()["video"]["script"]["title"] == "Mi título"
+    assert len(llm.calls) == 1  # the reviewed storyboard is kept as it is, not asked again
+
+    again = (await client.post("/api/admin/marketing/storyboard", headers=bearer(key, admin), json=ask)).json()["script"]
+    assert again["structure"] != "antes_despues"  # automatic: not the structure the last video used
+    assert "Mi título" in llm.calls[1][-1]["content"]  # told the videos already made, to tell this one another way
+    assert (await client.post("/api/admin/marketing/storyboard", headers=bearer(key, admin),
+                              json={**ask, "structure": "nada"})).status_code == 422
+
+
+def test_a_video_may_open_on_the_finished_book_instead_of_a_title():
+    from app.marketing import Storyboard, tidy_storyboard
+
+    board = tidy_storyboard(Storyboard.model_validate({"title": "x y", "scenes": [
+        {"type": "pdf", "caption": "Esto lo hice en 5 minutos"}, {"type": "versus"}, {"type": "number"}]}))
+
+    assert [s.type for s in board.scenes] == ["pdf", "versus", "number", "cta"]
+    assert board.scenes[1].text and board.scenes[2].text

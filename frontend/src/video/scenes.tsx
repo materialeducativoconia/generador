@@ -1,5 +1,5 @@
 import { AbsoluteFill, Easing, Img, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
-import { SITE, type VideoTome } from './spec'
+import { LOOKS, SITE, type VideoTome } from './spec'
 
 /** The scenes every video is made of, each the real app animated with a real tome. `dur` is the scene's length in
  * frames: timings are fractions of it, so the director can give a scene 2 s or 8 s. Drawn with transforms, opacity
@@ -11,6 +11,7 @@ const SOFT = '#f4f2ff'
 const LINE = '#e7e5e2'
 const OK = '#2f8f4e'
 type Base = { dur: number; caption?: string; step?: number }
+type Palette = (typeof LOOKS)[keyof typeof LOOKS]
 
 function useUnit() {
   const { width, height } = useVideoConfig()
@@ -51,20 +52,94 @@ function Caption({ text, at = 6, step }: { text?: string; at?: number; step?: nu
 }
 
 /** Big words landing one by one, the last in the accent colour: the hook, a tutorial's title, a key idea. */
-export function TitleScene({ dur, caption = '' }: Base) {
+export function TitleScene({ dur, caption = '', look = LOOKS.claro }: Base & { look?: Palette }) {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const { u, wide } = useUnit()
   const words = caption.split(/\s+/).filter(Boolean)
   return (
-    <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', padding: 90 * u, opacity: fadeOut(frame, dur) }}>
+    <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', padding: 90 * u, background: look.bg, opacity: fadeOut(frame, dur) }}>
       <div style={{ fontSize: (wide ? 104 : 112) * u, fontWeight: 700, lineHeight: 1.08, letterSpacing: '-0.035em', textAlign: 'center', maxWidth: wide ? 1500 * u : undefined }}>
         {words.map((w, i) => {
           const s = spring({ frame: frame - 4 - i * 4, fps, config: { damping: 14, mass: 0.6 } })
           return <span key={i} style={{ display: 'inline-block', marginRight: '0.26em', opacity: s, transform: `translateY(${(1 - s) * 40 * u}px)`,
-            color: i === words.length - 1 ? ACCENT : INK }}>{w}</span>
+            color: i === words.length - 1 ? look.accent : look.ink }}>{w}</span>
         })}
       </div>
+    </AbsoluteFill>
+  )
+}
+
+const parts = (text: string) => text.split('|').map((t) => t.trim()).filter(Boolean)
+
+/** Two to four points landing one after another, each ticked: reasons, what a book brings, a summary. */
+export function ListScene({ dur, caption, step, text = '', look = LOOKS.claro }: Base & { text?: string; look?: Palette }) {
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+  const { u, k, wide } = useUnit()
+  const items = parts(text).slice(0, 4)
+  const gap = Math.max(6, Math.min(16, (dur - 30) / Math.max(1, items.length)))
+  return (
+    <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', background: look.bg, color: look.ink, opacity: fadeOut(frame, dur) }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 30 * u, width: wide ? '60%' : '82%', marginTop: (wide ? -60 : -160) * u }}>
+        {items.map((item, i) => {
+          const s = spring({ frame: frame - 6 - i * gap, fps, config: { damping: 15, mass: 0.7 } })
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 28 * u, opacity: s, transform: `translateX(${(1 - s) * -90 * u}px)` }}>
+              <span style={{ flex: 'none', width: 74 * u * k, height: 74 * u * k, borderRadius: 999, background: look.accent, color: look.bg,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40 * u * k, fontWeight: 700 }}>{i + 1}</span>
+              <span style={{ fontSize: 62 * u * k, fontWeight: 700, letterSpacing: '-0.025em', lineHeight: 1.1 }}>{item}</span>
+            </div>
+          )
+        })}
+      </div>
+      <Caption text={caption} at={Math.min(dur - 20, 14 + items.length * gap)} step={step} />
+    </AbsoluteFill>
+  )
+}
+
+/** The screen split in two: how it was done before, struck out, and how it is done with the app. */
+export function VersusScene({ dur, caption, step, text = '', look = LOOKS.claro }: Base & { text?: string; look?: Palette }) {
+  const frame = useCurrentFrame()
+  const { u, k, wide } = useUnit()
+  const [before = 'Antes', after = 'Con Jelyx'] = parts(text)
+  const split = ease(frame, 0, 16)
+  const second = ease(frame, dur * 0.4, dur * 0.4 + 14)
+  const strike = ease(frame, dur * 0.25, dur * 0.25 + 12)
+  const half = (dark: boolean, label: string, line: string, s: number, struck = 0): React.ReactNode => (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24 * u, padding: 60 * u,
+      background: dark ? look.bg : '#f4f2f0', color: dark ? look.ink : INK, opacity: s }}>
+      <span style={{ fontSize: 30 * u * k, fontWeight: 700, letterSpacing: '.16em', color: dark ? look.accent : '#8a8580' }}>{label}</span>
+      <span style={{ position: 'relative', fontSize: 70 * u * k, fontWeight: 700, letterSpacing: '-0.03em', textAlign: 'center', lineHeight: 1.08,
+        transform: `translateY(${(1 - s) * 40 * u}px)` }}>{line}
+        {struck > 0 && <span style={{ position: 'absolute', left: 0, top: '52%', height: 8 * u, width: `${struck * 100}%`, background: '#d9480f', borderRadius: 4 * u }} />}
+      </span>
+    </div>
+  )
+  return (
+    <AbsoluteFill style={{ flexDirection: wide ? 'row' : 'column', opacity: fadeOut(frame, dur) }}>
+      {half(false, 'ANTES', before, split, strike)}
+      {half(true, 'AHORA', after, second)}
+      <Caption text={caption} at={Math.min(dur - 20, dur * 0.4 + 18)} step={step} />
+    </AbsoluteFill>
+  )
+}
+
+/** One big number counting up to its value (5 min, 24 páginas), with what it means below. */
+export function NumberScene({ dur, caption, step, text = '', look = LOOKS.claro }: Base & { text?: string; look?: Palette }) {
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+  const { u, k } = useUnit()
+  const m = text.match(/^(\D*)(\d+(?:[.,]\d+)?)(.*)$/)
+  const target = m ? Number(m[2].replace(',', '.')) : 0
+  const count = interpolate(frame, [4, Math.max(5, dur * 0.45)], [0, target], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) })
+  const shown = m ? `${m[1]}${Number.isInteger(target) ? Math.round(count) : count.toFixed(1)}${m[3]}` : text
+  const pop = spring({ frame, fps, config: { damping: 12, mass: 0.6 } })
+  return (
+    <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', background: look.bg, color: look.accent, opacity: fadeOut(frame, dur) }}>
+      <div style={{ fontSize: 230 * u * k, fontWeight: 700, letterSpacing: '-0.05em', lineHeight: 1, transform: `scale(${0.7 + pop * 0.3})`,
+        marginTop: -120 * u, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{shown}</div>
+      <Caption text={caption} at={Math.min(dur - 20, dur * 0.45)} step={step} />
     </AbsoluteFill>
   )
 }

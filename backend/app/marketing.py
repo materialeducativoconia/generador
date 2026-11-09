@@ -1,6 +1,7 @@
 """Promotional videos for /admin/marketing: DeepSeek writes the script of a template from a real tome; the video
 itself is drawn and rendered in the admin's browser (frontend/src/video)."""
 
+import random
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, BeforeValidator, Field
@@ -83,11 +84,61 @@ SCENES = {
                       "(text: la instrucción, p. ej. «que Laura señale el cielo»)",
     "editor_cover": "en el editor, la portada: se quitan la línea «Nombre» y el sello de edad con un clic",
     "editor_save": "«Guardar cambios»: el próximo PDF ya sale con todo lo editado",
+    "list": "una lista grande de 2 a 4 puntos que entran uno a uno (text: los puntos separados por « | », "
+            "cada uno de máximo 30 caracteres)",
+    "versus": "pantalla partida, antes y después (text: «lo de antes | lo de ahora», p. ej. "
+              "«3 horas en Word | 5 minutos con Jelyx»)",
+    "number": "un número enorme que cuenta hasta su valor (text: el número con su unidad, p. ej. «5 min» o «24 "
+              "páginas»; caption: lo que significa)",
     "cta": "cierre con la marca, la llamada a la acción y la dirección de la app",
 }
 SceneType = Literal["title", "compose", "plan", "cover", "pages", "pdf", "editor_open", "editor_move", "editor_facts",
-                    "editor_repaint", "editor_cover", "editor_save", "cta"]
-TEXT_SCENES = {"compose", "editor_facts", "editor_repaint"}  # the scenes that type something on screen
+                    "editor_repaint", "editor_cover", "editor_save", "list", "versus", "number", "cta"]
+# The scenes that show a text of their own, and what they show when the director left it empty.
+TEXT_SCENES = {"compose": "Quiero un libro ilustrado para mi grupo", "editor_facts": "Dato nuevo para la lámina",
+               "editor_repaint": "más luz de mañana", "list": "Portada | Ilustraciones | Actividades | Solucionario",
+               "versus": "Horas armando material | Minutos con Jelyx", "number": "5 min"}
+BOOK_SCENES = {"cover", "pages", "pdf"}  # a video may open on the finished book instead of a title
+
+# How the story is told: without one the director falls back on the app's flow every time, and every video looks alike.
+Kind = Literal["marketing", "explainer", "tutorial"]
+STRUCTURES: dict[str, tuple[str, tuple[str, ...], str]] = {
+    "problema": ("Problema y solución", ("marketing", "explainer"),
+                 "abre nombrando un dolor concreto del docente (title o number), lo agrava en una escena (versus o "
+                 "title) y luego la app lo resuelve con dos o tres escenas del libro; cierra con cta."),
+    "antes_despues": ("Antes y después", ("marketing",),
+                      "la segunda escena es un versus (antes | con Jelyx); luego el «después» se muestra con escenas de "
+                      "la app y un number con el tiempo ahorrado; cierra con cta."),
+    "razones": ("3 razones", ("marketing", "explainer"),
+                "title «3 razones para …»; luego una escena de la app por razón, con caption que empieza «1.», «2.», "
+                "«3.»; antes del cta, un list que las resume."),
+    "resultado": ("Resultado primero", ("marketing",),
+                  "abre con el libro terminado (pages o pdf, sin title al inicio) y un caption que sorprende; luego "
+                  "cuenta en pocas escenas cómo se hizo (compose, plan, cover) y cierra con cta."),
+    "historia": ("Un día de la docente", ("marketing", "explainer"),
+                 "una pequeña historia con hora: title «Domingo, 9 de la noche…», compose, cover, pages, otro title "
+                 "«Lunes: la clase está lista» y cta. Voz en primera persona de la docente."),
+    "pregunta": ("Pregunta y respuesta", ("marketing", "explainer"),
+                 "title con una pregunta que se hace el docente; cada escena siguiente la responde con algo que se ve "
+                 "en la app; cierra con cta."),
+    "demo": ("De principio a fin", ("explainer",),
+             "el recorrido completo: compose, plan, cover, pages, pdf y una o dos escenas del editor; un number al "
+             "final con el tiempo total."),
+    "pasos": ("Paso a paso", ("tutorial",),
+              "title «Cómo …», un paso por escena en el orden real, y cta."),
+    "truco": ("Truco rápido", ("tutorial",),
+              "title «Truco: …», solo dos o tres escenas con lo pedido, bien explicadas, y cta."),
+    "lista": ("3 cosas que no sabías", ("tutorial", "explainer"),
+              "title «3 cosas que puedes hacer en …», un list con las tres, luego una escena de la app por cada una "
+              "con caption que empieza «1.», «2.», «3.», y cta."),
+}
+LOOKS = ("claro", "oscuro", "color")
+
+
+def pick_structure(kind: str, last: str | None = None) -> str:
+    """Automatic: one of the kind's structures, never the one its last video used."""
+    fits = [k for k, (_, kinds, _) in STRUCTURES.items() if kind in kinds]
+    return random.choice([k for k in fits if k != last] or fits)
 
 
 class Scene(BaseModel):
@@ -99,8 +150,10 @@ class Scene(BaseModel):
 
 
 class Storyboard(BaseModel):
-    kind: Literal["marketing", "explainer", "tutorial"] = "marketing"
+    kind: Kind = "marketing"
     duration: Literal[15, 30, 45, 60] = 30
+    structure: str = ""  # a key of STRUCTURES
+    look: Literal["claro", "oscuro", "color"] = "claro"  # the colours of the text scenes
     title: Annotated[str, _clip(80), Field(min_length=2, max_length=80)]
     scenes: list[Scene] = Field(min_length=2, max_length=16)
     post: Annotated[str, _clip(700), Field(max_length=700)] = ""
@@ -111,18 +164,16 @@ class Storyboard(BaseModel):
 
 
 def tidy_storyboard(board: Storyboard) -> Storyboard:
-    """What the code guarantees whatever the director wrote: it opens on a title, ends on the call to action, a
-    typing scene has something to type, and the scenes fill exactly the length asked for."""
+    """What the code guarantees whatever the director wrote: it opens on a title (or on the finished book), ends on
+    the call to action, a scene with a text of its own has one, and the scenes fill exactly the length asked for."""
     scenes = [s for s in board.scenes if s.type != "cta" or s is board.scenes[-1]]
-    if scenes[0].type != "title":
+    if scenes[0].type != "title" and not (scenes[0].type in BOOK_SCENES and scenes[0].caption):
         scenes.insert(0, Scene(type="title", seconds=3, caption=board.title))
     if scenes[-1].type != "cta":
         scenes.append(Scene(type="cta", seconds=3, caption="Pruébalo gratis"))
     for s in scenes:
         if s.type in TEXT_SCENES and not s.text:
-            s.text = {"compose": "Quiero un libro ilustrado para mi grupo",
-                      "editor_facts": "Dato nuevo para la lámina",
-                      "editor_repaint": "más luz de mañana"}[s.type]
+            s.text = TEXT_SCENES[s.type]
     scale = board.duration / sum(s.seconds for s in scenes)
     for s in scenes:
         s.seconds = round(max(1.5, s.seconds * scale), 2)
@@ -137,6 +188,8 @@ los mismos personajes, actividades, solucionario, PDF para imprimir) y tiene un 
 Recibes el pedido del equipo, el tipo de video, la duración y un libro real hecho con la app. Armas el storyboard
 solo con estas escenas, que ya existen animadas con la app real:
 """ + "\n".join(f"- {k}: {v}" for k, v in SCENES.items()) + """
+
+Las escenas list, versus y number son texto animado: úsalas para variar el ritmo entre escenas de la app.
 
 Tipos de video:
 - marketing: para vender. Abre con un gancho (title) que nombra un dolor o un deseo del docente, ritmo rápido
@@ -156,14 +209,22 @@ Responde solo con json:
 
 
 async def director(llm: LLM, *, ask: str, kind: str, duration: int, title: str, topic: str, book_kind: str,
-                   audience: str, sections: list[str], sample: str | None) -> AgentResult[Storyboard]:
-    facts = (f"Pedido del equipo: {ask}\nTipo de video: {kind}\nDuración: {duration} segundos\n\n"
+                   audience: str, sections: list[str], sample: str | None, structure: str,
+                   recent: list[dict] = ()) -> AgentResult[Storyboard]:
+    """`recent`: the last storyboards ({title, scenes: [types]}), so this one is told another way."""
+    name, _, how = STRUCTURES[structure]
+    facts = (f"Pedido del equipo: {ask}\nTipo de video: {kind}\nDuración: {duration} segundos\n"
+             f"Estructura: {name}: {how}\n\n"
              f"Libro que se muestra: {title}\nTipo: {book_kind}\nTema: {topic}\nPara: {audience or 'sin indicar'}\n"
              f"Secciones: {'; '.join(sections[:8]) or 'sin secciones'}")
     if sample:
         facts += f"\nUna de sus láminas: {sample}"
+    if recent:
+        facts += ("\n\nVideos ya hechos: no repitas su secuencia de escenas, su gancho ni sus frases.\n"
+                  + "\n".join(f"- «{r['title']}»: {' → '.join(r['scenes'])}" for r in recent))
     messages = [{"role": "system", "content": DIRECTOR_SYSTEM}, {"role": "user", "content": facts}]
-    result = await _json_call(llm, messages, Storyboard, temperature=0.9, max_tokens=3000)
+    result = await _json_call(llm, messages, Storyboard, temperature=1.0, max_tokens=3000)
     result.value.kind, result.value.duration = kind, duration  # what the team asked, not what the model echoed
+    result.value.structure, result.value.look = structure, random.choice(LOOKS)
     result.value = tidy_storyboard(result.value)
     return result
