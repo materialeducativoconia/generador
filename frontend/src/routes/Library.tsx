@@ -16,7 +16,7 @@ export function LibraryShell({ children }: { children: React.ReactNode }) {
     <div className="library">
       <header className="library-top">
         <Link to="/" className="brand"><Logo /><span>Jelyx Docs</span></Link>
-        <nav><Link to="/libros">Libros gratis</Link><Link to="/#planes">Planes</Link><Link to="/#crear" className="welcome-login">Crear un libro</Link></nav>
+        <nav><Link to="/#planes">Planes</Link><Link to="/#crear" className="welcome-login">Crear un libro</Link></nav>
       </header>
       {children}
     </div>

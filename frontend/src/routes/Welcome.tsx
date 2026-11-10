@@ -82,7 +82,7 @@ export function Welcome() {
   return (
     <>
     <header className="welcome-top">
-      <a href="/libros" className="welcome-top-link">Libros gratis</a>
+      {SHOW_FREE_BOOKS && <a href="/libros" className="welcome-top-link">Libros gratis</a>}
       <a href="#planes" className="welcome-top-link">Planes</a>
       <button className="welcome-login" onClick={start} disabled={starting || loading}>{starting ? 'Abriendo…' : 'Entrar'}</button>
     </header>
@@ -122,7 +122,7 @@ export function Welcome() {
         </ul>
       </section>
 
-      <FreeBooks />
+      {SHOW_FREE_BOOKS && <FreeBooks />}
 
       <section className="l-intro">
         <p className="eyebrow">Por qué Jelyx</p>
@@ -268,6 +268,9 @@ const FAQ: [string, string][] = [
   ['¿Qué es un crédito?', 'Aproximadamente una página terminada. Si una generación falla, te devolvemos los créditos.'],
   ['¿Puedo cancelar?', 'Cuando quieras, desde tu cuenta. Tus tomos se quedan guardados.'],
 ]
+
+/** Off until the free library is stocked; the /libros pages and backend stay live. */
+const SHOW_FREE_BOOKS = false
 
 /** A shelf of the free books, hidden until the team publishes one. */
 function FreeBooks() {

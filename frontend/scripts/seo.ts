@@ -53,8 +53,8 @@ ${extra}`
 
 const LOGO = `<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="13" height="18" rx="2.5" fill="currentColor" opacity=".18"/><rect x="8" y="3" width="13" height="18" rx="2.5" fill="currentColor"/><path d="M11.5 8.5h6M11.5 12h6M11.5 15.5h3.5" stroke="var(--bg)" stroke-width="1.6" stroke-linecap="round"/></svg>`
 const HEADER = `<header class="top"><a class="brand" href="/">${LOGO}<span>${NAME}</span></a>
-<nav><a href="/material-educativo">Temas</a><a class="wide" href="/comparar">Comparar</a><a class="wide" href="/libros">Libros gratis</a><a href="/#planes">Planes</a><a class="btn small" href="/app">Entrar</a></nav></header>`
-const FOOTER = `<footer><p><a href="/">${NAME}</a> · <a href="/material-educativo">Material educativo por tema</a> · <a href="/libros">Libros gratis</a> · <a href="/comparar">Comparar apps</a> · <a href="/#planes">Planes</a></p>
+<nav><a href="/material-educativo">Temas</a><a class="wide" href="/comparar">Comparar</a><a href="/#planes">Planes</a><a class="btn small" href="/app">Entrar</a></nav></header>`
+const FOOTER = `<footer><p><a href="/">${NAME}</a> · <a href="/material-educativo">Material educativo por tema</a> · <a href="/comparar">Comparar apps</a> · <a href="/#planes">Planes</a></p>
 <p class="muted">Vista previa sin registro ni tarjeta.</p></footer>`
 
 /** The example covers drifting by, as on the home page: pure CSS, two copies of the row. */
@@ -198,7 +198,7 @@ function homeShell(base: string) {
       image: OG, offers: PUBLIC_PLANS.map((p) => ({ '@type': 'Offer', name: p.label, price: p.price, priceCurrency: 'USD' })) }]
   const body = `<h1>Libros educativos ilustrados, listos en minutos.</h1><p>${esc(HOME_DESCRIPTION)}</p>
 <h2>Material educativo por tema</h2><ul>${TOPICS.map((t) => `<li><a href="${topicHref(t)}">${esc(t.title)}</a></li>`).join('')}</ul>
-<p><a href="/libros">Libros gratis para imprimir</a> · <a href="/material-educativo">Todos los temas</a> · <a href="/comparar">Comparar apps</a> · <a href="/#planes">Planes</a></p>`
+<p><a href="/material-educativo">Todos los temas</a> · <a href="/comparar">Comparar apps</a> · <a href="/#planes">Planes</a></p>`
   return shell(base, '/', HOME_TITLE, HOME_DESCRIPTION, body, ld)
 }
 
@@ -366,11 +366,9 @@ for (const p of library) {
 const shelf = await books()
 mkdirSync(new URL('libros/', DIST), { recursive: true })
 writeFileSync(new URL('libros/index.html', DIST), booksShell(base, shelf))
-pages.push({ path: '/libros' })
 for (const b of shelf) {
   mkdirSync(new URL(`libros/${b.slug}/`, DIST), { recursive: true })
   writeFileSync(new URL(`libros/${b.slug}/index.html`, DIST), bookShell(base, b))
-  pages.push({ path: `/libros/${b.slug}`, images: b.pages.slice(0, 1) })
 }
 writeFileSync(index, homeShell(base))
 
