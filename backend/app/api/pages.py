@@ -132,13 +132,13 @@ def _render_page(series, lesson, block: dict, images: dict, busy: dict, paper: s
     return buffer.getvalue(), looks
 
 
-def _screen_size(data: bytes) -> tuple[bytes, str]:
+def _screen_size(data: bytes, px: int = SCREEN_PX) -> tuple[bytes, str]:
     from PIL import Image as Picture
 
     picture = Picture.open(io.BytesIO(data))
-    picture.draft("RGB", (SCREEN_PX, SCREEN_PX))  # a JPEG decodes straight at a smaller scale
+    picture.draft("RGB", (px, px))  # a JPEG decodes straight at a smaller scale
     picture = picture.convert("RGB")
-    picture.thumbnail((SCREEN_PX, SCREEN_PX))
+    picture.thumbnail((px, px))
     buffer = io.BytesIO()
     picture.save(buffer, "JPEG", quality=85)
     return buffer.getvalue(), "image/jpeg"
@@ -196,15 +196,19 @@ async def repaint_page(lesson_id: uuid.UUID, block_id: str, body: Repaint, reque
 
 
 @router.get("/api/series/{series_id}/cover/preview")
-async def cover_preview(series_id: uuid.UUID, request: Request, user_id: UserId, paper: PAPERS = "17x21"):
-    """The cover as the next PDF prints it (its options, the owner's signature and plan), as a picture."""
+async def cover_preview(series_id: uuid.UUID, request: Request, user_id: UserId, paper: PAPERS = "17x21",
+                        hd: bool = False, name_line: bool | None = None, age: bool | None = None):
+    """The cover as the next PDF prints it (its options, the owner's signature and plan), as a picture. `hd`, a
+    sharper picture, and `name_line` / `age`, the cover with that option forced: the marketing videos film the real
+    cover, and its name line and age badge switched off."""
     from app.api.exports import signature_of
     from app.api.series import _own_series
 
     async with request.app.state.engine.connect() as conn:
         series = await _own_series(conn, series_id, user_id, staff=True)
         acc, signature = await signature_of(conn, series["user_id"])
-    key = hashlib.sha256(json.dumps(["cover", str(series_id), paper, signature, acc.plan.watermark] +
+    forced = {k: v for k, v in (("name_line", name_line), ("age", age)) if v is not None}
+    key = hashlib.sha256(json.dumps(["cover", str(series_id), paper, signature, acc.plan.watermark, hd, forced] +
                                     [str(series[c]) for c in ("title", "topic", "genre", "audience", "cover",
                                                               "cover_key", "cover_options", "design")],
                                     sort_keys=True, default=str).encode()).hexdigest()
@@ -215,7 +219,7 @@ async def cover_preview(series_id: uuid.UUID, request: Request, user_id: UserId,
     cover = logo = None
     if series["cover_key"]:
         try:
-            cover = _screen_size(await storage.download(series["cover_key"]))[0]
+            cover = _screen_size(await storage.download(series["cover_key"]), 1800 if hd else SCREEN_PX)[0]
         except Exception:  # prints as the plain cover
             pass
     if signature.get("logo"):
@@ -224,14 +228,15 @@ async def cover_preview(series_id: uuid.UUID, request: Request, user_id: UserId,
         except Exception:
             pass
     jpeg = await asyncio.wait_for(asyncio.to_thread(_render_cover, series, cover, signature, logo,
-                                                    acc.plan.watermark, paper), 60)
+                                                    acc.plan.watermark, paper, hd, forced), 60)
     _rendered[key] = ("data:image/jpeg;base64," + base64.b64encode(jpeg).decode(), {})
     while len(_rendered) > RENDERED:
         _rendered.popitem(last=False)
     return {"image": _rendered[key][0]}
 
 
-def _render_cover(series, cover: bytes | None, signature: dict, logo, watermark: bool, paper: str) -> bytes:
+def _render_cover(series, cover: bytes | None, signature: dict, logo, watermark: bool, paper: str, hd: bool = False,
+                  forced: dict | None = None) -> bytes:
     import pypdfium2
 
     from app.render import Tome, _document, render_html
@@ -243,8 +248,8 @@ def _render_cover(series, cover: bytes | None, signature: dict, logo, watermark:
                 author=signature.get("author"), school=signature.get("school"), logo=logo, sections=[],
                 cover_image=cover, cover_media_type="image/jpeg", cover_lettered=bool(cover) and meta.get("lettered") == title,
                 palette=meta.get("palette"), design=design, watermark=watermark,
-                cover_options=_parse(series["cover_options"]) or {})
+                cover_options={**(_parse(series["cover_options"]) or {}), **(forced or {})})
     pdf = pypdfium2.PdfDocument(_document(render_html(tome, paper=paper, include_answer_key=False)).write_pdf())
     buffer = io.BytesIO()
-    pdf[0].render(scale=110 / 72).to_pil().convert("RGB").save(buffer, "JPEG", quality=85)
+    pdf[0].render(scale=(200 if hd else 110) / 72).to_pil().convert("RGB").save(buffer, "JPEG", quality=85)
     return buffer.getvalue()

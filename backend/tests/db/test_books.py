@@ -80,6 +80,8 @@ async def test_the_cover_prints_what_the_user_chose_besides_its_title(raw_db, go
 
     preview = await client.get(f"/api/series/{sid}/cover/preview", headers=bearer(key, user))
     assert preview.status_code == 200 and preview.json()["image"].startswith("data:image/jpeg;base64,")
+    filmed = await client.get(f"/api/series/{sid}/cover/preview?hd=true&name_line=false&age=false", headers=bearer(key, user))
+    assert filmed.status_code == 200 and filmed.json()["image"] != preview.json()["image"]  # the marketing videos' cover
 
     asked = await client.post(f"/api/series/{sid}/cover", headers=bearer(key, user),
                               json={"instructions": "los personajes más grandes"})

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Player } from '@remotion/player'
 import { useMemo, useRef, useState } from 'react'
 import { Navigate } from 'react-router'
@@ -49,6 +49,25 @@ function videoTome(s: Series): VideoTome {
   }
 }
 
+/** The real cover as the PDF prints it, title painted, in a size for video; `forced`, with an option switched off. */
+const coverShot = (id: string, forced = '') => ({ queryKey: ['cover-shot', id, forced], staleTime: Infinity, retry: 1,
+  queryFn: () => api.get<{ image: string }>(`/api/series/${id}/cover/preview?hd=true${forced}`).then((r) => r.image) })
+
+/** The tome with its real cover: the printed one (title, kicker, signature) and, for the editor's cover scene, the
+ * same cover without the name line and then without the age badge. Null while they are being filmed. */
+function useFilmedTome(seriesId: string) {
+  const series = useSeries(seriesId)
+  const [full, noName, bare] = useQueries({ queries: ['', '&name_line=false', '&name_line=false&age=false']
+    .map((f) => ({ ...coverShot(seriesId, f), enabled: !!seriesId && !!series.data?.cover_url })) })
+  const waiting = !!series.data?.cover_url && (full.isPending || noName.isPending || bare.isPending)
+  const tome = useMemo(() => {
+    if (!series.data || waiting) return null
+    const t = videoTome(series.data)
+    return full.data ? { ...t, art: t.cover, cover: full.data, covers: { full: full.data, noName: noName.data ?? full.data, bare: bare.data ?? noName.data ?? full.data } } : t
+  }, [series.data, waiting, full.data, noName.data, bare.data])
+  return { tome, isError: series.isError }
+}
+
 /** Marketing: promotional videos of the app made from real tomes, reviewed here and downloaded as MP4. */
 export function AdminMarketing() {
   const { data: me } = useMe()
@@ -69,7 +88,7 @@ export function AdminMarketing() {
   const structures = useQuery({ queryKey: ['marketing-structures'], enabled: staff, staleTime: Infinity,
     queryFn: () => api.get<{ structures: Structure[] }>('/api/admin/marketing/structures') })
   const captures = useCaptures(staff)
-  const shelf = useMemo(() => bookShelf(tomes.data?.series ?? []), [tomes.data])
+  const shelf = useShelf(tomes.data?.series ?? [])
   const ways = (structures.data?.structures ?? []).filter((st) => st.kinds.includes(kind))
   const asked = { series_id: seriesId, format, ask: ask.trim() || null, kind, duration }
   const propose = useMutation({
@@ -184,8 +203,8 @@ function Draft({ board, seriesId, format, structure, captures, shelf, onChange, 
   board: Storyboard; seriesId: string; format: Format; structure?: string; captures: Record<string, Capture>; shelf: ShelfBook[]; onChange: (b: Storyboard) => void
   onAgain: () => void; again: boolean; onCreate: () => void; creating: boolean; error: unknown; onDiscard: () => void
 }) {
-  const series = useSeries(seriesId)
-  const tome = useMemo(() => series.data ? videoTome(series.data) : null, [series.data])
+  const series = useFilmedTome(seriesId)
+  const tome = series.tome
   const [width, height] = SIZES[format]
   const [editing, setEditing] = useState(false)
   return (
@@ -227,12 +246,12 @@ function Draft({ board, seriesId, format, structure, captures, shelf, onChange, 
 
 function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video; title?: string; captures: Record<string, Capture>; shelf: ShelfBook[]; onClose: () => void }) {
   const qc = useQueryClient()
-  const series = useSeries(video.series_id ?? '')
+  const series = useFilmedTome(video.series_id ?? '')
   const [script, setScript] = useState<VideoScript | Storyboard>(video.script)
   const [format, setFormat] = useState<Format>(video.format)
   const [progress, setProgress] = useState<number | null>(null)
   const [renderError, setRenderError] = useState<string | null>(null)
-  const tome = useMemo(() => series.data ? videoTome(series.data) : null, [series.data])
+  const tome = series.tome
   const [width, height] = SIZES[format]
   const board = video.template === 'storyboard' ? script as Storyboard : null
   const fixed = board ? null : script as VideoScript
@@ -264,7 +283,6 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
       const web = await import('@remotion/web-renderer')
       await fontsReady()
       const plans = await renderPlans(web.canRenderMediaOnWeb, width, height)
-      if (!plans.length) throw new Error('este navegador no puede codificar video')
       const composition = video.template === 'storyboard'
         ? { id: 'storyboard', component: StoryboardVideo, durationInFrames: boardFrames(current as Storyboard), fps: FPS, width, height,
           defaultProps: { board: current as Storyboard, tome, captures, shelf } }
@@ -284,7 +302,7 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
           failure = e
         }
       }
-      if (!result) throw failure
+      if (!result) throw failure instanceof Error ? failure : new Error(String(failure ?? 'sin detalle'))
       const blob = await result.getBlob()
       const url = URL.createObjectURL(blob)
       const a = Object.assign(document.createElement('a'), { href: url, download: `jelyx-${format.replace(':', 'x')}-${video.id.slice(0, 6)}.mp4` })
@@ -429,11 +447,17 @@ function BoardFields({ board, onChange, captures }: { board: Storyboard; onChang
 }
 
 /** One finished tome per kind of book, its cover first, for the formats scene. */
-function bookShelf(tomes: Tome[]): ShelfBook[] {
-  return Object.keys(GENRE_LABEL).map((genre) => {
+/** One real tome per kind of book, each with its printed cover (title painted), or its art while that is filmed. */
+function useShelf(tomes: Tome[]): ShelfBook[] {
+  const picks = Object.keys(GENRE_LABEL).map((genre) => {
     const mine = tomes.filter((t) => t.genre === genre)
-    return { genre, label: GENRE_LABEL[genre], cover: (mine.find((t) => t.cover_url) ?? mine[0])?.cover_url ?? null }
+    return { genre, tome: mine.find((t) => t.cover_url) ?? mine[0] }
   })
+  const shots = useQueries({ queries: picks.map(({ tome }) => ({ ...coverShot(tome?.id ?? ''), enabled: !!tome?.cover_url })) })
+  const images = shots.map((q) => q.data ?? null).join('|')
+  return useMemo(() => picks.map(({ genre, tome }, i) => ({ genre, label: GENRE_LABEL[genre], cover: shots[i].data ?? tome?.cover_url ?? null })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tomes, images])
 }
 
 function useCaptures(enabled: boolean) {
@@ -580,17 +604,20 @@ function disposable() {
 
 type CanRender = typeof import('@remotion/web-renderer').canRenderMediaOnWeb
 type Codec = 'h264' | 'h265' | 'vp9' | 'av1'
-/** The encodings this browser can make, best first: full size in H.264, then smaller (a phone's hardware encoder often
- * stops below 1080×1920), then the other codecs an MP4 holds. */
+/** The encodings to try, best first: those the browser says it can make (full size in H.264, then smaller, as a phone's
+ * hardware encoder often stops below 1080×1920, then the other codecs an MP4 holds), then plain H.264 anyway. The
+ * check only orders the tries, never stops one: browsers answer it «no» (WebGL in an OffscreenCanvas, a cautious
+ * encoder probe) where the render itself works, and a video that rendered before must render now. */
 async function renderPlans(can: CanRender, width: number, height: number) {
-  const plans: { codec: Codec; scale: number }[] = []
-  for (const scale of [1, 2 / 3, 0.5]) {
-    for (const codec of ['h264', 'h265', 'vp9', 'av1'] as Codec[]) {
-      const ok = await can({ container: 'mp4', videoCodec: codec, width, height, scale, muted: true, outputTarget: 'arraybuffer' }).catch(() => null)
-      if (ok?.canRender) { plans.push({ codec, scale }); break }
-    }
-  }
-  return plans
+  const tries: { codec: Codec; scale: number }[] = [{ codec: 'h264', scale: 1 }, { codec: 'h264', scale: 2 / 3 }, { codec: 'h264', scale: 0.5 },
+    { codec: 'vp9', scale: 2 / 3 }, { codec: 'av1', scale: 2 / 3 }, { codec: 'h265', scale: 2 / 3 }]
+  const ok = await Promise.all(tries.map(async ({ codec, scale }) => {
+    const r = await can({ container: 'mp4', videoCodec: codec, width, height, scale, muted: true, outputTarget: 'arraybuffer' }).catch(() => null)
+    return !!r && r.issues.every((i) => i.severity !== 'error' || i.type === 'webgl-unsupported')  // no 3D transforms here
+  }))
+  const passing = tries.filter((_, i) => ok[i])
+  const fallback = tries.filter((t, i) => !ok[i] && t.codec === 'h264')
+  return [...passing, ...fallback].slice(0, 4)
 }
 
 /** Keeps a phone's screen on while it renders: locked, the tab is frozen and the render dies. */

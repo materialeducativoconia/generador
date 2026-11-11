@@ -1,5 +1,5 @@
 import { AbsoluteFill, Easing, Img, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
-import { IPhone } from './startup'
+import { Glow, IPhone } from './startup'
 import { LOOKS, SITE, type Capture, type ShelfBook, type VideoTome } from './spec'
 
 /** The scenes every video is made of, each the real app animated with a real tome. `dur` is the scene's length in
@@ -497,63 +497,106 @@ export function ScreenScene({ dur, caption, step, capture, focus = 0, look = LOO
   )
 }
 
-/* ——— The page editor, as the app draws it: the strip of pages, the plate with its texts, the form beside it. ——— */
+/* ——— The page editor, as the app draws it today: a window of the app floating on the launch backdrop, with the strip
+ * of pages, the page or the printed cover, and the form beside it (below it on a phone's vertical cut). ——— */
 
 type Box = { left: number; top: number; width: number; height: number }
 
-/** Where the editor's parts sit: wide, strip | plate | form; tall, strip on top, plate, form below. */
+/** Where the editor's parts sit, in the frame: the window, the strip, the plate and the form. Wide: strip | plate |
+ * form; square: the same, narrower; tall: strip on top, plate, form below. Every box stays above the caption. */
 function useEditorLayout() {
   const { u, k, wide, width, height } = useUnit()
-  if (wide) {
-    const plateH = height * 0.6  // the caption and its step badge keep the bottom fifth
-    const plate: Box = { left: 230 * u, top: 140 * u, width: plateH * (170 / 210), height: plateH }
-    return { u, k, wide, width, height, strip: { left: 70 * u, top: 140 * u, width: 120 * u, height: plateH },
-      plate, form: { left: plate.left + plate.width + 60 * u, top: 140 * u, width: width - plate.left - plate.width - 130 * u, height: plateH } }
+  const tall = height > width
+  const chrome = 56 * u
+  const head = 58 * u
+  if (!tall) {
+    const win: Box = wide ? { left: 60 * u, top: 50 * u, width: width - 120 * u, height: 860 * u } : { left: 40 * u, top: 40 * u, width: width - 80 * u, height: 850 * u }
+    const top = win.top + chrome + head + 10 * u
+    const plateH = wide ? 700 * u : 610 * u
+    const thumb = wide ? 110 * u : 84 * u
+    const strip: Box = { left: win.left + (wide ? 40 : 28) * u, top, width: thumb, height: plateH }
+    const plate: Box = { left: strip.left + thumb + (wide ? 40 : 26) * u, top, width: plateH * (170 / 210), height: plateH }
+    const formLeft = plate.left + plate.width + (wide ? 50 : 26) * u
+    const form: Box = { left: formLeft, top, width: Math.min(760 * u, win.left + win.width - formLeft - (wide ? 40 : 26) * u), height: plateH }
+    return { u, k, wide, tall, width, height, win, chrome, head, strip, plate, form, thumb, row: false }
   }
-  const plateH = height * 0.42
+  const win: Box = { left: 40 * u, top: 90 * u, width: width - 80 * u, height: 1500 * u }
+  const strip: Box = { left: win.left + 40 * u, top: win.top + chrome + head + 14 * u, width: win.width - 80 * u, height: 0 }
+  const thumb = (strip.width - 5 * 16 * u) / 6
+  strip.height = thumb * (210 / 170) + 34 * u
+  const plateH = 600 * u
   const plateW = plateH * (170 / 210)
-  const plate: Box = { left: (width - plateW) / 2, top: 360 * u, width: plateW, height: plateH }
-  return { u, k, wide, width, height, strip: { left: 60 * u, top: 200 * u, width: width - 120 * u, height: 130 * u },
-    plate, form: { left: 60 * u, top: plate.top + plateH + 40 * u, width: width - 120 * u, height: 320 * u } }
+  const plate: Box = { left: (width - plateW) / 2, top: strip.top + strip.height + 22 * u, width: plateW, height: plateH }
+  const form: Box = { left: strip.left, top: plate.top + plateH + 26 * u, width: strip.width, height: win.top + win.height - (plate.top + plateH + 26 * u) - 30 * u }
+  return { u, k, wide, tall, width, height, win, chrome, head, strip, plate, form, thumb, row: true }
 }
 
 const at = (b: Box): React.CSSProperties => ({ position: 'absolute', left: b.left, top: b.top, width: b.width, height: b.height })
 
-function EditorShell({ children, dur, caption, step }: Base & { children: React.ReactNode }) {
+/** The centre of the strip's thumbnail `i` (0 is the cover), as fractions of the frame. */
+function thumbAt(L: ReturnType<typeof useEditorLayout>, i: number): [number, number] {
+  const h = L.thumb * (210 / 170)
+  const gap = 16 * L.u
+  const x = L.row ? L.strip.left + i * (L.thumb + gap) + L.thumb / 2 : L.strip.left + L.thumb / 2
+  const y = L.row ? L.strip.top + h / 2 : L.strip.top + i * (h + 30 * L.u + gap) + h / 2
+  return [x / L.width, y / L.height]
+}
+
+/** The app's window: its address bar, «← Volver al tomo» and the editor's heading with the book's name; the
+ * camera drifting in slowly, as in the launch scenes. */
+function EditorShell({ children, dur, caption, step, tome, look = LOOKS.claro }: Base & { children: React.ReactNode; tome: VideoTome; look?: Palette }) {
   const frame = useCurrentFrame()
-  const { u, wide } = useUnit()
+  const { fps } = useVideoConfig()
+  const L = useEditorLayout()
+  const { u, win, chrome, head } = L
+  const land = spring({ frame, fps, config: { damping: 18 } })
+  const drift = interpolate(frame, [0, dur], [1, 1.035])
   return (
-    <AbsoluteFill style={{ background: '#fafaf9', opacity: fadeOut(frame, dur) }}>
-      <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: (wide ? 100 : 150) * u, display: 'flex', alignItems: 'flex-end',
-        padding: `0 ${(wide ? 70 : 60) * u}px ${22 * u}px`, borderBottom: `${2 * u}px solid ${LINE}`, background: '#fff', gap: 20 * u }}>
-        <span style={{ fontSize: 26 * u, fontWeight: 700, letterSpacing: '.14em', color: ACCENT }}>EDITOR DE PÁGINAS</span>
+    <Glow look={look} style={{ opacity: fadeOut(frame, dur) }}>
+      <div style={{ position: 'absolute', inset: 0, transform: `scale(${drift * (0.96 + land * 0.04)})`, opacity: Math.min(1, land * 1.6) }}>
+        <div style={{ ...at(win), borderRadius: 26 * u, background: '#fafaf9', overflow: 'hidden', boxShadow: `0 ${40 * u}px ${110 * u}px rgba(12,10,9,.3)`,
+          border: `${2 * u}px solid rgba(255,255,255,.6)` }}>
+          <div style={{ height: chrome, display: 'flex', alignItems: 'center', gap: 12 * u, padding: `0 ${22 * u}px`, background: '#fff', borderBottom: `${2 * u}px solid ${LINE}` }}>
+            {['#ff5f57', '#febc2e', '#28c840'].map((c) => <span key={c} style={{ width: 16 * u, height: 16 * u, borderRadius: 99, background: c, flex: 'none' }} />)}
+            <span style={{ marginLeft: 14 * u, flex: 1, maxWidth: 560 * u, height: 34 * u, borderRadius: 10 * u, background: '#f1f0ee', color: '#78716c', fontSize: 20 * u,
+              display: 'flex', alignItems: 'center', padding: `0 ${14 * u}px`, whiteSpace: 'nowrap', overflow: 'hidden' }}>{SITE}/app/tomos/editor</span>
+          </div>
+          <div style={{ height: head, display: 'flex', alignItems: 'center', gap: 22 * u, padding: `0 ${(L.tall ? 40 : 30) * u}px`, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+            <span style={{ fontSize: 20 * u, color: '#78716c', fontWeight: 600 }}>← Volver al tomo</span>
+            <span style={{ fontSize: 18 * u, fontWeight: 700, letterSpacing: '.14em', color: ACCENT }}>EDITOR DE PÁGINAS</span>
+            <span style={{ fontSize: 26 * u, fontWeight: 700, letterSpacing: '-0.02em', color: INK, overflow: 'hidden', textOverflow: 'ellipsis' }}>{tome.title}</span>
+          </div>
+        </div>
+        {children}
       </div>
-      {children}
       <Caption text={caption} step={step} at={8} />
-    </AbsoluteFill>
+    </Glow>
   )
 }
 
-/** The thumbnails of the book's pages, the cover first; `on` is the one open. */
+/** The strip of pages, the printed cover first, each with its number under it; `on` is the one open. */
 function Strip({ tome, on, appear = 1 }: { tome: VideoTome; on: number; appear?: number }) {
-  const { u, wide, strip } = useEditorLayout()
-  const size = wide ? strip.width : (strip.width - 5 * 16 * u) / 6
-  const fit = wide ? Math.floor((strip.height + 16 * u) / (size * (210 / 170) + 16 * u)) : 6  // as many as the column holds
+  const L = useEditorLayout()
+  const { u, k, strip, thumb, row } = L
+  const fit = row ? 6 : Math.max(1, Math.floor((strip.height + 16 * u) / (thumb * (210 / 170) + 30 * u + 16 * u)))
   const thumbs = [tome.cover, ...tome.pages].filter(Boolean).slice(0, fit) as string[]
   return (
-    <div style={{ ...at(strip), display: 'flex', flexDirection: wide ? 'column' : 'row', gap: 16 * u }}>
+    <div style={{ ...at(strip), display: 'flex', flexDirection: row ? 'row' : 'column', gap: 16 * u }}>
       {thumbs.map((src, i) => (
-        <div key={i} style={{ width: size, height: size * (210 / 170), flex: 'none', borderRadius: 8 * u, overflow: 'hidden',
-          outline: `${(i === on ? 5 : 0) * u}px solid ${ACCENT}`, outlineOffset: 3 * u, opacity: ease(appear * 30, i * 3, i * 3 + 10),
-          boxShadow: `0 ${4 * u}px ${12 * u}px rgba(12,10,9,.15)` }}>
-          <Img src={src} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <div key={i} style={{ width: thumb, flex: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 * u, opacity: ease(appear * 30, i * 3, i * 3 + 10) }}>
+          <div style={{ width: thumb, height: thumb * (210 / 170), borderRadius: 8 * u, overflow: 'hidden', background: SOFT,
+            outline: `${(i === on ? 5 : 0) * u}px solid ${ACCENT}`, outlineOffset: 3 * u, boxShadow: `0 ${4 * u}px ${12 * u}px rgba(12,10,9,.15)` }}>
+            <Img src={src} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
+          <span style={{ fontSize: 16 * u * Math.min(k, 1.15), fontWeight: 600, color: i === on ? ACCENT : '#78716c', lineHeight: 1.2 }}>{i === 0 ? 'Portada' : i}</span>
         </div>
       ))}
     </div>
   )
 }
 
-/** A plate with its words over the picture: the question card, the facts and the find strip. */
+/** A plate with its words over the picture: the question card, the facts and the find strip. The cover is the real
+ * printed one, its name line and age badge fading out as they are switched off. */
 function Plate({ tome, qTop = 4, notes, hidden = [], fresh, freshIn = 0, image, dragging = false, cover = false, nameLine = 1, age = 1 }: {
   tome: VideoTome; qTop?: number; notes?: string[]; hidden?: number[]; fresh?: string; freshIn?: number; image?: string; dragging?: boolean
   cover?: boolean; nameLine?: number; age?: number
@@ -563,10 +606,17 @@ function Plate({ tome, qTop = 4, notes, hidden = [], fresh, freshIn = 0, image, 
   const src = image ?? (cover ? tome.cover : p?.image ?? tome.pages[0] ?? tome.cover) ?? undefined
   const facts = notes ?? p?.notes ?? []
   const f = 0.42 * k
+  const fill: React.CSSProperties = { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }
   return (
     <div style={{ ...at(plate), borderRadius: 10 * u, overflow: 'hidden', background: SOFT, boxShadow: `0 ${16 * u}px ${44 * u}px rgba(12,10,9,.2)` }}>
-      {src && <Img src={src} crossOrigin="anonymous" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
-      {cover ? (
+      {cover && tome.covers ? (
+        <>
+          <Img src={tome.covers.full} crossOrigin="anonymous" style={fill} />
+          <Img src={tome.covers.noName} crossOrigin="anonymous" style={{ ...fill, opacity: 1 - nameLine }} />
+          <Img src={tome.covers.bare} crossOrigin="anonymous" style={{ ...fill, opacity: 1 - age }} />
+        </>
+      ) : src && <Img src={src} crossOrigin="anonymous" style={fill} />}
+      {cover ? !tome.covers && (
         <>
           <div style={{ position: 'absolute', left: '8%', bottom: '14%', width: '46%', borderBottom: `${3 * u}px solid #fff`, paddingBottom: 26 * u * f,
             color: '#fff', fontSize: 30 * u * f, fontWeight: 700, letterSpacing: '.06em', opacity: nameLine }}>NOMBRE:</div>
@@ -601,29 +651,55 @@ function Plate({ tome, qTop = 4, notes, hidden = [], fresh, freshIn = 0, image, 
   )
 }
 
-/** A panel of the editor's form, beside or under the plate. */
-function Form({ children }: { children: React.ReactNode }) {
-  const { u, form } = useEditorLayout()
+// The form's sizes, fixed so the pointer lands on what it presses in every cut.
+const PAD = 30
+const GAP = 16
+function useForm() {
+  const L = useEditorLayout()
+  const s = L.u * Math.min(L.k, 1.2)
+  return { ...L, s, label: 30 * s, input: 58 * s, check: 44 * s, button: 60 * s }
+}
+
+/** A panel of the editor's form, beside or under the plate, with the page's place in the book on top. */
+function Form({ children, where }: { children: React.ReactNode; where?: string }) {
+  const { u, s, form } = useForm()
   return (
-    <div style={{ ...at(form), background: '#fff', border: `${2 * u}px solid ${LINE}`, borderRadius: 24 * u, padding: 32 * u,
-      display: 'flex', flexDirection: 'column', gap: 18 * u, overflow: 'hidden' }}>{children}</div>
+    <div style={{ ...at(form), background: '#fff', border: `${2 * u}px solid ${LINE}`, borderRadius: 22 * u, padding: PAD * u,
+      display: 'flex', flexDirection: 'column', gap: GAP * u, overflow: 'hidden' }}>
+      {where && <div style={{ height: 30 * s, fontSize: 20 * s, color: '#a8a29e', fontWeight: 500, flex: 'none' }}>{where}</div>}
+      {children}
+    </div>
   )
 }
 
 function Label({ children }: { children: React.ReactNode }) {
-  const { u, k } = useEditorLayout()
-  return <div style={{ fontSize: 24 * u * k, fontWeight: 600, color: '#78716c' }}>{children}</div>
+  const { s, label } = useForm()
+  return <div style={{ height: label, flex: 'none', fontSize: 22 * s, fontWeight: 600, color: '#57534e', display: 'flex', alignItems: 'center' }}>{children}</div>
 }
 
-function Button({ children, primary = false, pressed = false }: { children: React.ReactNode; primary?: boolean; pressed?: boolean }) {
-  const { u, k } = useEditorLayout()
+function Input({ children, focus = false, tall = 1 }: { children: React.ReactNode; focus?: boolean; tall?: number }) {
+  const { u, s, input } = useForm()
   return (
-    <div style={{ alignSelf: 'flex-start', background: primary ? INK : '#fff', color: primary ? '#fff' : INK, border: `${2 * u}px solid ${primary ? INK : LINE}`,
-      borderRadius: 999, padding: `${14 * u}px ${28 * u}px`, fontSize: 26 * u * k, fontWeight: 600, transform: `scale(${pressed ? 0.94 : 1})` }}>{children}</div>
+    <div style={{ minHeight: input, height: tall > 1 ? input * tall : undefined, flex: 'none', border: `${2 * u}px solid ${focus ? ACCENT : LINE}`, borderRadius: 12 * u, padding: `${12 * s}px ${16 * s}px`,
+      fontSize: 22 * s, lineHeight: 1.4, color: INK, boxShadow: focus ? `0 0 0 ${4 * u}px ${ACCENT}22` : undefined, overflow: 'hidden', boxSizing: 'border-box' }}>{children}</div>
   )
 }
 
-/** A pointer that glides from one spot of the screen to another (fractions of the width and height). */
+function Caret() {
+  const { u, s } = useForm()
+  return <span style={{ display: 'inline-block', width: 3 * u, height: 26 * s, background: ACCENT, marginLeft: 3 * u, verticalAlign: 'middle' }} />
+}
+
+function Button({ children, primary = false, pressed = false }: { children: React.ReactNode; primary?: boolean; pressed?: boolean }) {
+  const { u, s, button } = useForm()
+  return (
+    <div style={{ alignSelf: 'flex-start', height: button, flex: 'none', display: 'flex', alignItems: 'center', background: primary ? ACCENT : '#fff', color: primary ? '#fff' : INK,
+      border: `${2 * u}px solid ${primary ? ACCENT : LINE}`, borderRadius: 14 * u, padding: `0 ${26 * s}px`, fontSize: 22 * s, fontWeight: 700,
+      transform: `scale(${pressed ? 0.94 : 1})`, boxSizing: 'border-box' }}>{children}</div>
+  )
+}
+
+/** A pointer that glides from one spot of the frame to another (fractions of the width and height). */
 function Glide({ frame, from, to, a, b, press }: { frame: number; from: [number, number]; to: [number, number]; a: number; b: number; press?: boolean }) {
   const { u, width, height } = useUnit()
   const t = ease(frame, a, b)
@@ -631,43 +707,58 @@ function Glide({ frame, from, to, a, b, press }: { frame: number; from: [number,
     transform: `scale(${press ? 0.85 : 1})` }} />
 }
 
+/** A point of the form: `y` pixels down from the form's top, `x` from its left. */
+const inForm = (F: ReturnType<typeof useForm>, x: number, y: number): [number, number] =>
+  [(F.form.left + x) / F.width, (F.form.top + PAD * F.u + y) / F.height]
+
+const where = (tome: VideoTome) => `Página 2 · ${tome.sections[0] ?? tome.kind}`
+
 /** The page editor opens: the strip of pages arrives and a page is chosen. */
-export function EditorOpenScene({ dur, caption, step, tome }: Base & { tome: VideoTome }) {
+export function EditorOpenScene({ dur, caption, step, tome, look }: Base & { tome: VideoTome; look?: Palette }) {
   const frame = useCurrentFrame()
-  const { wide, strip, plate, width, height } = useEditorLayout()
+  const L = useEditorLayout()
   const pick = frame > dur * 0.5 ? 2 : -1
   const open = ease(frame, dur * 0.52, dur * 0.66)
-  const thumb: [number, number] = wide ? [(strip.left + strip.width * 0.6) / width, (strip.top + strip.width * 1.24 * 2.3) / height]
-    : [(strip.left + (strip.width / 6) * 2.5) / width, (strip.top + strip.height * 0.6) / height]
   return (
-    <EditorShell dur={dur} caption={caption} step={step}>
+    <EditorShell dur={dur} caption={caption} step={step} tome={tome} look={look}>
       <Strip tome={tome} on={pick} appear={Math.min(1, frame / 30)} />
-      <div style={{ position: 'absolute', inset: 0, opacity: open, transform: `translateY(${(1 - open) * 30}px)` }}><Plate tome={tome} /></div>
-      {open < 0.01 && <div style={{ ...at(plate), borderRadius: 10, border: `3px dashed ${LINE}` }} />}
-      <Glide frame={frame} from={[0.7, 0.85]} to={thumb} a={dur * 0.15} b={dur * 0.45} press={frame > dur * 0.46 && frame < dur * 0.52} />
+      <div style={{ position: 'absolute', inset: 0, opacity: open, transform: `translateY(${(1 - open) * 30}px)` }}>
+        <Plate tome={tome} />
+        <Form where={where(tome)}>
+          <Label>Pregunta</Label>
+          <Input>{tome.plate?.question ?? tome.title}</Input>
+          <Label>Datos</Label>
+          {(tome.plate?.notes ?? []).slice(0, 2).map((n, i) => <Input key={i}>{n}</Input>)}
+        </Form>
+      </div>
+      {open < 0.01 && <div style={{ ...at(L.plate), borderRadius: 10 * L.u, border: `${3 * L.u}px dashed ${LINE}` }} />}
+      <Glide frame={frame} from={[0.75, 0.82]} to={thumbAt(L, 2)} a={dur * 0.15} b={dur * 0.45} press={frame > dur * 0.46 && frame < dur * 0.52} />
     </EditorShell>
   )
 }
 
 /** «Mover textos»: the question card is dragged down the page, its outline dashed while it moves. */
-export function EditorMoveScene({ dur, caption, step, tome }: Base & { tome: VideoTome }) {
+export function EditorMoveScene({ dur, caption, step, tome, look }: Base & { tome: VideoTome; look?: Palette }) {
   const frame = useCurrentFrame()
-  const { u, k, plate, width, height } = useEditorLayout()
+  const F = useForm()
+  const { u, s, plate, width, height } = F
   const move = ease(frame, dur * 0.3, dur * 0.7)
   const dragging = frame > dur * 0.25 && frame < dur * 0.72
   const qTop = 4 + move * 52
   const grab: [number, number] = [(plate.left + plate.width * 0.5) / width, (plate.top + plate.height * (qTop / 100 + 0.04)) / height]
+  const chip = (on: boolean, label: string) => (
+    <div style={{ background: on ? SOFT : '#fff', color: on ? ACCENT : INK, border: `${2 * u}px solid ${on ? ACCENT : LINE}`, borderRadius: 999,
+      padding: `${10 * s}px ${20 * s}px`, fontSize: 20 * s, fontWeight: on ? 700 : 500, whiteSpace: 'nowrap' }}>{label}</div>
+  )
   return (
-    <EditorShell dur={dur} caption={caption} step={step}>
+    <EditorShell dur={dur} caption={caption} step={step} tome={tome} look={look}>
       <Strip tome={tome} on={2} />
       <Plate tome={tome} qTop={qTop} dragging={dragging} />
-      <Form>
+      <Form where={where(tome)}>
         <Label>Vista</Label>
-        <div style={{ display: 'flex', gap: 12 * u }}>
-          <div style={{ background: SOFT, color: ACCENT, borderRadius: 999, padding: `${10 * u}px ${22 * u}px`, fontSize: 24 * u * k, fontWeight: 700 }}>Mover textos</div>
-          <div style={{ border: `${2 * u}px solid ${LINE}`, borderRadius: 999, padding: `${10 * u}px ${22 * u}px`, fontSize: 24 * u * k }}>Vista de impresión</div>
-        </div>
-        <div style={{ fontSize: 24 * u * k, color: '#78716c', lineHeight: 1.4 }}>Arrastra la pregunta, los datos o el reto con el dedo o el cursor.</div>
+        <div style={{ display: 'flex', gap: 10 * u, flexWrap: 'wrap' }}>{chip(true, 'Mover textos')}{chip(false, 'Vista de impresión')}</div>
+        <div style={{ fontSize: 20 * s, color: '#78716c', lineHeight: 1.45 }}>Arrastra la pregunta, los datos o el reto con el dedo o el cursor; lo que escribes aquí se ve al momento.</div>
+        {move > 0.98 && <div style={{ fontSize: 20 * s, color: ACCENT, fontWeight: 600 }}>Volver al acomodo automático</div>}
       </Form>
       {frame < dur * 0.3
         ? <Glide frame={frame} from={[0.85, 0.8]} to={grab} a={0} b={dur * 0.25} />
@@ -677,35 +768,32 @@ export function EditorMoveScene({ dur, caption, step, tome }: Base & { tome: Vid
 }
 
 /** A fact removed with its ✕ and a new one added with «+ Añadir dato», typed and appearing on the plate. */
-export function EditorFactsScene({ dur, caption, step, tome, text }: Base & { tome: VideoTome; text: string }) {
+export function EditorFactsScene({ dur, caption, step, tome, text, look }: Base & { tome: VideoTome; text: string; look?: Palette }) {
   const frame = useCurrentFrame()
-  const { u, k, form, width, height } = useEditorLayout()
+  const F = useForm()
+  const { u, s, form } = F
   const facts = (tome.plate?.notes ?? ['La Luna refleja la luz del Sol.', 'Tarda 28 días en dar una vuelta.']).slice(0, 2)
   const removed = frame > dur * 0.3
   const gone = ease(frame, dur * 0.3, dur * 0.38)
   const adding = frame > dur * 0.5
   const typedFact = typed(text, frame, dur * 0.55, dur * 0.85)
-  const row = 58 * u * k
-  const xAt: [number, number] = [(form.left + form.width - 70 * u) / width, (form.top + 32 * u + 40 * u * k + row * 1.2) / height]
-  const addAt: [number, number] = [(form.left + 120 * u) / width, (form.top + 32 * u + 40 * u * k + row * 2.4) / height]
+  const top = (30 * s + GAP * u) + (F.label + GAP * u)  // under «Página…» and «Datos»
+  const xAt = inForm(F, form.width - PAD * u - 30 * s, top + (F.input + GAP * u) + F.input / 2)
+  const addAt = inForm(F, 90 * s, top + (F.input + GAP * u) * 2 - (F.input + GAP * u) * gone + F.button / 2)
   return (
-    <EditorShell dur={dur} caption={caption} step={step}>
+    <EditorShell dur={dur} caption={caption} step={step} tome={tome} look={look}>
       <Strip tome={tome} on={2} />
       <Plate tome={tome} notes={facts} hidden={removed ? [1] : []} fresh={adding ? typedFact || ' ' : undefined} freshIn={ease(frame, dur * 0.85, dur * 0.92)} />
-      <Form>
+      <Form where={where(tome)}>
         <Label>Datos</Label>
         {facts.map((n, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 * u, opacity: i === 1 ? 1 - gone : 1, height: i === 1 && removed ? row * (1 - gone) : undefined }}>
-            <div style={{ flex: 1, border: `${2 * u}px solid ${LINE}`, borderRadius: 12 * u, padding: `${10 * u}px ${16 * u}px`, fontSize: 24 * u * k,
-              whiteSpace: 'nowrap', overflow: 'hidden' }}>{n}</div>
-            <span style={{ fontSize: 28 * u * k, fontWeight: 700, color: '#78716c' }}>✕</span>
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 * u, flex: 'none', opacity: i === 1 ? 1 - gone : 1,
+            height: i === 1 && removed ? F.input * (1 - gone) : F.input, marginBottom: i === 1 && removed ? -GAP * u * gone : 0 }}>
+            <div style={{ flex: 1, minWidth: 0 }}><Input><span style={{ whiteSpace: 'nowrap' }}>{n}</span></Input></div>
+            <span style={{ width: 44 * s, textAlign: 'center', fontSize: 24 * s, fontWeight: 700, color: '#78716c', flex: 'none' }}>✕</span>
           </div>
         ))}
-        {adding ? (
-          <div style={{ border: `${2 * u}px solid ${ACCENT}`, borderRadius: 12 * u, padding: `${10 * u}px ${16 * u}px`, fontSize: 24 * u * k, minHeight: 30 * u * k }}>
-            {typedFact}<span style={{ display: 'inline-block', width: 3 * u, height: 28 * u * k, background: ACCENT, marginLeft: 3 * u, verticalAlign: 'middle' }} />
-          </div>
-        ) : <Button pressed={frame > dur * 0.46}>+ Añadir dato</Button>}
+        {adding ? <Input focus>{typedFact}<Caret /></Input> : <Button pressed={frame > dur * 0.46}>+ Añadir dato</Button>}
       </Form>
       {frame < dur * 0.32
         ? <Glide frame={frame} from={[0.8, 0.9]} to={xAt} a={0} b={dur * 0.26} press={frame > dur * 0.26} />
@@ -715,29 +803,29 @@ export function EditorFactsScene({ dur, caption, step, tome, text }: Base & { to
 }
 
 /** «Repintar esta ilustración»: what to change is typed, the button pressed, the picture painted again. */
-export function EditorRepaintScene({ dur, caption, step, tome, text }: Base & { tome: VideoTome; text: string }) {
+export function EditorRepaintScene({ dur, caption, step, tome, text, look }: Base & { tome: VideoTome; text: string; look?: Palette }) {
   const frame = useCurrentFrame()
-  const { u, k, plate, form, width, height } = useEditorLayout()
+  const F = useForm()
+  const { u, s, plate } = F
   const ask = typed(text, frame, dur * 0.12, dur * 0.45)
   const pressed = frame > dur * 0.52 && frame < dur * 0.58
   const painting = ease(frame, dur * 0.58, dur * 0.66) * (1 - ease(frame, dur * 0.82, dur * 0.9))
   const swapped = frame > dur * 0.8
-  const next = tome.pages.find((p) => p !== tome.plate?.image) ?? tome.cover ?? undefined
-  const button: [number, number] = [(form.left + 140 * u) / width, (form.top + form.height - 90 * u) / height]
+  const next = tome.pages.find((p) => p !== tome.plate?.image) ?? tome.art ?? tome.cover ?? undefined
+  const box = F.input * 2
+  const button = inForm(F, 120 * s, 30 * s + GAP * u + F.label + GAP * u + box + GAP * u + F.button / 2)
   return (
-    <EditorShell dur={dur} caption={caption} step={step}>
+    <EditorShell dur={dur} caption={caption} step={step} tome={tome} look={look}>
       <Strip tome={tome} on={2} />
       <Plate tome={tome} image={swapped ? next : undefined} />
       <div style={{ ...at(plate), borderRadius: 10 * u, background: `rgba(255,255,255,${0.75 * painting})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ opacity: painting, background: '#fff', borderRadius: 999, padding: `${14 * u}px ${26 * u}px`, fontSize: 28 * u * k, fontWeight: 600,
-          display: 'flex', gap: 12 * u, alignItems: 'center' }}>
-          <span style={{ width: 16 * u, height: 16 * u, borderRadius: 99, background: '#c98a12' }} />Pintando la ilustración…</div>
+        <div style={{ opacity: painting, background: '#fff', borderRadius: 999, padding: `${14 * s}px ${24 * s}px`, fontSize: 22 * s, fontWeight: 600,
+          display: 'flex', gap: 12 * u, alignItems: 'center', boxShadow: `0 ${8 * u}px ${20 * u}px rgba(12,10,9,.15)` }}>
+          <span style={{ width: 16 * u, height: 16 * u, borderRadius: 99, background: '#c98a12' }} />Pintando la ilustración de nuevo…</div>
       </div>
-      <Form>
+      <Form where={where(tome)}>
         <Label>Repintar esta ilustración</Label>
-        <div style={{ flex: 1, border: `${2 * u}px solid ${ACCENT}`, borderRadius: 14 * u, padding: 18 * u, fontSize: 26 * u * k, lineHeight: 1.4 }}>
-          {ask}<span style={{ display: 'inline-block', width: 3 * u, height: 30 * u * k, background: ACCENT, marginLeft: 3 * u, verticalAlign: 'middle' }} />
-        </div>
+        <Input focus tall={2}>{ask || <span style={{ color: '#a8a29e' }}>Ej.: más luz de mañana</span>}<Caret /></Input>
         <Button pressed={pressed}>Repintar (1 crédito)</Button>
       </Form>
       <Glide frame={frame} from={[0.9, 0.95]} to={button} a={dur * 0.4} b={dur * 0.52} press={pressed} />
@@ -745,25 +833,32 @@ export function EditorRepaintScene({ dur, caption, step, tome, text }: Base & { 
   )
 }
 
-/** The cover in the editor: the name line and the age badge switched off with a click each. */
-export function EditorCoverScene({ dur, caption, step, tome }: Base & { tome: VideoTome }) {
+/** The cover in the editor, the real printed one: the name line and the age badge switched off with a click each. */
+export function EditorCoverScene({ dur, caption, step, tome, look }: Base & { tome: VideoTome; look?: Palette }) {
   const frame = useCurrentFrame()
-  const { u, k, form, width, height } = useEditorLayout()
+  const F = useForm()
+  const { u, s } = F
   const nameOff = ease(frame, dur * 0.35, dur * 0.42)
   const ageOff = ease(frame, dur * 0.65, dur * 0.72)
-  const row = (i: number): [number, number] => [(form.left + 50 * u) / width, (form.top + 32 * u + 50 * u * k + i * 64 * u * k) / height]
+  const kicker = !F.tall  // the vertical cut has room for the switches only
+  const first = 30 * s + GAP * u + (kicker ? F.label + GAP * u + F.input + GAP * u : 0) + F.label + GAP * u
+  const row = (i: number) => inForm(F, 22 * s, first + i * (F.check + GAP * u) + F.check / 2)
   const box = (on: boolean) => (
-    <span style={{ width: 34 * u * k, height: 34 * u * k, borderRadius: 8 * u, flex: 'none', border: `${3 * u}px solid ${INK}`, background: on ? INK : '#fff',
-      color: '#fff', fontSize: 24 * u * k, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{on ? '✓' : ''}</span>
+    <span style={{ width: 30 * s, height: 30 * s, borderRadius: 7 * u, flex: 'none', border: `${3 * u}px solid ${on ? ACCENT : '#a8a29e'}`, background: on ? ACCENT : '#fff',
+      color: '#fff', fontSize: 20 * s, display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>{on ? '✓' : ''}</span>
   )
+  const options: [string, string, boolean][] = [['Línea «Nombre»', 'para que el niño escriba su nombre', nameOff < 0.5],
+    ['«Elaborado por»', 'tu firma y tu logo', true], ['Sello de edad', 'el círculo con las edades', ageOff < 0.5]]
   return (
-    <EditorShell dur={dur} caption={caption} step={step}>
+    <EditorShell dur={dur} caption={caption} step={step} tome={tome} look={look}>
       <Strip tome={tome} on={0} />
       <Plate tome={tome} cover nameLine={1 - nameOff} age={1 - ageOff} />
-      <Form>
-        <Label>Qué más lleva la portada</Label>
-        {[['Línea «Nombre»', nameOff < 0.5], ['«Elaborado por»', true], ['Sello de edad', ageOff < 0.5]].map(([l, on]) => (
-          <div key={String(l)} style={{ display: 'flex', alignItems: 'center', gap: 16 * u, fontSize: 26 * u * k, fontWeight: 500 }}>{box(Boolean(on))}{l}</div>
+      <Form where="Portada">
+        {kicker && <><Label>Texto sobre el título</Label><Input>{tome.kind}</Input></>}
+        <Label>Qué más lleva</Label>
+        {options.map(([l, hint, on]) => (
+          <div key={l} style={{ height: F.check, flex: 'none', display: 'flex', alignItems: 'center', gap: 14 * u, fontSize: 21 * s, fontWeight: 600, color: INK,
+            whiteSpace: 'nowrap', overflow: 'hidden' }}>{box(on)}{l}<span style={{ color: '#a8a29e', fontWeight: 400 }}>· {hint}</span></div>
         ))}
       </Form>
       {frame < dur * 0.45
@@ -774,23 +869,25 @@ export function EditorCoverScene({ dur, caption, step, tome }: Base & { tome: Vi
 }
 
 /** «Guardar cambios»: saved, and the next PDF carries every change. */
-export function EditorSaveScene({ dur, caption, step, tome }: Base & { tome: VideoTome }) {
+export function EditorSaveScene({ dur, caption, step, tome, look }: Base & { tome: VideoTome; look?: Palette }) {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
-  const { u, k, form, width, height } = useEditorLayout()
+  const F = useForm()
+  const { u, s } = F
   const pressed = frame > dur * 0.35 && frame < dur * 0.42
   const saved = frame > dur * 0.42
   const pop = spring({ frame: frame - dur * 0.55, fps, config: { damping: 12 } })
-  const button: [number, number] = [(form.left + 150 * u) / width, (form.top + 80 * u) / height]
+  const button = inForm(F, 110 * s, 30 * s + GAP * u + F.label + GAP * u + F.input + GAP * u + F.button / 2)
   return (
-    <EditorShell dur={dur} caption={caption} step={step}>
+    <EditorShell dur={dur} caption={caption} step={step} tome={tome} look={look}>
       <Strip tome={tome} on={2} />
       <Plate tome={tome} qTop={56} />
-      <Form>
+      <Form where={where(tome)}>
+        <Label>Pregunta</Label>
+        <Input>{tome.plate?.question ?? tome.title}</Input>
         <Button primary pressed={pressed}>{saved ? 'Guardado' : 'Guardar cambios'}</Button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 * u, fontSize: 26 * u * k, color: OK, fontWeight: 600, opacity: saved ? 1 : 0 }}>
-          ✓ El próximo PDF ya lo incluye</div>
-        <div style={{ alignSelf: 'flex-start', background: OK, color: '#fff', borderRadius: 999, padding: `${12 * u}px ${24 * u}px`, fontSize: 28 * u * k,
+        <div style={{ fontSize: 20 * s, color: OK, fontWeight: 600, opacity: saved ? 1 : 0 }}>Guardado. El próximo PDF ya lo incluye.</div>
+        <div style={{ alignSelf: 'flex-start', background: OK, color: '#fff', borderRadius: 999, padding: `${10 * s}px ${22 * s}px`, fontSize: 22 * s,
           fontWeight: 700, transform: `scale(${pop})` }}>PDF ✓</div>
       </Form>
       <Glide frame={frame} from={[0.85, 0.9]} to={button} a={dur * 0.1} b={dur * 0.33} press={pressed} />

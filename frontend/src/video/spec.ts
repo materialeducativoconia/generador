@@ -6,6 +6,8 @@ export type VideoTome = {
   title: string; kind: string; audience: string; cover: string | null; pages: string[]; sections: string[]
   plate?: { image: string; question: string; answer?: string; notes: string[]; find?: string }  // one real page, for the editor scenes
   cast?: { name: string; sheet: string }[]  // its recurring characters, each with its model sheet
+  art?: string | null  // the cover's bare illustration, when `cover` is the printed cover with its title
+  covers?: { full: string; noName: string; bare: string }  // the printed cover, without the name line, and without the age badge too
 }
 /** One real tome per kind of book the app makes, for the formats scene. */
 export type ShelfBook = { genre: string; label: string; cover: string | null }
