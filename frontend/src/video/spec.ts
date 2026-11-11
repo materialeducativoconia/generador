@@ -24,13 +24,13 @@ export const fontsReady = geist.waitUntilDone
 
 // The director's storyboard (backend app/marketing.py Storyboard): any video, scene by scene.
 export type SceneType = 'title' | 'compose' | 'plan' | 'cover' | 'pages' | 'pdf' | 'editor_open' | 'editor_move' | 'editor_facts'
-  | 'editor_repaint' | 'editor_cover' | 'editor_save' | 'list' | 'versus' | 'number' | 'formats' | 'characters' | 'screen' | 'cta'
+  | 'editor_repaint' | 'editor_cover' | 'editor_save' | 'list' | 'versus' | 'number' | 'formats' | 'characters' | 'screen' | 'phone' | 'devices' | 'zoom' | 'kinetic' | 'bento' | 'chat' | 'logo' | 'cta'
 export type Scene = { type: SceneType; seconds: number; caption: string; voice: string; text: string; capture?: string; focus?: number }
 /** A real screenshot of the app (backend marketing_captures): shown in a device, the camera zooming to its points. */
 export type Capture = { id: string; name: string; description: string; url: string | null; width: number; height: number
   focus: { x: number; y: number; label: string }[] }
 export type VideoKind = 'marketing' | 'explainer' | 'tutorial'
-export type Look = 'claro' | 'oscuro' | 'color'
+export type Look = 'claro' | 'oscuro' | 'color' | 'noche'
 export type Storyboard = { kind: VideoKind; duration: 15 | 30 | 45 | 60; title: string; scenes: Scene[]; post: string; structure?: string; look?: Look
   transition?: Transition }
 export type Transition = 'mixta' | 'deslizar' | 'zoom' | 'barrido' | 'corte'
@@ -40,6 +40,7 @@ export const LOOKS: Record<Look, { label: string; bg: string; ink: string; accen
   claro: { label: 'Claro', bg: '#ffffff', ink: '#0c0a09', accent: '#5b4cf0' },
   oscuro: { label: 'Oscuro', bg: '#0c0a09', ink: '#ffffff', accent: '#a99cff' },
   color: { label: 'Color', bg: '#5b4cf0', ink: '#ffffff', accent: '#ffd166' },
+  noche: { label: 'Noche (startup)', bg: '#08071a', ink: '#ffffff', accent: '#8f7dff' },
 }
 export type StoryboardProps = { board: Storyboard; tome: VideoTome; captures?: Record<string, Capture>; shelf?: ShelfBook[] }
 
@@ -52,7 +53,11 @@ export const SCENES: Record<SceneType, { label: string; types?: string }> = {
   editor_cover: { label: 'Editor: la portada' }, editor_save: { label: 'Editor: guardar' },
   list: { label: 'Lista animada', types: 'Puntos separados por |' }, versus: { label: 'Antes y después', types: 'Antes | después' },
   number: { label: 'Número grande', types: 'El número, p. ej. 5 min' }, formats: { label: 'Tipos de libro' }, characters: { label: 'Personajes' },
-  screen: { label: 'Pantalla real (captura)' }, cta: { label: 'Cierre' },
+  screen: { label: 'Pantalla real (captura)' },
+  phone: { label: 'La app en un iPhone', types: 'Pedido que se escribe' }, devices: { label: 'Laptop y iPhone' },
+  zoom: { label: 'Lupa y zoom a un detalle', types: 'Etiqueta del detalle' }, kinetic: { label: 'Tipografía cinética', types: 'Frases cortas separadas por |' },
+  bento: { label: 'Bento de funciones', types: 'Hasta 4 funciones separadas por |' }, chat: { label: 'Chat con la IA', types: 'Pedido que se escribe' },
+  logo: { label: 'Revelado del logo' }, cta: { label: 'Cierre' },
 }
 
 /** Each scene's first frame and length; tutorial steps numbered (every scene but the title and the close). */

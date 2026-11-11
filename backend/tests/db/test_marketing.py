@@ -141,7 +141,7 @@ async def test_a_storyboard_is_proposed_seen_and_asked_again_before_the_video_is
     assert {"antes_despues", "pasos"} <= {s["key"] for s in kinds}
     first = (await client.post("/api/admin/marketing/storyboard", headers=bearer(key, admin),
                                json={**ask, "structure": "antes_despues"})).json()["script"]
-    assert first["structure"] == "antes_despues" and first["look"] in ("claro", "oscuro", "color")
+    assert first["structure"] == "antes_despues" and first["look"] in ("claro", "oscuro", "color", "noche")
     assert "Antes y después" in llm.calls[0][-1]["content"]
     assert "personajes" in llm.calls[0][-1]["content"].lower()  # the director knows whether the book has a cast
     listed = (await client.get("/api/admin/marketing/videos", headers=bearer(key, admin))).json()["videos"]

@@ -1,29 +1,30 @@
 import { AbsoluteFill, Easing, Img, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
+import { IPhone } from './startup'
 import { LOOKS, SITE, type Capture, type ShelfBook, type VideoTome } from './spec'
 
 /** The scenes every video is made of, each the real app animated with a real tome. `dur` is the scene's length in
  * frames: timings are fractions of it, so the director can give a scene 2 s or 8 s. Drawn with transforms, opacity
  * and plain boxes only, which the in-browser renderer (@remotion/web-renderer) paints exactly as the preview. */
 
-const INK = '#0c0a09'
-const ACCENT = '#5b4cf0'
-const SOFT = '#f4f2ff'
-const LINE = '#e7e5e2'
-const OK = '#2f8f4e'
-type Base = { dur: number; caption?: string; step?: number }
-type Palette = (typeof LOOKS)[keyof typeof LOOKS]
+export const INK = '#0c0a09'
+export const ACCENT = '#5b4cf0'
+export const SOFT = '#f4f2ff'
+export const LINE = '#e7e5e2'
+export const OK = '#2f8f4e'
+export type Base = { dur: number; caption?: string; step?: number }
+export type Palette = (typeof LOOKS)[keyof typeof LOOKS]
 
-function useUnit() {
+export function useUnit() {
   const { width, height } = useVideoConfig()
   const u = Math.min(width, height) / 1080
   // k: text on a phone screen is read at arm's length, so the vertical cut sets it larger.
   return { u, k: width >= height ? 1 : 1.3, wide: width > height, width, height }
 }
 
-const ease = (f: number, from: number, to: number, out: [number, number] = [0, 1]) =>
+export const ease = (f: number, from: number, to: number, out: [number, number] = [0, 1]) =>
   interpolate(f, [from, Math.max(from + 1, to)], out, { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.22, 1, 0.36, 1) })
-const fadeOut = (frame: number, dur: number) => ease(frame, dur - 10, dur, [1, 0])
-const typed = (text: string, frame: number, from: number, to: number) =>
+export const fadeOut = (frame: number, dur: number) => ease(frame, dur - 10, dur, [1, 0])
+export const typed = (text: string, frame: number, from: number, to: number) =>
   text.slice(0, Math.round(interpolate(frame, [from, Math.max(from + 1, to)], [0, text.length], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })))
 
 function Pointer({ u, style }: { u: number; style: React.CSSProperties }) {
@@ -35,7 +36,7 @@ function Pointer({ u, style }: { u: number; style: React.CSSProperties }) {
 }
 
 /** The line on screen; in a tutorial it carries its step number. */
-function Caption({ text, at = 6, step }: { text?: string; at?: number; step?: number }) {
+export function Caption({ text, at = 6, step }: { text?: string; at?: number; step?: number }) {
   const frame = useCurrentFrame()
   const { u, wide } = useUnit()
   if (!text) return null
@@ -70,7 +71,7 @@ export function TitleScene({ dur, caption = '', look = LOOKS.claro }: Base & { l
   )
 }
 
-const parts = (text: string) => text.split('|').map((t) => t.trim()).filter(Boolean)
+export const parts = (text: string) => text.split('|').map((t) => t.trim()).filter(Boolean)
 
 /** Two to four points landing one after another, each ticked: reasons, what a book brings, a summary. */
 export function ListScene({ dur, caption, step, text = '', look = LOOKS.claro }: Base & { text?: string; look?: Palette }) {
@@ -350,7 +351,7 @@ export function FormatsScene({ dur, caption, step, tome, shelf = [] }: Base & { 
               transform: `translateY(${(1 - s) * 120 * u - on * 24 * u}px) rotate(${tilt}deg) scale(${1 + on * 0.1})`, zIndex: i === mine ? 2 : 1 }}>
               <div style={{ width: cardW, aspectRatio: '3 / 4', borderRadius: 12 * u, overflow: 'hidden', background: SWATCH[i % SWATCH.length],
                 boxShadow: `0 ${18 * u}px ${40 * u}px rgba(12,10,9,${0.18 + on * 0.12})`, outline: on ? `${6 * u * on}px solid ${ACCENT}` : 'none' }}>
-                {b.cover && <Img src={b.cover} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                {b.cover && <Img src={b.cover} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
               </div>
               <span style={{ fontSize: (wide ? 26 : 30) * u * (wide ? 1 : k * 0.85), fontWeight: 700, color: INK, textAlign: 'center', lineHeight: 1.1 }}>{b.label}</span>
             </div>
@@ -384,7 +385,7 @@ export function CharactersScene({ dur, caption, step, tome }: Base & { tome: Vid
               <div key={c.name} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 * u, opacity: s, transform: `translateY(${(1 - s) * 80 * u}px)` }}>
                 <div style={{ width: w, height: w, borderRadius: 18 * u + swap * 60 * u, overflow: 'hidden', background: '#fff',
                   boxShadow: `0 ${14 * u}px ${36 * u}px rgba(12,10,9,.16)`, border: `${4 * u}px solid #fff` }}>
-                  <Img src={c.sheet} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: swap > 0.5 ? '20% 15%' : 'center' }} />
+                  <Img src={c.sheet} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: swap > 0.5 ? '20% 15%' : 'center' }} />
                 </div>
                 <span style={{ background: INK, color: '#fff', borderRadius: 999, padding: `${8 * u}px ${20 * u}px`, fontSize: (34 - swap * 10) * u * k, fontWeight: 700 }}>{c.name}</span>
               </div>
@@ -402,7 +403,7 @@ export function CharactersScene({ dur, caption, step, tome }: Base & { tome: Vid
               <div key={i} style={{ width: pageW, aspectRatio: '4 / 3', borderRadius: 12 * u, overflow: 'hidden', background: '#fff', border: `${6 * u}px solid #fff`,
                 boxShadow: `0 ${16 * u}px ${40 * u}px rgba(12,10,9,.2)`, opacity: s, marginTop: wide || i === 0 ? 0 : -50 * u,
                 transform: `translateY(${(1 - s) * 90 * u}px) rotate(${tilt}deg)`, zIndex: i }}>
-                <Img src={src} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <Img src={src} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
             )
           })}
@@ -431,7 +432,7 @@ export function ScreenScene({ dur, caption, step, capture, focus = 0, look = LOO
   // The device fits the frame above the caption.
   const maxW = W * (laptop ? (wide ? 0.72 : 0.9) : (wide ? 0.4 : 0.74))
   const maxH = H * (wide ? 0.72 : 0.68)
-  const bezel = (laptop ? 14 : 22) * u
+  const bezel = laptop ? 14 * u : maxW * 0.042  // a phone's titanium rim and black bezel
   let sw = maxW - bezel * 2
   let sh = sw / ratio
   const base = laptop ? 34 * u : 0
@@ -466,17 +467,24 @@ export function ScreenScene({ dur, caption, step, capture, focus = 0, look = LOO
   return (
     <AbsoluteFill style={{ background: backdrop, overflow: 'hidden' }}>
       <div style={{ position: 'absolute', inset: 0, transformOrigin: '0 0', transform: `translate(${tx}px, ${ty}px) scale(${z})` }}>
-        <div style={{ position: 'absolute', left, top, width: dw, height: dh, borderRadius: laptop ? 18 * u : 64 * u, background: '#141414',
-          boxShadow: `0 ${40 * u}px ${100 * u}px rgba(12,10,9,.28)`, opacity: land, transform: `translateY(${(1 - land) * 80 * u}px) scale(${0.94 + land * 0.06})` }}>
-          <div style={{ position: 'absolute', left: bezel, top: bezel, width: sw, height: sh, borderRadius: laptop ? 6 * u : 46 * u, overflow: 'hidden', background: '#fff' }}>
-            <Img src={capture.url} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        {laptop ? (
+          <div style={{ position: 'absolute', left, top, width: dw, height: dh, borderRadius: 18 * u, background: '#141414',
+            boxShadow: `0 ${40 * u}px ${100 * u}px rgba(12,10,9,.28)`, opacity: land, transform: `translateY(${(1 - land) * 80 * u}px) scale(${0.94 + land * 0.06})` }}>
+            <div style={{ position: 'absolute', left: bezel, top: bezel, width: sw, height: sh, borderRadius: 6 * u, overflow: 'hidden', background: '#fff' }}>
+              <Img src={capture.url} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            </div>
+            <div style={{ position: 'absolute', left: -dw * 0.08, right: -dw * 0.08, top: dh, height: base, borderRadius: `0 0 ${24 * u}px ${24 * u}px`,
+              background: 'linear-gradient(#d6d3d1, #a8a29e)' }}>
+              <div style={{ width: dw * 0.16, height: 10 * u, margin: '0 auto', borderRadius: `0 0 ${10 * u}px ${10 * u}px`, background: '#8a8580' }} />
+            </div>
           </div>
-          {!laptop && <div style={{ position: 'absolute', left: '50%', top: bezel + 14 * u, width: 120 * u, height: 34 * u, marginLeft: -60 * u, borderRadius: 99, background: '#141414' }} />}
-          {laptop && <div style={{ position: 'absolute', left: -dw * 0.08, right: -dw * 0.08, top: dh, height: base, borderRadius: `0 0 ${24 * u}px ${24 * u}px`,
-            background: 'linear-gradient(#d6d3d1, #a8a29e)' }}>
-            <div style={{ width: dw * 0.16, height: 10 * u, margin: '0 auto', borderRadius: `0 0 ${10 * u}px ${10 * u}px`, background: '#8a8580' }} />
-          </div>}
-        </div>
+        ) : (
+          <div style={{ position: 'absolute', left, top, opacity: land, transform: `translateY(${(1 - land) * 80 * u}px) scale(${0.94 + land * 0.06})` }}>
+            <IPhone w={dw} h={dh} edge={bezel} statusBar={false}>
+              <Img src={capture.url} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            </IPhone>
+          </div>
+        )}
         {ring > 0 && ring < 1 && <div style={{ position: 'absolute', left: px - 50 * u * ring / Math.sqrt(z), top: py - 50 * u * ring / Math.sqrt(z),
           width: 100 * u * ring / Math.sqrt(z), height: 100 * u * ring / Math.sqrt(z), borderRadius: 999, border: `${4 * u / Math.sqrt(z)}px solid ${ACCENT}`, opacity: 1 - ring }} />}
         <svg width={cs} height={cs} viewBox="0 0 24 24" style={{ position: 'absolute', left: curX - cs * 0.2, top: curY - cs * 0.12, opacity: ease(frame, dur * 0.3, dur * 0.36),

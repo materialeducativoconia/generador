@@ -1,6 +1,7 @@
 import { AbsoluteFill, Easing, interpolate, Sequence, useCurrentFrame } from 'remotion'
 import { ComposeScene, CoverScene, CtaScene, EditorCoverScene, EditorFactsScene, EditorMoveScene, EditorOpenScene, EditorRepaintScene,
   EditorSaveScene, ListScene, NumberScene, PagesScene, PdfScene, PlanScene, ScreenScene, FormatsScene, CharactersScene, TitleScene, VersusScene } from './scenes'
+import { BentoScene, ChatScene, DevicesScene, KineticScene, LogoScene, PhoneScene, ZoomScene } from './startup'
 import { FONT, LOOKS, timeline, type Capture, type Look, type Scene, type ShelfBook, type StoryboardProps, type Transition, type VideoTome } from './spec'
 
 /** Any video the director wrote: its scenes one after another, each the real app animated with the tome. */
@@ -77,6 +78,13 @@ function SceneView({ scene, dur, step, tome, look, capture, shelf }: { scene: Sc
     case 'editor_repaint': return <EditorRepaintScene {...p} />
     case 'editor_cover': return <EditorCoverScene {...p} />
     case 'editor_save': return <EditorSaveScene {...p} />
+    case 'phone': return <PhoneScene {...p} />
+    case 'devices': return <DevicesScene {...p} />
+    case 'zoom': return <ZoomScene {...p} />
+    case 'kinetic': return <KineticScene {...p} />
+    case 'bento': return <BentoScene {...p} />
+    case 'chat': return <ChatScene {...p} />
+    case 'logo': return <LogoScene {...p} />
     case 'cta': return <CtaScene {...p} />
   }
 }

@@ -97,15 +97,32 @@ SCENES = {
     "screen": "una captura REAL de la app en un teléfono o una laptop: la cámara se acerca al punto marcado y el "
               "cursor hace clic (capture: el id de la captura; focus: el número del punto, desde 0). Solo con las "
               "capturas de la lista; es lo más creíble para tutoriales y explicativos",
+    "phone": "la app en un iPhone que flota: se escribe el pedido, se pinta la portada y pasan las páginas, con "
+             "insignias «Portada», «N páginas», «PDF listo» (text: el pedido que se escribe, máximo 70 caracteres)",
+    "devices": "el libro abierto a la vez en una laptop y en un iPhone: se usa en cualquier dispositivo",
+    "zoom": "una página real y una lupa que la recorre; luego la cámara se acerca al detalle y una etiqueta lo nombra "
+            "(text: la etiqueta, máximo 30 caracteres, p. ej. «Mismos personajes»)",
+    "kinetic": "tipografía cinética de lanzamiento: frases cortas a pantalla completa, una tras otra, que golpean con "
+               "colores alternos (text: 2 a 4 frases de 1 a 3 palabras separadas por « | »; el caption no se muestra)",
+    "bento": "cuadrícula bento de funciones como en las webs de startups: la portada en la celda grande y hasta 4 "
+             "funciones con icono (text: las funciones separadas por « | », cada una de máximo 26 caracteres)",
+    "chat": "el chat con la IA, como en las apps que crean con un prompt: se escribe el pedido y se envía, la IA "
+            "marca sus pasos (plan, portada, ilustraciones) y responde con el libro terminado (text: el pedido)",
+    "logo": "revelado del logo de Jelyx Docs con un anillo de luz y el caption como lema: una apertura de marca",
     "cta": "cierre con la marca, la llamada a la acción y la dirección de la app",
 }
 SceneType = Literal["title", "compose", "plan", "cover", "pages", "pdf", "editor_open", "editor_move", "editor_facts",
-                    "editor_repaint", "editor_cover", "editor_save", "list", "versus", "number", "formats", "characters", "screen", "cta"]
+                    "editor_repaint", "editor_cover", "editor_save", "list", "versus", "number", "formats", "characters", "screen",
+                    "phone", "devices", "zoom", "kinetic", "bento", "chat", "logo", "cta"]
 # The scenes that show a text of their own, and what they show when the director left it empty.
 TEXT_SCENES = {"compose": "Quiero un libro ilustrado para mi grupo", "editor_facts": "Dato nuevo para la lámina",
                "editor_repaint": "más luz de mañana", "list": "Portada | Ilustraciones | Actividades | Solucionario",
-               "versus": "Horas armando material | Minutos con Jelyx", "number": "5 min"}
+               "versus": "Horas armando material | Minutos con Jelyx", "number": "5 min",
+               "phone": "Cuento del ciclo del agua para 2.º grado", "chat": "Un libro ilustrado de los planetas para 3.º",
+               "zoom": "Cada detalle, ilustrado", "kinetic": "Tu tema | Tu grupo | Tu libro",
+               "bento": "Ilustraciones únicas | Mismos personajes | Solucionario | PDF y Word"}
 BOOK_SCENES = {"cover", "pages", "pdf"}  # a video may open on the finished book instead of a title
+OPENERS = {"title", "logo", "kinetic", "chat", "phone"}  # scenes that open a video by themselves
 
 # How the story is told: without one the director falls back on the app's flow every time, and every video looks alike.
 Kind = Literal["marketing", "explainer", "tutorial"]
@@ -135,11 +152,20 @@ STRUCTURES: dict[str, tuple[str, tuple[str, ...], str]] = {
               "title «Cómo …», un paso por escena en el orden real, y cta."),
     "truco": ("Truco rápido", ("tutorial",),
               "title «Truco: …», solo dos o tres escenas con lo pedido, bien explicadas, y cta."),
+    "lanzamiento": ("Lanzamiento de startup", ("marketing",),
+                    "como el video de lanzamiento de una app de IA: logo o kinetic de apertura, phone con el pedido, "
+                    "zoom a un detalle, bento con las funciones, devices y cta. Ritmo rápido, frases de impacto."),
+    "prompt": ("Del prompt al libro", ("marketing", "explainer"),
+               "abre con chat (el pedido escrito a la IA), sigue con phone o cover y pages mostrando el resultado, un "
+               "number con el tiempo y cta. La idea: escribes una frase y obtienes un libro."),
+    "funciones": ("Recorrido de funciones", ("explainer", "marketing"),
+                  "title con la promesa, bento con 4 funciones, luego una escena de la app por función (zoom, "
+                  "characters, pdf o editor) y devices antes del cta."),
     "lista": ("3 cosas que no sabías", ("tutorial", "explainer"),
               "title «3 cosas que puedes hacer en …», un list con las tres, luego una escena de la app por cada una "
               "con caption que empieza «1.», «2.», «3.», y cta."),
 }
-LOOKS = ("claro", "oscuro", "color")
+LOOKS = ("claro", "oscuro", "color", "noche")
 
 
 def pick_structure(kind: str, last: str | None = None) -> str:
@@ -162,7 +188,7 @@ class Storyboard(BaseModel):
     kind: Kind = "marketing"
     duration: Literal[15, 30, 45, 60] = 30
     structure: str = ""  # a key of STRUCTURES
-    look: Literal["claro", "oscuro", "color"] = "claro"  # the colours of the text scenes
+    look: Literal["claro", "oscuro", "color", "noche"] = "claro"  # the colours of the text scenes
     transition: Literal["mixta", "deslizar", "zoom", "barrido", "corte"] = "mixta"  # how one scene gives way to the next
     title: Annotated[str, _clip(80), Field(min_length=2, max_length=80)]
     scenes: list[Scene] = Field(min_length=2, max_length=16)
@@ -177,7 +203,7 @@ def tidy_storyboard(board: Storyboard) -> Storyboard:
     """What the code guarantees whatever the director wrote: it opens on a title (or on the finished book), ends on
     the call to action, a scene with a text of its own has one, and the scenes fill exactly the length asked for."""
     scenes = [s for s in board.scenes if s.type != "cta" or s is board.scenes[-1]]
-    if scenes[0].type != "title" and not (scenes[0].type in BOOK_SCENES and scenes[0].caption):
+    if scenes[0].type not in OPENERS and not (scenes[0].type in BOOK_SCENES and scenes[0].caption):
         scenes.insert(0, Scene(type="title", seconds=3, caption=board.title))
     if scenes[-1].type != "cta":
         scenes.append(Scene(type="cta", seconds=3, caption="Pruébalo gratis"))
@@ -199,7 +225,9 @@ Recibes el pedido del equipo, el tipo de video, la duración y un libro real hec
 solo con estas escenas, que ya existen animadas con la app real:
 """ + "\n".join(f"- {k}: {v}" for k, v in SCENES.items()) + """
 
-Las escenas list, versus y number son texto animado: úsalas para variar el ritmo entre escenas de la app.
+Las escenas list, versus, number y kinetic son texto animado: úsalas para variar el ritmo entre escenas de la app.
+phone, devices, zoom, bento, chat y logo dan el acabado de los videos de lanzamiento de las startups de IA: úsalas
+en marketing y explainer.
 
 Tipos de video:
 - marketing: para vender. Abre con un gancho (title) que nombra un dolor o un deseo del docente, ritmo rápido

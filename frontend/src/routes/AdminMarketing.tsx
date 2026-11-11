@@ -256,21 +256,35 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
     if (!tome) return
     setRenderError(null)
     setProgress(0)
+    let lock: { release: () => Promise<void> } | null = null
     try {  // drawn and encoded in this tab (WebCodecs), then kept in storage so it is downloaded again at once
       let current = script
       if (dirty) current = (await save.mutateAsync()).video.script  // the kept MP4 always matches the saved script
       disposable()
-      const { renderMediaOnWeb } = await import('@remotion/web-renderer')
+      const web = await import('@remotion/web-renderer')
       await fontsReady()
-      const result = video.template === 'storyboard'
-        ? await renderMediaOnWeb({
-          composition: { id: 'storyboard', component: StoryboardVideo, durationInFrames: boardFrames(current as Storyboard), fps: FPS, width, height,
-            defaultProps: { board: current as Storyboard, tome, captures, shelf } },
-          inputProps: { board: current as Storyboard, tome, captures, shelf }, onProgress: (p) => setProgress(p.progress) })
-        : await renderMediaOnWeb({
-          composition: { id: 'topic-to-book', component: TopicToBook, durationInFrames: DURATION, fps: FPS, width, height,
-            defaultProps: { script: current as VideoScript, tome } },
-          inputProps: { script: current as VideoScript, tome }, onProgress: (p) => setProgress(p.progress) })
+      const plans = await renderPlans(web.canRenderMediaOnWeb, width, height)
+      if (!plans.length) throw new Error('este navegador no puede codificar video')
+      const composition = video.template === 'storyboard'
+        ? { id: 'storyboard', component: StoryboardVideo, durationInFrames: boardFrames(current as Storyboard), fps: FPS, width, height,
+          defaultProps: { board: current as Storyboard, tome, captures, shelf } }
+        : { id: 'topic-to-book', component: TopicToBook, durationInFrames: DURATION, fps: FPS, width, height,
+          defaultProps: { script: current as VideoScript, tome } }
+      lock = await awake()
+      let result: Awaited<ReturnType<typeof web.renderMediaOnWeb>> | null = null
+      let failure: unknown = null
+      for (const plan of plans) {  // a phone that cannot encode 1080p H.264 still gets the video, smaller or in another codec
+        try {
+          setProgress(0)
+          // No audio track: the videos are silent (the voiceover is read apart), and the AAC encoder is what most phones lack.
+          result = await web.renderMediaOnWeb({ composition: composition as never, inputProps: composition.defaultProps as never, muted: true,
+            container: 'mp4', videoCodec: plan.codec, scale: plan.scale, outputTarget: 'arraybuffer', onProgress: (p) => setProgress(p.progress) })
+          break
+        } catch (e) {
+          failure = e
+        }
+      }
+      if (!result) throw failure
       const blob = await result.getBlob()
       const url = URL.createObjectURL(blob)
       const a = Object.assign(document.createElement('a'), { href: url, download: `jelyx-${format.replace(':', 'x')}-${video.id.slice(0, 6)}.mp4` })
@@ -284,8 +298,9 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
       await qc.invalidateQueries({ queryKey: ['marketing-videos'] })
     } catch (e) {
       const why = e instanceof Error ? e.message : ''
-      setRenderError(`No se pudo crear el video en este navegador${why ? ` (${why})` : ''}. Prueba en Chrome de escritorio.`)
+      setRenderError(`No se pudo crear el video en este navegador${why ? ` (${why})` : ''}. Deja la pantalla encendida y esta pestaña al frente, o prueba en Chrome de escritorio.`)
     } finally {
+      await lock?.release().catch(() => {})
       setProgress(null)
     }
   }
@@ -299,6 +314,7 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
       <div className="marketing-body">
         <div className="marketing-stage" style={{ aspectRatio: `${width} / ${height}` }}>
           {!tome ? <div className="page-preview-wait">{series.isError ? 'No se pudo cargar el tomo.' : 'Cargando el tomo…'}</div>
+            : progress !== null ? <div className="page-preview-wait">Creando el video… la vista previa vuelve al terminar.</div>
             : board ? (
               <Player component={StoryboardVideo} inputProps={{ board, tome, captures, shelf }} durationInFrames={frames} fps={FPS}
                 compositionWidth={width} compositionHeight={height} controls loop style={{ width: '100%', height: '100%' }} />
@@ -330,7 +346,7 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
             {progress === 1 ? 'Guardando el MP4…' : progress !== null ? `Creando el MP4… ${Math.round(progress * 100)} %`
               : video.has_mp4 && !dirty ? 'Crear el MP4 otra vez' : 'Crear MP4'}
           </button>
-          <span className="muted small">El video se crea en este navegador (mejor en Chrome de escritorio); tarda unos minutos y la pestaña debe quedar abierta. Queda guardado en «Tus videos» para descargarlo cuando quieras.</span>
+          <span className="muted small">El video se crea en este navegador, también en el móvil; tarda unos minutos: deja la pantalla encendida y esta pestaña al frente. Queda guardado en «Tus videos» para descargarlo cuando quieras.</span>
           {renderError && <p className="error small" role="alert">{renderError}</p>}
           <label className="field"><span>Guion para voz en off · {Math.round(frames / FPS)} s</span>
             {board ? <textarea value={voice} readOnly rows={6} />
@@ -559,6 +575,31 @@ function disposable() {
   const symbols = Symbol as unknown as Record<string, unknown>
   for (const name of ['dispose', 'asyncDispose']) {
     if (typeof symbols[name] !== 'symbol') Object.defineProperty(Symbol, name, { value: Symbol.for(`Symbol.${name}`) })
+  }
+}
+
+type CanRender = typeof import('@remotion/web-renderer').canRenderMediaOnWeb
+type Codec = 'h264' | 'h265' | 'vp9' | 'av1'
+/** The encodings this browser can make, best first: full size in H.264, then smaller (a phone's hardware encoder often
+ * stops below 1080×1920), then the other codecs an MP4 holds. */
+async function renderPlans(can: CanRender, width: number, height: number) {
+  const plans: { codec: Codec; scale: number }[] = []
+  for (const scale of [1, 2 / 3, 0.5]) {
+    for (const codec of ['h264', 'h265', 'vp9', 'av1'] as Codec[]) {
+      const ok = await can({ container: 'mp4', videoCodec: codec, width, height, scale, muted: true, outputTarget: 'arraybuffer' }).catch(() => null)
+      if (ok?.canRender) { plans.push({ codec, scale }); break }
+    }
+  }
+  return plans
+}
+
+/** Keeps a phone's screen on while it renders: locked, the tab is frozen and the render dies. */
+async function awake() {
+  try {
+    const nav = navigator as Navigator & { wakeLock?: { request: (t: 'screen') => Promise<{ release: () => Promise<void> }> } }
+    return await nav.wakeLock?.request('screen') ?? null
+  } catch {
+    return null
   }
 }
 
