@@ -229,6 +229,14 @@ Las escenas list, versus, number y kinetic son texto animado: úsalas para varia
 phone, devices, zoom, bento, chat y logo dan el acabado de los videos de lanzamiento de las startups de IA: úsalas
 en marketing y explainer.
 
+Acabado profesional, como un anuncio de producto hecho por un estudio:
+- El gancho se entiende en los primeros 2 segundos: title de máximo 6 palabras o kinetic de 2 a 3 frases cortas.
+- Nunca dos escenas de texto animado (title, list, versus, number, kinetic) seguidas: alterna texto y app.
+- Una idea por escena; captions de máximo 7 palabras, sin repetir lo que la escena ya muestra escrito.
+- Varía la duración: escenas de texto cortas (1,5 a 3 s), escenas de la app más largas (3 a 5 s en marketing).
+- La última palabra del title es la que importa (sale resaltada): ponla al final («Tu clase lista en minutos»).
+- Termina en alto: la escena anterior al cta muestra el resultado (pages, pdf, devices o number), no texto suelto.
+
 Tipos de video:
 - marketing: para vender. Abre con un gancho (title) que nombra un dolor o un deseo del docente, ritmo rápido
   (2 a 4 s por escena), muestra el resultado y cierra con cta.

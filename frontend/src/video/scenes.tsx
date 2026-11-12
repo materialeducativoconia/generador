@@ -1,5 +1,5 @@
 import { AbsoluteFill, Easing, Img, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
-import { Glow, IPhone } from './startup'
+import { Glow, IPhone, Rise, isDark } from './startup'
 import { LOOKS, SITE, type Capture, type ShelfBook, type VideoTome } from './spec'
 
 /** The scenes every video is made of, each the real app animated with a real tome. `dur` is the scene's length in
@@ -52,50 +52,65 @@ export function Caption({ text, at = 6, step }: { text?: string; at?: number; st
   )
 }
 
-/** Big words landing one by one, the last in the accent colour: the hook, a tutorial's title, a key idea. */
+/** Big words rising out of a mask one by one over a field of light, the last in the accent colour and underlined, the
+ * whole line pushing in slowly: the hook, a tutorial's title, a key idea. */
 export function TitleScene({ dur, caption = '', look = LOOKS.claro }: Base & { look?: Palette }) {
   const frame = useCurrentFrame()
-  const { fps } = useVideoConfig()
   const { u, wide } = useUnit()
   const words = caption.split(/\s+/).filter(Boolean)
+  const lastIn = 6 + (words.length - 1) * 3
+  const under = ease(frame, lastIn + 8, lastIn + 22)
+  const push = interpolate(frame, [0, dur], [1, 1.05], { extrapolateRight: 'clamp' })
   return (
-    <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', padding: 90 * u, background: look.bg, opacity: fadeOut(frame, dur) }}>
-      <div style={{ fontSize: (wide ? 104 : 112) * u, fontWeight: 700, lineHeight: 1.08, letterSpacing: '-0.035em', textAlign: 'center', maxWidth: wide ? 1500 * u : undefined }}>
+    <Glow look={look} style={{ alignItems: 'center', justifyContent: 'center', padding: 90 * u, opacity: fadeOut(frame, dur) }}>
+      <div style={{ fontSize: (wide ? 128 : 112) * u, fontWeight: 700, lineHeight: 1.06, letterSpacing: '-0.04em', textAlign: 'center', color: look.ink,
+        maxWidth: wide ? 1500 * u : '84%', transform: `scale(${push})` }}>
         {words.map((w, i) => {
-          const s = spring({ frame: frame - 4 - i * 4, fps, config: { damping: 14, mass: 0.6 } })
-          return <span key={i} style={{ display: 'inline-block', marginRight: '0.26em', opacity: s, transform: `translateY(${(1 - s) * 40 * u}px)`,
-            color: i === words.length - 1 ? look.accent : look.ink }}>{w}</span>
+          const s = ease(frame, 4 + i * 3, 18 + i * 3)
+          const end = i === words.length - 1
+          return (
+            <span key={i} style={{ position: 'relative', display: 'inline-block' }}>
+              <Rise y={(1 - s) * 110} color={end ? look.accent : look.ink}>{w}</Rise>
+              {end && <span style={{ position: 'absolute', left: '0.13em', right: '0.13em', bottom: '0.02em', height: 10 * u, borderRadius: 99, background: look.accent,
+                transform: `scaleX(${under})`, transformOrigin: 'left', opacity: 0.9 }} />}
+            </span>
+          )
         })}
       </div>
-    </AbsoluteFill>
+    </Glow>
   )
 }
 
 export const parts = (text: string) => text.split('|').map((t) => t.trim()).filter(Boolean)
 
-/** Two to four points landing one after another, each ticked: reasons, what a book brings, a summary. */
+/** Two to four points landing one after another as cards over a field of light, each with its number: reasons, what
+ * a book brings, a summary. */
 export function ListScene({ dur, caption, step, text = '', look = LOOKS.claro }: Base & { text?: string; look?: Palette }) {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const { u, k, wide } = useUnit()
+  const dark = isDark(look)
   const items = parts(text).slice(0, 4)
   const gap = Math.max(6, Math.min(16, (dur - 30) / Math.max(1, items.length)))
   return (
-    <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', background: look.bg, color: look.ink, opacity: fadeOut(frame, dur) }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 30 * u, width: wide ? '60%' : '82%', marginTop: (wide ? -60 : -160) * u }}>
+    <Glow look={look} style={{ alignItems: 'center', justifyContent: 'center', color: look.ink, opacity: fadeOut(frame, dur) }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 22 * u, width: wide ? '58%' : '84%', marginTop: (wide ? -60 : -160) * u }}>
         {items.map((item, i) => {
-          const s = spring({ frame: frame - 6 - i * gap, fps, config: { damping: 15, mass: 0.7 } })
+          const s = spring({ frame: frame - 6 - i * gap, fps, config: { damping: 16, mass: 0.7 } })
+          const t = ease(frame, 9 + i * gap, 21 + i * gap)
           return (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 28 * u, opacity: s, transform: `translateX(${(1 - s) * -90 * u}px)` }}>
-              <span style={{ flex: 'none', width: 74 * u * k, height: 74 * u * k, borderRadius: 999, background: look.accent, color: look.bg,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40 * u * k, fontWeight: 700 }}>{i + 1}</span>
-              <span style={{ fontSize: 62 * u * k, fontWeight: 700, letterSpacing: '-0.025em', lineHeight: 1.1 }}>{item}</span>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 28 * u, opacity: Math.min(1, s * 1.4), transform: `translateY(${(1 - s) * 50 * u}px) scale(${0.96 + s * 0.04})`,
+              padding: `${22 * u}px ${30 * u}px`, borderRadius: 28 * u, background: dark ? 'rgba(255,255,255,.07)' : '#fff',
+              border: `${2 * u}px solid ${dark ? 'rgba(255,255,255,.13)' : LINE}`, boxShadow: dark ? undefined : `0 ${12 * u}px ${32 * u}px rgba(12,10,9,.07)` }}>
+              <span style={{ flex: 'none', width: 70 * u * k, height: 70 * u * k, borderRadius: 20 * u * k, background: look.accent, color: dark ? INK : '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 38 * u * k, fontWeight: 700, transform: `scale(${s})` }}>{i + 1}</span>
+              <span style={{ fontSize: 58 * u * k, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.1, opacity: t, transform: `translateX(${(1 - t) * 24 * u}px)` }}>{item}</span>
             </div>
           )
         })}
       </div>
       <Caption text={caption} at={Math.min(dur - 20, 14 + items.length * gap)} step={step} />
-    </AbsoluteFill>
+    </Glow>
   )
 }
 
@@ -126,7 +141,8 @@ export function VersusScene({ dur, caption, step, text = '', look = LOOKS.claro 
   )
 }
 
-/** One big number counting up to its value (5 min, 24 páginas), with what it means below. */
+/** One big number counting up to its value (5 min, 24 páginas) over a field of light, its unit set smaller beside it, a
+ * bar sweeping under it, and what it means below. */
 export function NumberScene({ dur, caption, step, text = '', look = LOOKS.claro }: Base & { text?: string; look?: Palette }) {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
@@ -134,14 +150,22 @@ export function NumberScene({ dur, caption, step, text = '', look = LOOKS.claro 
   const m = text.match(/^(\D*)(\d+(?:[.,]\d+)?)(.*)$/)
   const target = m ? Number(m[2].replace(',', '.')) : 0
   const count = interpolate(frame, [4, Math.max(5, dur * 0.45)], [0, target], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) })
-  const shown = m ? `${m[1]}${Number.isInteger(target) ? Math.round(count) : count.toFixed(1)}${m[3]}` : text
-  const pop = spring({ frame, fps, config: { damping: 12, mass: 0.6 } })
+  const num = m ? `${m[1]}${Number.isInteger(target) ? Math.round(count) : count.toFixed(1)}` : text
+  const unit = m ? m[3].trim() : ''
+  const pop = spring({ frame, fps, config: { damping: 15, mass: 0.6 } })
+  const bar = ease(frame, dur * 0.45 - 6, dur * 0.45 + 10)
+  const push = interpolate(frame, [0, dur], [1, 1.04], { extrapolateRight: 'clamp' })
   return (
-    <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', background: look.bg, color: look.accent, opacity: fadeOut(frame, dur) }}>
-      <div style={{ fontSize: 230 * u * k, fontWeight: 700, letterSpacing: '-0.05em', lineHeight: 1, transform: `scale(${0.7 + pop * 0.3})`,
-        marginTop: -120 * u, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{shown}</div>
+    <Glow look={look} style={{ alignItems: 'center', justifyContent: 'center', opacity: fadeOut(frame, dur) }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: -120 * u, transform: `scale(${(0.82 + pop * 0.18) * push})`, opacity: Math.min(1, pop * 1.5) }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 34 * u, whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 250 * u * k, fontWeight: 700, letterSpacing: '-0.045em', paddingRight: '0.04em', lineHeight: 1, color: look.accent, fontVariantNumeric: 'tabular-nums' }}>{num}</span>
+          {unit && <span style={{ fontSize: 96 * u * k, fontWeight: 700, letterSpacing: '-0.03em', color: look.ink, opacity: ease(frame, 8, 20) }}>{unit}</span>}
+        </div>
+        <div style={{ width: '100%', height: 12 * u, borderRadius: 99, marginTop: 18 * u, background: look.accent, transform: `scaleX(${bar})`, transformOrigin: 'left', opacity: 0.85 }} />
+      </div>
       <Caption text={caption} at={Math.min(dur - 20, dur * 0.45)} step={step} />
-    </AbsoluteFill>
+    </Glow>
   )
 }
 
@@ -303,13 +327,21 @@ export function PdfScene({ dur, caption, step, tome }: Base & { tome: VideoTome 
 }
 
 /** The close: the brand, the call to action and the address. */
-export function CtaScene({ caption = '' }: Base) {
+export function CtaScene({ dur, caption = '', look = LOOKS.noche }: Base & { look?: Palette }) {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
-  const { u } = useUnit()
+  const { u: u0, wide, k } = useUnit()
+  const u = u0 * (wide ? 1 : k * 0.95)  // the close is read on a phone: larger on the vertical cut
+  const field = isDark(look) ? look : LOOKS.noche  // the close is always the brand's dark field
   const s = spring({ frame, fps, config: { damping: 14 } })
+  const words = caption.split(/\s+/).filter(Boolean)
+  const pill = spring({ frame: frame - 18, fps, config: { damping: 12, mass: 0.6 } })
+  const shine = interpolate(frame, [30, 52], [-60, 160], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const ring = ease(frame, 26, 56)
+  const press = frame > dur * 0.62 && frame < dur * 0.62 + 5 ? 0.95 : 1
+  const pointer = ease(frame, dur * 0.4, dur * 0.6)
   return (
-    <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', background: INK, color: '#fff', gap: 40 * u }}>
+    <Glow look={field} style={{ alignItems: 'center', justifyContent: 'center', color: '#fff', gap: 44 * u }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 24 * u, opacity: s, transform: `scale(${0.8 + s * 0.2})` }}>
         <svg width={110 * u} height={110 * u} viewBox="0 0 64 64">
           <rect width="64" height="64" rx="15" fill="#fff" />
@@ -317,11 +349,20 @@ export function CtaScene({ caption = '' }: Base) {
         </svg>
         <span style={{ fontSize: 76 * u, fontWeight: 700, letterSpacing: '-0.03em' }}>Jelyx Docs</span>
       </div>
-      <div style={{ fontSize: 60 * u, fontWeight: 700, textAlign: 'center', maxWidth: '84%', lineHeight: 1.12, letterSpacing: '-0.02em',
-        opacity: ease(frame, 10, 22) }}>{caption}</div>
-      <div style={{ background: ACCENT, borderRadius: 999, padding: `${18 * u}px ${40 * u}px`, fontSize: 40 * u, fontWeight: 700,
-        opacity: ease(frame, 20, 32) }}>{SITE}</div>
-    </AbsoluteFill>
+      <div style={{ fontSize: (wide ? 72 : 66) * u, fontWeight: 700, textAlign: 'center', maxWidth: '84%', lineHeight: 1.1, letterSpacing: '-0.035em' }}>
+        {words.map((w, i) => <Rise key={i} y={(1 - ease(frame, 8 + i * 2, 20 + i * 2)) * 110}>{w}</Rise>)}
+      </div>
+      <div style={{ position: 'relative', transform: `scale(${pill * press})`, opacity: Math.min(1, pill * 1.5) }}>
+        <div style={{ position: 'absolute', inset: -16 * u * ring - 2, borderRadius: 999, border: `${3 * u}px solid ${field.accent}`, opacity: (1 - ring) * 0.9 }} />
+        <div style={{ position: 'relative', overflow: 'hidden', background: '#fff', color: INK, borderRadius: 999, padding: `${20 * u}px ${46 * u}px`, fontSize: 42 * u,
+          fontWeight: 700, letterSpacing: '-0.01em', boxShadow: `0 ${18 * u}px ${50 * u}px ${field.accent}88` }}>
+          {SITE}
+          <span style={{ position: 'absolute', top: 0, bottom: 0, left: `${shine}%`, width: '30%', transform: 'skewX(-20deg)',
+            background: `linear-gradient(90deg, transparent, ${field.accent}33, transparent)` }} />
+        </div>
+        <Pointer u={u} style={{ left: '62%', top: '55%', opacity: pointer, transform: `translate(${(1 - pointer) * 160 * u}px, ${(1 - pointer) * 120 * u}px) scale(${press})` }} />
+      </div>
+    </Glow>
   )
 }
 

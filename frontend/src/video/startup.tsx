@@ -6,7 +6,7 @@ import { LOOKS, SITE, type VideoTome } from './spec'
  * page, kinetic type, a bento of features, the AI chat that makes the book and the logo reveal. 2D transforms,
  * opacity, gradients and plain boxes only, which the in-browser renderer paints exactly as the preview. */
 
-const isDark = (look: Palette) => look.bg !== '#ffffff'
+export const isDark = (look: Palette) => look.bg !== '#ffffff'
 
 /** A deep (or light) field with two soft glows drifting, as the launch videos of the AI apps. */
 export function Glow({ look, children, style }: { look: Palette; children?: React.ReactNode; style?: React.CSSProperties }) {
@@ -312,31 +312,46 @@ export function ZoomScene({ dur, caption, step, tome, text = '', look = LOOKS.cl
   )
 }
 
-/** Kinetic type: short phrases (text, separated by |) slamming in one after another, the colours flipping on each. */
+/** Kinetic type: short phrases (text, separated by |) cut one after another, as in a launch film: each word rises out
+ * of a mask, the phrase pushes in slowly and leaves upwards on the cut, and the field flips to the accent every other
+ * phrase. The last word of each phrase on the plain field takes the accent. */
 export function KineticScene({ dur, text = '', caption = '', look = LOOKS.claro }: Base & { text?: string; look?: Palette }) {
   const frame = useCurrentFrame()
-  const { fps } = useVideoConfig()
   const { u, wide, width: W } = useUnit()
-  const phrases = (parts(text).length ? parts(text) : [caption]).slice(0, 5)
+  const phrases = (parts(text).length ? parts(text) : [caption]).filter(Boolean).slice(0, 5)
+  if (!phrases.length) return <Glow look={look} />
   const each = dur / phrases.length
   const i = Math.min(phrases.length - 1, Math.floor(frame / each))
   const local = frame - i * each
-  const s = spring({ frame: local, fps, config: { damping: 11, mass: 0.5 } })
+  const last = i === phrases.length - 1
   const flip = i % 2 === 1
-  const bg = flip ? look.accent : look.bg
   const ink = flip ? (isDark(look) ? INK : '#fff') : look.ink
-  const phrase = phrases[i]
-  const longest = Math.max(4, ...phrase.split(/\s+/).map((w) => w.length))
-  const size = Math.min((wide ? 190 : 170) * u, (W * 0.86) / (longest * 0.58))
-  const bar = (frame + 1) / dur
+  const words = phrases[i].split(/\s+/).filter(Boolean)
+  const longest = Math.max(4, ...words.map((w) => w.length))
+  const size = Math.min((wide ? 200 : 176) * u, (W * 0.84) / (longest * 0.6))
+  const push = interpolate(local, [0, each], [1, 1.07], { extrapolateRight: 'clamp' })
+  const leave = last ? 0 : ease(local, each - 6, each)
+  const body = (
+    <div style={{ fontSize: size, fontWeight: 700, letterSpacing: '-0.05em', lineHeight: 1.02, color: ink, textAlign: 'center', maxWidth: '88%',
+      transform: `scale(${push})`, marginTop: wide ? 0 : -90 * u }}>
+      {words.map((w, j) => {
+        const s = ease(local, 1 + j * 3, 13 + j * 3)
+        return <Rise key={`${i}-${j}`} y={(1 - s) * 110 - leave * 110} color={!flip && j === words.length - 1 && words.length > 1 ? look.accent : ink}>{w}</Rise>
+      })}
+    </div>
+  )
+  const style: React.CSSProperties = { alignItems: 'center', justifyContent: 'center', opacity: last ? fadeOut(frame, dur) : 1 }
+  return flip
+    ? <AbsoluteFill style={{ ...style, background: `radial-gradient(circle at 50% 30%, rgba(255,255,255,.22), transparent 62%), ${look.accent}` }}>{body}</AbsoluteFill>
+    : <Glow look={look} style={style}>{body}</Glow>
+}
+
+/** A word that rises out of a mask (y: how far below its line it still is, in % of its height). */
+export function Rise({ y, color, children }: { y: number; color?: string; children: React.ReactNode }) {
   return (
-    <AbsoluteFill style={{ background: bg, alignItems: 'center', justifyContent: 'center', opacity: fadeOut(frame, dur) }}>
-      <div style={{ fontSize: size, fontWeight: 700, letterSpacing: '-0.045em', lineHeight: 0.98, color: ink, textAlign: 'center', maxWidth: '88%',
-        transform: `scale(${1.35 - s * 0.35}) rotate(${(1 - s) * (flip ? 3 : -3)}deg)`, opacity: Math.min(1, s * 2), marginTop: wide ? 0 : -100 * u }}>{phrase}</div>
-      <div style={{ position: 'absolute', left: '8%', right: '8%', bottom: (wide ? 70 : 170) * u, height: 8 * u, borderRadius: 99, background: `${ink}22` }}>
-        <div style={{ width: `${bar * 100}%`, height: '100%', borderRadius: 99, background: ink }} />
-      </div>
-    </AbsoluteFill>
+    <span style={{ display: 'inline-block', overflow: 'hidden', verticalAlign: 'bottom', padding: '0.04em 0.13em 0.12em', margin: '0 0 -0.12em' }}>
+      <span style={{ display: 'inline-block', transform: `translateY(${y}%)`, color }}>{children}</span>
+    </span>
   )
 }
 
