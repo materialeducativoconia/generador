@@ -11,6 +11,7 @@ from app.config import Settings
 from app.db import make_engine
 from app.errors import install_error_handlers
 from app.images import OpenRouterImages
+from app.voice import OpenRouterVoice
 from app.llm import DeepSeek
 from app.storage import Storage
 from app.stripe_gateway import StripeGateway
@@ -40,6 +41,9 @@ def create_app(engine: AsyncEngine | None = None, verifier: TokenVerifier | None
                                   if settings and settings.stripe_secret_key else None)
     app.state.images = (OpenRouterImages(settings.openrouter_api_key, settings.openrouter_image_model)
                         if settings and settings.openrouter_api_key else None)
+    app.state.voice = (OpenRouterVoice(settings.openrouter_api_key, settings.openrouter_tts_model,
+                                       settings.openrouter_tts_voice)
+                       if settings and settings.openrouter_api_key else None)
     # The API's own DeepSeek, for the admin's short asks (a video script); the worker keeps its own for the tomes.
     app.state.llm = llm or (DeepSeek(settings.deepseek_api_key, settings.deepseek_model, settings.deepseek_rpm,
                                       settings.deepseek_max_inflight) if settings and settings.deepseek_api_key else None)

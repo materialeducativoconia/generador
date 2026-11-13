@@ -210,3 +210,49 @@ async def test_real_screenshots_are_kept_with_their_zoom_points_and_the_director
 
     assert (await client.delete(f"/api/admin/marketing/captures/{cap['id']}", headers=bearer(key, admin))).status_code == 204
     assert deleted == [up["key"]]
+
+
+async def test_the_voiceover_is_read_scene_by_scene_and_an_unchanged_line_is_not_paid_again(raw_db, google_user, client,
+                                                                                            key, engine):  # noqa: F811
+    from app.voice import seconds, wav
+
+    owner = await google_user()
+    sid = await _written(raw_db, client, key, engine, owner)
+    admin = await google_user(email="voice@jelyx.test")
+    await raw_db.execute("update public.profiles set platform_role = 'admin' where id = $1", admin)
+    app = client._transport.app
+
+    class Storage:
+        files: dict[str, bytes] = {}
+
+        async def upload(self, k, data, content_type="application/pdf", bucket="exports"):
+            self.files[k] = data
+
+        async def signed_urls(self, keys, bucket, expires_in=3600):
+            return {k: f"https://signed.test/{bucket}/{k}" for k in keys if k in self.files}
+
+    class Voice:
+        model, voice, said = "google/gemini-tts", "Kore", []
+
+        async def speak(self, words, **_):
+            self.said.append(words)
+            return wav(b"\0\0" * 24_000)  # one second
+
+    app.state.storage, app.state.voice = Storage(), Voice()
+    board = {**BOARD, "scenes": [*BOARD["scenes"][:3], {**BOARD["scenes"][3], "voice": ""}]}
+    saved = (await client.post("/api/admin/marketing/videos", headers=bearer(key, admin), json={
+        "series_id": str(sid), "script": board})).json()["video"]
+    vid, scenes = saved["id"], saved["script"]["scenes"]
+
+    clips = (await client.post(f"/api/admin/marketing/videos/{vid}/voice", headers=bearer(key, admin))).json()["clips"]
+    assert [c["scene"] for c in clips] == [i for i, sc in enumerate(scenes) if sc["voice"]]  # a silent scene gets no clip
+    assert all(c["url"].startswith(f"https://signed.test/marketing/{vid}/voice/") and c["seconds"] == 1 for c in clips)
+    assert app.state.voice.said == ["Abre el editor.", "Arrastra la pregunta.", "Quita o añade datos."]
+    assert seconds(next(iter(Storage.files.values()))) == 1
+
+    first = clips[0]["scene"]
+    edited = {**saved["script"], "scenes": [*scenes[:first], {**scenes[first], "voice": "Abre tu libro."}, *scenes[first + 1:]]}
+    await client.patch(f"/api/admin/marketing/videos/{vid}", headers=bearer(key, admin), json={"script": edited})
+    again = (await client.post(f"/api/admin/marketing/videos/{vid}/voice", headers=bearer(key, admin))).json()["clips"]
+    assert len(again) == 3 and app.state.voice.said[3:] == ["Abre tu libro."]  # only the changed line is read again
+    assert (await client.post(f"/api/admin/marketing/videos/{vid}/voice", headers=bearer(key, owner))).status_code == 403

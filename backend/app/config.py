@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     openrouter_image_model: str = "google/gemini-nano-banana-2.1"
     openrouter_review_model: str = "qwen/qwen3.7-flash"  # vision model of the image Reviewer
     openrouter_search_model: str = "perplexity/sonar"  # web search with citations, for official programs
+    openrouter_tts_model: str = "google/gemini-3.8-flash-tts"  # the marketing videos' voiceover
+    openrouter_tts_voice: str = "Kore"
     cloudflare_account_id: str = ""  # Workers AI: the free preview's Illustrator (free daily allowance)
     cloudflare_ai_token: str = ""
     stripe_secret_key: str = ""  # sk_live_… / sk_test_…; empty disables billing

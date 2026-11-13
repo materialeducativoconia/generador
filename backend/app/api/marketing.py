@@ -1,6 +1,8 @@
 """/admin/marketing: promotional videos. DeepSeek writes a template's script from a real tome; the admin edits it,
 previews the video and renders the MP4 in the browser."""
 
+import asyncio
+import hashlib
 import json
 import logging
 import uuid
@@ -14,8 +16,10 @@ from app.agents import AgentFailed
 from app.api.admin import _staff
 from app.api.deps import current_user_id
 from app.errors import ApiError
+from app.llm import UpstreamAuthError, UpstreamError
 from app.marketing import STRUCTURES, Storyboard, VideoScript, director, pick_structure, tidy_storyboard, video_script
 from app.render import GENRE_LABEL
+from app.voice import seconds
 
 log = logging.getLogger("api")
 router = APIRouter()
@@ -225,6 +229,43 @@ async def mp4_download(video_id: uuid.UUID, request: Request, user_id: UserId):
     name = f"jelyx-{video['format'].replace(':', 'x')}-{str(video_id)[:6]}.mp4"
     return {"url": await request.app.state.storage.signed_url(video["mp4_key"], expires_in=300, download_name=name,
                                                               bucket=BUCKET)}
+
+
+@router.post("/api/admin/marketing/videos/{video_id}/voice")
+async def voice(video_id: uuid.UUID, request: Request, user_id: UserId):
+    """The voiceover read by Gemini TTS (OpenRouter): one clip per scene of a storyboard, or the fixed template's
+    whole voiceover. Each clip is kept under the hash of its words, so a line that did not change is not paid again."""
+    tts, storage = request.app.state.voice, request.app.state.storage
+    if tts is None or storage is None:
+        raise ApiError(503, "unavailable", "La voz no está configurada.")
+    async with request.app.state.engine.connect() as conn:
+        await _staff(conn, user_id)
+        video = await _video(conn, video_id)
+    script = json.loads(video["script"]) if isinstance(video["script"], str) else video["script"]
+    if video["template"] == "storyboard":
+        lines = [(i, (sc.get("voice") or "").strip()) for i, sc in enumerate(script.get("scenes", []))]
+    else:
+        lines = [(-1, (script.get("voiceover") or "").strip())]
+    lines = [(i, t) for i, t in lines if t]
+    keys = {i: f"{video_id}/voice/{hashlib.sha1(f'{tts.model}|{tts.voice}|{t}'.encode()).hexdigest()[:16]}.wav"
+            for i, t in lines}
+    kept = await storage.signed_urls(list(keys.values()), bucket=BUCKET)
+
+    async def clip(i: int, words: str) -> dict:
+        key = keys[i]
+        if key not in kept:
+            try:
+                audio = await tts.speak(words)
+            except (UpstreamError, UpstreamAuthError) as exc:
+                log.warning("voice failed: %s", exc)
+                raise ApiError(502, "upstream_error", "OpenRouter no pudo leer la voz; inténtalo de nuevo.") from exc
+            await storage.upload(key, audio, content_type="audio/wav", bucket=BUCKET)
+            kept.update(await storage.signed_urls([key], bucket=BUCKET))
+            return dict(scene=i, url=kept[key], seconds=round(seconds(audio), 2))
+        return dict(scene=i, url=kept[key], seconds=None)
+
+    clips = await asyncio.gather(*(clip(i, t) for i, t in lines))
+    return {"clips": list(clips)}
 
 
 # Real screenshots of the app: uploaded once, each with the points the camera zooms to.

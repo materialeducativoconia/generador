@@ -10,6 +10,7 @@ import { useMe, useSeries } from '../lib/queries'
 import type { Genre, Series } from '../lib/types'
 import { StoryboardVideo } from '../video/Storyboard'
 import { TopicToBook } from '../video/TopicToBook'
+import { Voiced, type VoiceClip } from '../video/Voiced'
 import { DURATION, FPS, LOOKS, SCENES, SIZES, TRANSITIONS, boardFrames, fontsReady, timeline, type Capture, type Look, type Scene, type SceneType,
   type ShelfBook, type Storyboard, type Transition, type VideoKind, type VideoScript, type VideoTome } from '../video/spec'
 import { AdminTabs } from './AdminUsers'
@@ -251,6 +252,7 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
   const [format, setFormat] = useState<Format>(video.format)
   const [progress, setProgress] = useState<number | null>(null)
   const [renderError, setRenderError] = useState<string | null>(null)
+  const [withVoice, setWithVoice] = useState(true)
   const tome = series.tome
   const [width, height] = SIZES[format]
   const board = video.template === 'storyboard' ? script as Storyboard : null
@@ -283,19 +285,22 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
       const web = await import('@remotion/web-renderer')
       await fontsReady()
       const plans = await renderPlans(web.canRenderMediaOnWeb, width, height)
-      const composition = video.template === 'storyboard'
-        ? { id: 'storyboard', component: StoryboardVideo, durationInFrames: boardFrames(current as Storyboard), fps: FPS, width, height,
-          defaultProps: { board: current as Storyboard, tome, captures, shelf } }
-        : { id: 'topic-to-book', component: TopicToBook, durationInFrames: DURATION, fps: FPS, width, height,
-          defaultProps: { script: current as VideoScript, tome } }
+      // The voiceover, read by Gemini (OpenRouter) scene by scene; the lines that did not change come back from storage.
+      const clips = withVoice ? (await api.post<{ clips: VoiceClip[] }>(`/api/admin/marketing/videos/${video.id}/voice`)).clips : []
+      const inner = video.template === 'storyboard'
+        ? { Video: StoryboardVideo as React.ComponentType<object>, props: { board: current as Storyboard, tome, captures, shelf },
+          board: current as Storyboard, frames: boardFrames(current as Storyboard) }
+        : { Video: TopicToBook as React.ComponentType<object>, props: { script: current as VideoScript, tome }, board: null, frames: DURATION }
+      const composition = { id: 'video', component: Voiced, durationInFrames: inner.frames, fps: FPS, width, height,
+        defaultProps: { Video: inner.Video, props: inner.props, board: inner.board, clips } }
       lock = await awake()
       let result: Awaited<ReturnType<typeof web.renderMediaOnWeb>> | null = null
       let failure: unknown = null
       for (const plan of plans) {  // a phone that cannot encode 1080p H.264 still gets the video, smaller or in another codec
         try {
           setProgress(0)
-          // No audio track: the videos are silent (the voiceover is read apart), and the AAC encoder is what most phones lack.
-          result = await web.renderMediaOnWeb({ composition: composition as never, inputProps: composition.defaultProps as never, muted: true,
+          // With the voice, AAC (the renderer brings its own encoder where the phone lacks one); without it, no audio track.
+          result = await web.renderMediaOnWeb({ composition: composition as never, inputProps: composition.defaultProps as never, muted: !clips.length,
             container: 'mp4', videoCodec: plan.codec, scale: plan.scale, outputTarget: 'arraybuffer', onProgress: (p) => setProgress(p.progress) })
           break
         } catch (e) {
@@ -364,12 +369,14 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
             {progress === 1 ? 'Guardando el MP4…' : progress !== null ? `Creando el MP4… ${Math.round(progress * 100)} %`
               : video.has_mp4 && !dirty ? 'Crear el MP4 otra vez' : 'Crear MP4'}
           </button>
+          <label className="check"><input type="checkbox" checked={withVoice} onChange={(e) => setWithVoice(e.target.checked)} />
+            <span>Con voz en off (Gemini lee la voz de cada escena)</span></label>
           <span className="muted small">El video se crea en este navegador, también en el móvil; tarda unos minutos: deja la pantalla encendida y esta pestaña al frente. Queda guardado en «Tus videos» para descargarlo cuando quieras.</span>
           {renderError && <p className="error small" role="alert">{renderError}</p>}
           <label className="field"><span>Guion para voz en off · {Math.round(frames / FPS)} s</span>
             {board ? <textarea value={voice} readOnly rows={6} />
               : <textarea value={voice} onChange={(e) => setScript({ ...fixed!, voiceover: e.target.value })} rows={6} maxLength={700} />}
-            <span className="muted small">{words(voice)} palabras{board ? ' · se edita escena por escena, arriba' : ''} · pégalo en tu app de voz (ElevenLabs, CapCut…) y súmale el audio al MP4.</span>
+            <span className="muted small">{words(voice)} palabras{board ? ' · se edita escena por escena, arriba' : ''} · el MP4 ya lo lleva leído por Gemini; cópialo si prefieres otra voz.</span>
             <CopyButton text={voice} label="Copiar guion de voz" />
           </label>
           <div className="field"><span>Textos en pantalla, por escena</span>
