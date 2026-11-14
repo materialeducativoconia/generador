@@ -214,7 +214,7 @@ export function AdminActivity() {
             <div className="act-top">
               {a.top.map((t) => (
                 <button key={t.event} className="act-top-row" onClick={() => pick('evento', t.event)}>
-                  <code>{t.event}</code><span className="num">{t.n}</span><span className="muted small">{t.users} personas</span>
+                  <code>{t.event}</code><span className="num">{t.n}</span><span className="muted small">{t.users} {t.users === 1 ? 'persona' : 'personas'}</span>
                 </button>
               ))}
             </div>

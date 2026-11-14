@@ -1398,3 +1398,4 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) { .act-event { grid-template-columns: minmax(0, 1fr) auto; } .act-event > small:first-child { grid-column: 1 / -1; } }
 .link-btn { border: 0; background: none; padding: 0; color: var(--text); font-weight: 500; text-align: left; display: inline-flex; align-items: center; gap: 6px; }
 @media (hover: hover) and (pointer: fine) { .link-btn:hover { text-decoration: underline; } }
+.fb-card > .ghost { justify-self: start; }
