@@ -33,8 +33,9 @@ Lees el pedido y las opciones elegidas y escribes, sin inventar lo que no se pid
 - kind: qué tipo de material será (libro ilustrado, cuento, libro para colorear, cuadernillo de fichas, método paso a
   paso o secuencia didáctica). Si el formato ya está elegido, ese.
 - audience: para quién (edad o grado), tal como lo dice el pedido o la opción elegida.
-- sections: cómo se repartirían las páginas: de 1 a 6 secciones con un título breve y sus páginas; la suma de pages
-  es exactamente el total de páginas elegido.
+- sections: cómo se repartirían las páginas de contenido: de 1 a 6 secciones con un título breve y sus páginas; la
+  suma de pages es exactamente el total de páginas elegido. La portada, el índice y el solucionario van aparte y
+  gratis: nunca son secciones.
 - includes: 3 a 5 cosas concretas que tendrá (p. ej. «Ilustraciones en cada página», «Preguntas de comprensión»,
   «Solucionario al final»).
 - notes: 0 a 3 avisos útiles para ajustar antes de confirmar: algo ambiguo, algo que no cabe en esas páginas, o una

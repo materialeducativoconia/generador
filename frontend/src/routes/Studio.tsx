@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { AUDIENCES, FORMATS, tomeName } from '../lib/labels'
 import { StylePicker } from '../components/StylePicker'
@@ -381,7 +382,8 @@ function OrderDialog({ order, sections, pages, pending, error, onConfirm, onCanc
     return () => window.removeEventListener('keydown', esc)
   }, [onCancel])
   useEffect(() => { if (o) confirm.current?.focus() }, [o])
-  return (
+  // On <body>: inside the hero it inherits its centred text and the library's covers paint over it.
+  return createPortal(
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal order-modal" role="dialog" aria-modal="true" aria-labelledby="order-title" onClick={(e) => e.stopPropagation()}>
         <p className="eyebrow">Resumen de tu pedido</p>
@@ -429,6 +431,7 @@ function OrderDialog({ order, sections, pages, pending, error, onConfirm, onCanc
                   disabled={!o || pending || (!free && o.balance < o.now)}>{pending ? 'Creando…' : 'Confirmar y crear'}</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
