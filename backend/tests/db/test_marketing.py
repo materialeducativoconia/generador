@@ -256,3 +256,29 @@ async def test_the_voiceover_is_read_scene_by_scene_and_an_unchanged_line_is_not
     again = (await client.post(f"/api/admin/marketing/videos/{vid}/voice", headers=bearer(key, admin))).json()["clips"]
     assert len(again) == 3 and app.state.voice.said[3:] == ["Abre tu libro."]  # only the changed line is read again
     assert (await client.post(f"/api/admin/marketing/videos/{vid}/voice", headers=bearer(key, owner))).status_code == 403
+
+
+async def test_a_voice_longer_than_its_scene_is_written_again_shorter_by_the_director():
+    from app.marketing import director
+
+    long = {"title": "Tu libro en un minuto", "post": "#docentes", "scenes": [
+        {"type": "title", "seconds": 2, "caption": "Tu libro en un minuto", "voice": "¿Conocías la app que hace un libro ilustrado completo en un minuto?"},
+        {"type": "pages", "seconds": 10, "caption": "Las páginas", "voice": "Mira sus páginas."},
+        {"type": "cta", "seconds": 3, "caption": "Pruébalo", "voice": "Pruébalo gratis."}]}
+    llm = ScriptedLLM(json.dumps(long), json.dumps({"voices": ["¿Un libro en un minuto?", "Mira sus páginas.", "Pruébalo gratis."]}))
+
+    board = (await director(llm, ask="Gancho", kind="marketing", duration=15, title="Felinos", topic="felinos",
+                            book_kind="Libro", audience="", sections=[], sample=None, structure=pick())).value
+
+    assert [s.voice for s in board.scenes] == ["¿Un libro en un minuto?", "Mira sus páginas.", "Pruébalo gratis."]
+    assert "escena 1 (2 s): 12 palabras, máximo 5" in llm.calls[1][-1]["content"]
+
+    fits = ScriptedLLM(json.dumps({**long, "scenes": [{**long["scenes"][0], "voice": "¿Un libro en un minuto?"}, *long["scenes"][1:]]}))
+    await director(fits, ask="Gancho", kind="marketing", duration=15, title="Felinos", topic="felinos",
+                   book_kind="Libro", audience="", sections=[], sample=None, structure=pick())
+    assert len(fits.calls) == 1  # a voice that fits is not asked again
+
+
+def pick():
+    from app.marketing import pick_structure
+    return pick_structure("marketing")

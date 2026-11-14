@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, BeforeValidator, Field
 
-from app.agents import AgentResult, _json_call
+from app.agents import AgentFailed, AgentResult, _json_call
 from app.llm import LLM
 
 
@@ -246,8 +246,9 @@ Tipos de video:
   Elige solo las escenas que enseñan lo pedido.
 
 Reglas: español neutro, tuteo, frases cortas. caption: máximo 50 caracteres, lo que se ve o lo que se aprende en esa
-escena. voice: la locución de esa escena, natural, para una app de voz (unas 2,5 palabras por segundo de la escena;
-sin emojis ni símbolos; la dirección se dice «docs punto jelyx punto app»). La suma de seconds es la duración pedida.
+escena. voice: la locución de esa escena, natural, para una app de voz: como máximo 2,5 palabras por segundo de la
+escena (una escena de 2 s lleva 5 palabras; una de 4 s, 10), y una escena corta puede ir sin voz. Sin emojis ni
+símbolos; la dirección se dice «docs punto jelyx punto app». La suma de seconds es la duración pedida.
 post: el texto para publicar (3 o 4 líneas y 4 a 6 hashtags).
 
 Responde solo con json:
@@ -288,4 +289,30 @@ async def director(llm: LLM, *, ask: str, kind: str, duration: int, title: str, 
     result.value.kind, result.value.duration = kind, duration  # what the team asked, not what the model echoed
     result.value.structure, result.value.look = structure, random.choice(LOOKS)
     result.value = tidy_storyboard(result.value)
+    long = overlong(result.value)
+    if long:  # a voice longer than its scene is cut by the next one: the director shortens it, once
+        messages += [{"role": "assistant", "content": result.value.model_dump_json(include={"scenes"})},
+                     {"role": "user", "content": "La locución no cabe: " + "; ".join(long) + ". Reescribe solo esas "
+                      "voces, más cortas y completas, sin cambiar las escenas. Responde solo con json: "
+                      '{"voices": ["la voz de cada escena, en orden"]}'}]
+        try:
+            again = await _json_call(llm, messages, Voices, temperature=0.7, max_tokens=1500)
+            if len(again.value.voices) == len(result.value.scenes):
+                for scene, voice in zip(result.value.scenes, again.value.voices):
+                    scene.voice = voice
+        except AgentFailed:
+            pass  # the first voices stay: the video plays them one after another
     return result
+
+
+WORDS_PER_SECOND = 2.8  # what Gemini TTS reads at its natural pace
+
+
+class Voices(BaseModel):
+    voices: list[Annotated[str, _clip(300)]]
+
+
+def overlong(board: Storyboard) -> list[str]:
+    """The scenes whose voice does not fit their seconds, said for the director."""
+    return [f"escena {i + 1} ({s.seconds:g} s): {n} palabras, máximo {int(s.seconds * WORDS_PER_SECOND)}"
+            for i, s in enumerate(board.scenes) if (n := len(s.voice.split())) > s.seconds * WORDS_PER_SECOND + 1]

@@ -10,7 +10,7 @@ import { useMe, useSeries } from '../lib/queries'
 import type { Genre, Series } from '../lib/types'
 import { StoryboardVideo } from '../video/Storyboard'
 import { TopicToBook } from '../video/TopicToBook'
-import { Voiced, type VoiceClip } from '../video/Voiced'
+import { Voiced, withLengths, type VoiceClip } from '../video/Voiced'
 import { DURATION, FPS, LOOKS, SCENES, SIZES, TRANSITIONS, boardFrames, fontsReady, timeline, type Capture, type Look, type Scene, type SceneType,
   type ShelfBook, type Storyboard, type Transition, type VideoKind, type VideoScript, type VideoTome } from '../video/spec'
 import { AdminTabs } from './AdminUsers'
@@ -286,7 +286,7 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
       await fontsReady()
       const plans = await renderPlans(web.canRenderMediaOnWeb, width, height)
       // The voiceover, read by Gemini (OpenRouter) scene by scene; the lines that did not change come back from storage.
-      const clips = withVoice ? (await api.post<{ clips: VoiceClip[] }>(`/api/admin/marketing/videos/${video.id}/voice`)).clips : []
+      const clips = withVoice ? await withLengths((await api.post<{ clips: VoiceClip[] }>(`/api/admin/marketing/videos/${video.id}/voice`)).clips) : []
       const inner = video.template === 'storyboard'
         ? { Video: StoryboardVideo as React.ComponentType<object>, props: { board: current as Storyboard, tome, captures, shelf },
           board: current as Storyboard, frames: boardFrames(current as Storyboard) }
@@ -320,7 +320,7 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
       await api.post(`/api/admin/marketing/videos/${video.id}/rendered`, { key })
       await qc.invalidateQueries({ queryKey: ['marketing-videos'] })
     } catch (e) {
-      const why = e instanceof Error ? e.message : ''
+      const why = e instanceof Error ? e.message : errorText(e, '')  // an API error (the voice, the upload) says why
       setRenderError(`No se pudo crear el video en este navegador${why ? ` (${why})` : ''}. Deja la pantalla encendida y esta pestaña al frente, o prueba en Chrome de escritorio.`)
     } finally {
       await lock?.release().catch(() => {})
