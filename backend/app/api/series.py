@@ -93,7 +93,12 @@ class Generate(BaseModel):
 async def create_series(body: NewTome, request: Request, user_id: UserId,
                         idempotency_key: Annotated[str | None, Header(max_length=100)] = None):
     async with request.app.state.engine.begin() as conn:
-        return await _new_tome(conn, body, request, user_id, idempotency_key)
+        out = await _new_tome(conn, body, request, user_id, idempotency_key)
+        from app.api.adopters import log_event  # adopters imports admin, which this module must not load first
+
+        await log_event(conn, user_id, "tome_created", {"series_id": json.loads(out.body)["series"]["id"], "pages": body.page_count,
+                                                        "format": body.format, "request": body.request[:300]})
+        return out
 
 
 async def _new_tome(conn, body: NewTome, request: Request, user_id, idempotency_key: str | None = None,

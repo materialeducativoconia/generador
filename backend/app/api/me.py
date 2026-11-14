@@ -45,6 +45,8 @@ async def get_me(request: Request, user_id: UserId) -> dict:
     async with request.app.state.engine.connect() as conn:
         acc = await credits.account(conn, user_id)
         wallet = await credits.balance(conn, acc.org_id)
+        adopter = (await conn.execute(text(
+            "select exists(select 1 from public.license_redemptions where user_id = :u)"), {"u": user_id})).scalar()
         org = (await conn.execute(text(
             """select o.name, o.logo_key, o.free_preview_at, m.role from public.organizations o
                  join public.memberships m on m.org_id = o.id and m.user_id = :u where o.id = :o"""),
@@ -68,6 +70,8 @@ async def get_me(request: Request, user_id: UserId) -> dict:
                  "print_edition": plan.print_edition, "styles": plan.styles, "identities": plan.identities,
                  "max_pages": plan.max_pages, "watermark": plan.watermark, "commercial": plan.commercial},
         "credits": wallet["total"],
+        "first_adopter": adopter,  # came with a free license: the feedback bubble is theirs
+        "feedback": adopter or row["platform_role"] in ("staff", "admin"),
         "free_preview": acc.plan_key not in PAID and org["free_preview_at"] is None,  # the next tome is free
         "quota": {
             "daily_lessons": row["daily_lesson_quota"],

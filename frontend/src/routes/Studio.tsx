@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { AUDIENCES, FORMATS, tomeName } from '../lib/labels'
@@ -8,6 +8,7 @@ import { BookCover } from '../components/BookCover'
 import { errorText } from '../components/ErrorNote'
 import { FREE_PREVIEW_PAGES } from '../lib/pricing'
 import { api } from '../lib/apiClient'
+import { track } from '../lib/track'
 import { useCharacters, useCollections, useEstimate, useIdentities, useMe, useSeriesList, useStyles } from '../lib/queries'
 import type { Collection, Identity, SeriesSummary } from '../lib/types'
 
@@ -55,22 +56,18 @@ export function Studio() {
   const idempotencyKey = useRef(crypto.randomUUID())
   const textarea = useRef<HTMLTextAreaElement>(null)
 
+  const order = { request: request.trim(), audience, language: 'es',
+    section_count: sections,
+    page_count: pages,
+    format,
+    house_style: houseStyle,
+    guide_id: guide || null,
+    style_id: style === 'auto' ? null : style,
+    identity_id: identity || null,
+    collection_id: collection?.id ?? null,
+    place: params.get('lugar') === 'start' ? 'start' : 'end' }
   const create = useMutation({
-    mutationFn: () =>
-      api.post<Created>(
-        '/api/series',
-        { request: request.trim(), audience, language: 'es',
-          section_count: sections,
-          page_count: pages,
-          format,
-          house_style: houseStyle,
-          guide_id: guide || null,
-          style_id: style === 'auto' ? null : style,
-          identity_id: identity || null,
-          collection_id: collection?.id ?? null,
-          place: params.get('lugar') === 'start' ? 'start' : 'end' },
-        { 'Idempotency-Key': idempotencyKey.current },
-      ),
+    mutationFn: () => api.post<Created>('/api/series', order, { 'Idempotency-Key': idempotencyKey.current }),
     onSuccess: (data) => {
       setQuoting(false)
       idempotencyKey.current = crypto.randomUUID()
@@ -85,9 +82,9 @@ export function Studio() {
   function submit(e?: FormEvent) {
     e?.preventDefault()
     if (request.trim().length < 3 || !sized || create.isPending) return
-    // The credits-and-AI-cost window is an admin tool; everyone else goes straight to the outline.
-    if (me?.platform_role === 'admin') setQuoting(true)
-    else create.mutate()
+    // Nothing is created (or charged) before the user reads the order summary and confirms it.
+    track('studio.summary_open', { pages, format })
+    setQuoting(true)
   }
 
   const firstName = me?.display_name?.split(' ')[0]
@@ -190,8 +187,9 @@ export function Studio() {
             }} />
         </form>
         {quoting && (
-          <CostDialog sections={sections} pages={pages} pending={create.isPending}
-                      onConfirm={() => create.mutate()} onCancel={() => setQuoting(false)} />
+          <OrderDialog order={order} sections={sections} pages={pages} pending={create.isPending} error={create.error}
+                       onConfirm={() => { track('studio.summary_confirm', { pages }); create.mutate() }}
+                       onCancel={() => { track('studio.summary_edit'); setQuoting(false); textarea.current?.focus() }} />
         )}
         {me && affordable < 1 && (
           <p className="notice small composer-hint">Ya usaste tu vista previa y no tienes créditos.{' '}
@@ -360,36 +358,60 @@ function ArrowUp() {
 
 const usd = (n: number) => `$${n.toFixed(2)}`
 
-/** What the chosen tome will cost in AI calls, confirmed before anything is created. USD while testing;
- * this is where credits will be charged later. */
-function CostDialog({ sections, pages, pending, onConfirm, onCancel }: {
-  sections: number | null; pages: number | null; pending: boolean; onConfirm: () => void; onCancel: () => void
+type Order = { summary: { title: string; kind: string; audience: string; sections: { title: string; pages: number }[]
+  includes: string[]; notes: string[] }; ai: boolean; credits: number; now: number; balance: number }
+
+/** The order summary: what will be made and what it costs, read and confirmed before anything is created or charged;
+ * «Ajustar el pedido» goes back to the request with everything kept. The AI-cost rows are the admin's. */
+function OrderDialog({ order, sections, pages, pending, error, onConfirm, onCancel }: {
+  order: object; sections: number | null; pages: number | null; pending: boolean; error: unknown
+  onConfirm: () => void; onCancel: () => void
 }) {
-  const q = useEstimate(sections, pages).data
   const me = useMe().data
+  const summary = useQuery({ queryKey: ['order-summary', JSON.stringify(order)], staleTime: Infinity, retry: false,
+    queryFn: () => api.post<Order>('/api/series/summary', order) })
+  const q = useEstimate(sections, pages).data
+  const o = summary.data
+  const free = me?.free_preview
+  const short = !free && !!o && o.balance < o.credits
   const confirm = useRef<HTMLButtonElement>(null)
   useEffect(() => {
-    confirm.current?.focus()
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && onCancel()
     window.addEventListener('keydown', esc)
     return () => window.removeEventListener('keydown', esc)
   }, [onCancel])
+  useEffect(() => { if (o) confirm.current?.focus() }, [o])
   return (
     <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="cost-title" onClick={(e) => e.stopPropagation()}>
-        <h2 id="cost-title">{me?.free_preview ? 'Vista previa' : 'Créditos de este tomo'}</h2>
-        {!q ? <div className="skeleton" /> : me?.free_preview ? (
-          <p className="muted">Te mostramos el índice, la portada y una muestra de 2 páginas, sin costo. Para generar el tomo
-            completo y descargarlo, elige un plan.</p>
+      <div className="modal order-modal" role="dialog" aria-modal="true" aria-labelledby="order-title" onClick={(e) => e.stopPropagation()}>
+        <p className="eyebrow">Resumen de tu pedido</p>
+        {summary.isPending ? (
+          <><h2 id="order-title">Leyendo tu pedido…</h2><div className="shimmer-lines"><span /><span /><span /></div></>
+        ) : summary.error || !o ? (
+          <><h2 id="order-title">Revisa tu pedido</h2>
+            <p className="error small" role="alert">{errorText(summary.error, 'No pudimos preparar el resumen.')}</p></>
         ) : (
           <>
-            <p className="muted small">
-              {q.pages} {q.pages === 1 ? 'página' : 'páginas'} de contenido en {q.sections} {q.sections === 1 ? 'sección' : 'secciones'} · más portada{q.sections > 1 ? ', índice' : ''} y solucionario sin costo
-            </p>
-            <p className="credits-big"><strong>{q.credits}</strong> créditos <span className="muted small">· tienes {q.balance}</span></p>
-            <p className="small muted">Ahora se usan 5 (esquema y portada); las páginas se descuentan al aprobar el esquema. Si algo falla, te los devolvemos.</p>
-            {q.balance < q.credits && <p className="error small">No te alcanzan para el tomo completo. <Link to="/app/plan">Comprar créditos o subir de plan</Link></p>}
-            {me?.platform_role === 'admin' && (
+            <h2 id="order-title">{o.summary.title}</h2>
+            <p className="muted small">{[o.summary.kind, o.summary.audience, `${pages} ${pages === 1 ? 'página' : 'páginas'} de contenido`].filter(Boolean).join(' · ')}</p>
+            <ol className="order-parts">
+              {o.summary.sections.map((p, i) => <li key={i}><span>{p.title}</span><span className="muted">{p.pages} {p.pages === 1 ? 'pág.' : 'págs.'}</span></li>)}
+            </ol>
+            {o.summary.includes.length > 0 && <ul className="order-includes">{o.summary.includes.map((x) => <li key={x}>{x}</li>)}</ul>}
+            {o.summary.notes.length > 0 && (
+              <div className="order-notes" role="note"><strong>Antes de confirmar</strong>
+                <ul>{o.summary.notes.map((n) => <li key={n}>{n}</li>)}</ul></div>
+            )}
+            {free ? (
+              <p className="small muted">Es tu vista previa gratis: índice, portada y una muestra de páginas, sin usar créditos.</p>
+            ) : (
+              <>
+                <p className="credits-big"><strong>{o.credits}</strong> créditos <span className="muted small">· tienes {o.balance}</span></p>
+                <p className="small muted">Al confirmar se usan {o.now} (esquema y portada); las páginas se descuentan al aprobar el esquema. Si algo falla, te los devolvemos.</p>
+                {short && <p className="error small">No te alcanzan para el tomo completo. <Link to="/app/plan">Comprar créditos o subir de plan</Link></p>}
+              </>
+            )}
+            {me?.platform_role === 'admin' && q && (
               <dl className="cost-rows">
                 <div><dt>Texto (redacción y revisión)</dt><dd>{usd(q.text_usd)}</dd></div>
                 <div><dt>Búsqueda de programas oficiales</dt><dd>{usd(q.search_usd)}</dd></div>
@@ -400,9 +422,11 @@ function CostDialog({ sections, pages, pending, onConfirm, onCancel }: {
             )}
           </>
         )}
+        {error ? <p className="error small" role="alert">{errorText(error, 'No se pudo crear el tomo.')}</p> : null}
         <div className="modal-actions">
-          <button className="ghost" onClick={onCancel} disabled={pending}>Cancelar</button>
-          <button ref={confirm} className="primary" onClick={onConfirm} disabled={!q || pending || (!me?.free_preview && q.balance < 5)}>{pending ? 'Creando…' : 'Crear el esquema'}</button>
+          <button className="ghost" onClick={onCancel} disabled={pending}>Ajustar el pedido</button>
+          <button ref={confirm} className="primary" onClick={onConfirm}
+                  disabled={!o || pending || (!free && o.balance < o.now)}>{pending ? 'Creando…' : 'Confirmar y crear'}</button>
         </div>
       </div>
     </div>

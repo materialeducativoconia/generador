@@ -13,6 +13,8 @@ export type Me = {
   email: string | null
   anonymous: boolean
   free_preview: boolean  // the account has not had its free preview yet
+  first_adopter: boolean  // came with a free license link
+  feedback: boolean  // the feedback bubble shows (first adopters and the team)
   display_name: string | null
   avatar_url: string | null
   quota: { daily_lessons: number; used_today: number; remaining_today: number }

@@ -168,28 +168,34 @@ async def set_plan(target: uuid.UUID, body: PlanGrant, request: Request, user_id
     async with request.app.state.engine.begin() as conn:
         await _staff(conn, user_id, admin=True)
         acc = await credits.account(conn, target)
-        sub = (await conn.execute(text(
-            "select stripe_subscription_id, status from public.subscriptions where org_id = :o and app = :app"),
-            {"o": acc.org_id, "app": APP})).mappings().one_or_none()
-        if sub and sub["stripe_subscription_id"] and sub["status"] in ("active", "trialing", "past_due"):
-            raise ApiError(409, "stripe_managed", "Este plan se paga con Stripe: cámbialo o cancélalo desde Stripe.")
-        await credits.expire_plan_credits(conn, acc.org_id)
-        if body.plan is None:
-            await conn.execute(text("delete from public.subscriptions where org_id = :o and app = :app"),
-                               {"o": acc.org_id, "app": APP})
-        else:
-            end = datetime.now(UTC) + timedelta(days=30 * body.months)
-            await conn.execute(text(
-                """insert into public.subscriptions (org_id, app, plan, status, stripe_subscription_id,
-                                                     current_period_end, updated_at)
-                   values (:o, :app, :p, 'active', null, :e, now())
-                   on conflict (org_id, app) do update set plan = :p, status = 'active', stripe_subscription_id = null,
-                                                           current_period_end = :e, updated_at = now()"""),
-                {"o": acc.org_id, "app": APP, "p": body.plan, "e": end})
-            await credits.grant(conn, acc.org_id, PLANS[body.plan].credits * body.months, "plan",
-                                f"Plan {PLANS[body.plan].label} asignado por el equipo", expires_at=end)
+        await assign_plan(conn, acc.org_id, body.plan, body.months, "asignado por el equipo")
         row = (await conn.execute(text(f"{USER_ROW} where p.id = :t"), {"app": APP, "t": target})).mappings().one()
     return _user(row)
+
+
+async def assign_plan(conn, org_id, plan: str | None, months: int, why: str) -> None:
+    """A plan given without Stripe, active for N months with that many months of credits (None: back to the free
+    trial). A plan paid through Stripe is changed or cancelled in Stripe, never here."""
+    sub = (await conn.execute(text(
+        "select stripe_subscription_id, status from public.subscriptions where org_id = :o and app = :app"),
+        {"o": org_id, "app": APP})).mappings().one_or_none()
+    if sub and sub["stripe_subscription_id"] and sub["status"] in ("active", "trialing", "past_due"):
+        raise ApiError(409, "stripe_managed", "Este plan se paga con Stripe: cámbialo o cancélalo desde Stripe.")
+    await credits.expire_plan_credits(conn, org_id)
+    if plan is None:
+        await conn.execute(text("delete from public.subscriptions where org_id = :o and app = :app"),
+                           {"o": org_id, "app": APP})
+        return
+    end = datetime.now(UTC) + timedelta(days=30 * months)
+    await conn.execute(text(
+        """insert into public.subscriptions (org_id, app, plan, status, stripe_subscription_id,
+                                             current_period_end, updated_at)
+           values (:o, :app, :p, 'active', null, :e, now())
+           on conflict (org_id, app) do update set plan = :p, status = 'active', stripe_subscription_id = null,
+                                                   current_period_end = :e, updated_at = now()"""),
+        {"o": org_id, "app": APP, "p": plan, "e": end})
+    await credits.grant(conn, org_id, PLANS[plan].credits * months, "plan", f"Plan {PLANS[plan].label} {why}",
+                        expires_at=end)
 
 
 class CreditGrant(BaseModel):

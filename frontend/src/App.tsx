@@ -22,16 +22,25 @@ import { TomePage } from './routes/TomePage'
 import { Welcome } from './routes/Welcome'
 import { Library, LibraryPlate } from './routes/Library'
 import { Book, Books } from './routes/Books'
+import { License } from './routes/License'
+import { AdminActivity, AdminFeedback, AdminLicenses } from './routes/AdminAdopters'
+import { usePageViews } from './lib/track'
 // Remotion only loads for the team's video studio, never for teachers.
 const AdminMarketing = lazy(() => import('./routes/AdminMarketing').then((m) => ({ default: m.AdminMarketing })))
 
 const authed = (page: ReactNode) => <RequireAuth>{page}</RequireAuth>
+
+function PageViews() {
+  usePageViews()
+  return null
+}
 
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <BrowserRouter>
+          <PageViews />
           <Routes>
             <Route path="/" element={<Welcome />} />
             <Route path="/libros" element={<Books />} />
@@ -39,6 +48,7 @@ export default function App() {
             <Route path="/laminas" element={<Library />} />
             <Route path="/laminas/:slug" element={<LibraryPlate />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/licencia/:code" element={<License />} />
             <Route path="/app" element={authed(<FirstVisit><Studio /></FirstVisit>)} />
             <Route path="/app/bienvenida" element={authed(<Onboarding />)} />
             <Route path="/app/tomos/:id" element={authed(<TomePage />)} />
@@ -53,6 +63,9 @@ export default function App() {
             <Route path="/admin/tomos" element={authed(<AdminTomes />)} />
             <Route path="/admin/estilos" element={authed(<AdminStyles />)} />
             <Route path="/admin/analytics" element={authed(<Analytics />)} />
+            <Route path="/admin/licencias" element={authed(<AdminLicenses />)} />
+            <Route path="/admin/opiniones" element={authed(<AdminFeedback />)} />
+            <Route path="/admin/actividad" element={authed(<AdminActivity />)} />
             <Route path="/admin/marketing" element={authed(<Suspense fallback={null}><AdminMarketing /></Suspense>)} />
             <Route path="/adminpanel" element={<Navigate to="/admin" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />

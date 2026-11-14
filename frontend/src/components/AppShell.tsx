@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { FeedbackBubble } from './FeedbackBubble'
 import { Link, NavLink } from 'react-router'
 import { useMe } from '../lib/queries'
 import { supabase } from '../lib/supabase'
@@ -64,6 +65,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
       {open && <div className="scrim" onClick={() => setOpen(false)} />}
       <main className="page">{children}</main>
+      {me?.feedback && <FeedbackBubble />}
     </div>
   )
 }
