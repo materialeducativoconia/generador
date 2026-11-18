@@ -283,12 +283,27 @@ class Phases(_Block):
     caption: Short | None = None
 
 
+class Pattern(_Block):
+    """A pattern page drawn by code (app.patterns): a mandala or tiles to colour, or strokes to trace."""
+
+    type: Literal["pattern"]
+    kind: Literal["mandala", "tiles", "trace"] = "mandala"
+    motifs: list[Literal["petal", "leaf", "drop", "heart", "star", "circle", "dot", "triangle", "scallop",
+                         "diamond"]] = Field(default_factory=list, max_length=6)
+    strokes: list[Literal["zigzag", "waves", "loops", "castle", "arches", "steps"]] = Field(
+        default_factory=list, max_length=6)
+    symmetry: int = Field(default=8, ge=4, le=24)
+    detail: Literal["simple", "medium", "detailed"] = "medium"
+    caption: Short | None = None
+
+
 Inset = Annotated[Timeline | Cycle | BarChart | NumberLine | Fraction | Clock | Sizes | Phases,
                   Field(discriminator="type")]
 
 Image.model_rebuild()
 
-DIAGRAM_TYPES = ("staff", "timeline", "cycle", "bar_chart", "number_line", "fraction", "clock", "sizes", "phases")
+DIAGRAM_TYPES = ("staff", "timeline", "cycle", "bar_chart", "number_line", "fraction", "clock", "sizes", "phases",
+                 "pattern")
 
 
 # Literacy worksheets drawn by code (app.worksheets). The Writer picks letters, words and sentences; the code
@@ -499,7 +514,7 @@ class PageBreak(_Block):
 Block = Annotated[
     Heading | Paragraph | ListBlock | Callout | Table | Example | Activity | Exercise
     | Keyboard | Tracing | LetterGrid | Image | WritingLines | PageBreak
-    | Staff | Timeline | Cycle | BarChart | NumberLine | Fraction | Clock | Sizes | Phases
+    | Staff | Timeline | Cycle | BarChart | NumberLine | Fraction | Clock | Sizes | Phases | Pattern
     | SyllableChart | PictureWords | SyllableCards | Reading | Dictation | FillSentences | WordSearch | Classify
     | DrawFrames | Counting | PictureMath | Maze,
     Field(discriminator="type"),

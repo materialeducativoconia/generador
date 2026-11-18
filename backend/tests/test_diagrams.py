@@ -102,3 +102,17 @@ def test_writer_catalog_knows_the_diagrams():
     for kind in ("staff", "timeline", "cycle", "bar_chart", "number_line", "fraction", "clock"):
         assert f"- {kind} {{" in WRITER_SYSTEM
     assert SectionContent.model_validate({"schema_version": 1, "blocks": EVERY})
+
+
+def test_pattern_pages_are_drawn_by_code():
+    from app.content import Pattern
+    from app.patterns import pattern
+
+    colors = {"accent": "#5b4cf0"}
+    mandala = pattern(Pattern(id="m", type="pattern", kind="mandala", motifs=["petal", "star"], symmetry=12,
+                              detail="detailed"), colors, "Nunito")
+    assert mandala.startswith("<svg") and mandala.count("rotate(") >= 12 * 3
+    tiles = pattern(Pattern(id="t", type="pattern", kind="tiles", motifs=["heart"], detail="simple"), colors, "Nunito")
+    assert tiles.count("<rect") == 1 + 9  # the frame and a 3 × 3 grid for the youngest
+    trace = pattern(Pattern(id="r", type="pattern", kind="trace", strokes=["zigzag", "loops"]), colors, "Nunito")
+    assert trace.count('stroke-dasharray="1 9"') == 6 and "#5b4cf0" in trace  # six rows, a start dot each

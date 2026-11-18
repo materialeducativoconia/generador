@@ -12,6 +12,8 @@ from html import escape
 
 from markupsafe import Markup
 
+from app.patterns import pattern
+
 NOTE_NAMES_ES = {"C": "Do", "D": "Re", "E": "Mi", "F": "Fa", "G": "Sol", "A": "La", "B": "Si"}
 MUSIC = "'Noto Music'"
 BEATS = {"whole": 4, "half": 2, "quarter": 1, "eighth": 0.5}
@@ -20,7 +22,7 @@ BEATS = {"whole": 4, "half": 2, "quarter": 1, "eighth": 0.5}
 def render_diagram(block, c: dict, font: str) -> Markup:
     draw = {"staff": staff, "timeline": timeline, "cycle": cycle, "bar_chart": bar_chart,
             "number_line": number_line, "fraction": fraction, "clock": clock, "sizes": sizes,
-            "phases": phases}[block.type]
+            "phases": phases, "pattern": pattern}[block.type]
     return Markup(draw(block, c, f"'{font}', Nunito, {MUSIC}, sans-serif"))
 
 

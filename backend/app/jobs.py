@@ -19,8 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.agents import (PROMPT_VERSION, AgentFailed, AgentResult, Attempt, Brief, apply_fixes, architect,
                         art_director, brand_strategist, cover_director, designer, editor, fact_sheet,
-                        identity_designer, narrator, program_review, program_sheet, research_planner, story_section,
-                        writer)
+                        identity_designer, narrator, picture_match, program_review, program_sheet, research_planner,
+                        story_section, writer)
 from app.content import ArtPlan, Brand, Design, Outline, OutlineSection, Story
 from app.identity import describe, guard, initials, look_key
 from app import credits
@@ -143,8 +143,9 @@ async def _outline(deps: Deps, job: dict) -> None:
         await _extend_outline(deps, job, series)
         return
     brief = _brief(series, job["payload"].get("brief"))
-    if (deps.web is not None or deps.search is not None) and series["research"] is None:
-        research = await _research(deps, job, brief)
+    search = None if series["preview"] else deps.search  # the free preview never spends OpenRouter
+    if (deps.web is not None or search is not None) and series["research"] is None:
+        research = await _research(deps, job, brief, search)
         brief.facts, brief.program = _facts(research), _program(research)
     if job["payload"].get("instructions"):
         brief.extra_instructions = "\n".join(filter(None, [brief.extra_instructions,
@@ -259,17 +260,18 @@ async def _queue_preview(conn, job: dict) -> None:
     await conn.execute(text("update public.lessons set status = 'queued' where series_id = :s"), {"s": job["series_id"]})
 
 
-async def _research(deps: Deps, job: dict, brief: Brief) -> dict:
-    """Researcher: decide if the tome needs sources, read Wikipedia, keep a fact sheet. Never fails the outline."""
+async def _research(deps: Deps, job: dict, brief: Brief, search=None) -> dict:
+    """Researcher: decide if the tome needs sources, read Wikipedia, keep a fact sheet. Never fails the outline.
+    `search` (OpenRouter) finds published sources and programs for paid tomes; the free preview reads Wikipedia."""
     research: dict = {"needed": False}
     try:
         planned = await research_planner(deps.llm, brief)
         await _log_attempts(deps.engine, job, "research", planned.attempts)
         research = {"needed": planned.value.needed, "reason": planned.value.reason, "queries": planned.value.queries}
-        if deps.search is not None and planned.value.program_queries:
-            research["program"] = await _program_search(deps, job, brief, planned.value.program_queries)
+        if search is not None and planned.value.program_queries:
+            research["program"] = await _program_search(deps, job, brief, planned.value.program_queries, search)
         if planned.value.needed and planned.value.queries:
-            documents, research["facts_usd"] = await _published(deps, job, brief, planned.value.queries)
+            documents, research["facts_usd"] = await _published(deps, job, brief, planned.value.queries, search)
             if not documents and deps.web is not None:  # checks the facts; app.exports never prints it as a source
                 documents = await deps.web.wikipedia(planned.value.queries, lang=brief.language)
             if documents:
@@ -295,11 +297,11 @@ def only_cited(facts: list[dict], sources: list[dict]) -> tuple[list[dict], list
     return ([{**f, "source": renumber[f["source"]]} for f in facts if f.get("source") in renumber],
             [sources[i - 1] for i in used])
 
-async def _published(deps: Deps, job: dict, brief: Brief, queries: list[str]) -> tuple[list, float]:
+async def _published(deps: Deps, job: dict, brief: Brief, queries: list[str], search=None) -> tuple[list, float]:
     """Facts from published sources (books, encyclopedias, museums, universities), found by the search model."""
-    if deps.search is None:
+    if search is None:
         return [], 0.0
-    found = await asyncio.gather(*(deps.search.facts(q, language=brief.language) for q in queries[:3]),
+    found = await asyncio.gather(*(search.facts(q, language=brief.language) for q in queries[:3]),
                                  return_exceptions=True)
     for f in found:
         if isinstance(f, BaseException):
@@ -308,9 +310,9 @@ async def _published(deps: Deps, job: dict, brief: Brief, queries: list[str]) ->
     return cited_documents(findings), round(sum(f.cost_usd or 0 for f in findings), 4)
 
 
-async def _program_search(deps: Deps, job: dict, brief: Brief, queries: list[str]) -> dict:
+async def _program_search(deps: Deps, job: dict, brief: Brief, queries: list[str], search) -> dict:
     """Program searcher + Program sheet: official programs and proven methods from the web, with their links."""
-    found = await asyncio.gather(*(deps.search.search(q, language=brief.language) for q in queries[:3]),
+    found = await asyncio.gather(*(search.search(q, language=brief.language) for q in queries[:3]),
                                  return_exceptions=True)
     findings = [f for f in found if not isinstance(f, BaseException) and f.text]
     for f in found:
@@ -992,7 +994,7 @@ async def _free_pictures(deps: Deps, job: dict, series, design, unique: dict) ->
         if found is None and image is None and r.kind != "icon" and deps.finder is not None:
             try:  # the web index is slow and rarely on topic: a fallback with a time limit
                 found = await asyncio.wait_for(
-                    deps.finder.find(query, r.kind, accept=lambda data: _shows(deps, data, r)), FINDER_SECONDS)
+                    deps.finder.find(query, r.kind, accept=lambda data, item: _named(deps, item, r)), FINDER_SECONDS)
             except TimeoutError:
                 log.warning("finder gave up on %s", r.ref)
         if found is None and image is None:
@@ -1009,15 +1011,17 @@ async def _free_pictures(deps: Deps, job: dict, series, design, unique: dict) ->
         await _succeed(conn, job)
 
 
-async def _shows(deps: Deps, data: bytes, r: ImageRequest) -> bool:
-    """The Reviewer's word on a picture found on the web (a fraction of a cent); without it, the kind check alone."""
-    if deps.vision is None:
-        return True
-    try:
-        verdict = (await deps.vision.review_sheet(data, [r.subject], kind=r.kind))[0]
-    except (UpstreamError, UpstreamAuthError):
+async def _named(deps: Deps, item: dict, r: ImageRequest) -> bool:
+    """The free Reviewer: DeepSeek judges a found picture by its title and tags, so the preview never pays a vision
+    model (OpenRouter is for paid tomes only). Without a title or tags there is nothing to judge: it is skipped."""
+    title = (item.get("title") or "").strip()
+    tags = [t.get("name", "") for t in item.get("tags") or [] if isinstance(t, dict) and t.get("name")]
+    if not title and not tags:
         return False
-    return verdict.matches_subject and not verdict.has_text
+    try:
+        return (await picture_match(deps.llm, r.subject, title, tags)).value.matches
+    except (AgentFailed, UpstreamError, UpstreamAuthError):
+        return False
 
 
 FINDER_SECONDS = 30

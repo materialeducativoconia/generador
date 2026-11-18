@@ -15,7 +15,7 @@ type AdminTome = {
   page_target: number | null; cover_url: string | null; palette: [string, string, string] | null; email: string | null
   display_name: string | null; sections: number; score: number | null
   export: { id: string; status: string; format: string; pages: number | null } | null
-  free_book: boolean  // published in the landing's free book library
+  free_book: boolean  // in the free library (/admin/libros)
 }
 const date = (iso: string) => new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
@@ -35,9 +35,9 @@ export function AdminTomes() {
       `/api/admin/series?${new URLSearchParams({ q: query, status, genre, preview: kind, limit: String(48 * pages) })}`),
   })
   const qc = useQueryClient()
-  const share = useMutation({  // into the landing's free books, or out of them
+  const share = useMutation({  // into the free library, or out of it
     mutationFn: (t: AdminTome) => t.free_book ? api.delete(`/api/admin/books/${t.id}`) : api.post('/api/admin/books', { series_id: t.id }),
-    onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: ['admin-series'] }), qc.invalidateQueries({ queryKey: ['free-books'] })]),
+    onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: ['admin-series'] }), qc.invalidateQueries({ queryKey: ['admin-books'] })]),
   })
   const download = useMutation({
     mutationFn: (exportId: string) => api.get<{ url: string }>(`/api/exports/${exportId}/file`),
@@ -84,7 +84,7 @@ export function AdminTomes() {
       </div>
       {error && <p className="error">{errorText(error, 'No pudimos cargar los tomos.')}</p>}
       {download.error && <p className="error">{errorText(download.error, 'No se pudo descargar.')}</p>}
-      {share.error && <p className="error">{errorText(share.error, 'No se pudo cambiar la biblioteca de libros gratis.')}</p>}
+      {share.error && <p className="error">{errorText(share.error, 'No se pudo cambiar la biblioteca.')}</p>}
       <ul className="admin-tomes">
         {data?.series.map((t) => (
           <li key={t.id}>
@@ -114,8 +114,8 @@ export function AdminTomes() {
                 )}
                 {(t.free_book || t.status === 'ready') && (
                   <button className="ghost small" onClick={() => share.mutate(t)} disabled={share.isPending}
-                    title={t.free_book ? undefined : 'Publica su último PDF en la biblioteca de libros gratis de la landing'}>
-                    {share.isPending && share.variables?.id === t.id ? 'Publicando…' : t.free_book ? 'Quitar de libros gratis' : 'Publicar en libros gratis'}
+                    title={t.free_book ? undefined : 'Copia su último PDF, con el copyright en cada página, a la biblioteca de libros gratis'}>
+                    {share.isPending && share.variables?.id === t.id ? 'Pasando…' : t.free_book ? 'Quitar de la biblioteca' : 'Pasar a la biblioteca'}
                   </button>
                 )}
               </span>

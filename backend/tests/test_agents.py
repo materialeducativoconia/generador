@@ -162,3 +162,16 @@ def test_the_closing_does_not_print_the_answer_again_as_a_note():
              "Tiene una doble cresta de plumas en la cabeza."]
 
     assert _new_notes(answer, notes) == ["Tiene una doble cresta de plumas en la cabeza."]
+
+
+async def test_the_free_reviewer_reads_a_found_pictures_title_and_tags():
+    from app.agents import picture_match
+
+    class Fake:
+        async def complete(self, messages, *, temperature, max_tokens, json_mode=True):
+            from app.llm import Completion
+            assert "ardilla" in messages[1]["content"] and "squirrel" in messages[1]["content"]
+            return Completion(text='{"matches": true}', finish_reason="stop", model="deepseek-chat")
+
+    result = await picture_match(Fake(), "una ardilla con una bellota", "Squirrel coloring page", ["squirrel"])
+    assert result.value.matches

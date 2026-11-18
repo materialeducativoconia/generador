@@ -5,8 +5,6 @@ import { rememberReturnTo, saveWithGoogle, signInWithGoogle } from '../auth/goog
 import { Logo } from '../components/AppShell'
 import { LandingComposer } from '../components/LandingComposer'
 import { SHOWCASE_BASE, Showcase } from '../components/Showcase'
-import { useFreeBooks } from '../lib/queries'
-import { BookCard } from './Books'
 import { useSeriesList } from '../lib/queries'
 import { PUBLIC_PLAN_INFO } from '../lib/pricing'
 import { PlanCards } from '../components/PlanCards'
@@ -82,7 +80,6 @@ export function Welcome() {
   return (
     <>
     <header className="welcome-top">
-      {SHOW_FREE_BOOKS && <a href="/libros" className="welcome-top-link">Libros gratis</a>}
       <a href="#planes" className="welcome-top-link">Planes</a>
       <button className="welcome-login" onClick={start} disabled={starting || loading}>{starting ? 'Abriendo…' : 'Entrar'}</button>
     </header>
@@ -121,8 +118,6 @@ export function Welcome() {
           ))}
         </ul>
       </section>
-
-      {SHOW_FREE_BOOKS && <FreeBooks />}
 
       <section className="l-intro">
         <p className="eyebrow">Por qué Jelyx</p>
@@ -269,20 +264,3 @@ const FAQ: [string, string][] = [
   ['¿Puedo cancelar?', 'Cuando quieras, desde tu cuenta. Tus tomos se quedan guardados.'],
 ]
 
-/** Off until the free library is stocked; the /libros pages and backend stay live. */
-const SHOW_FREE_BOOKS = false
-
-/** A shelf of the free books, hidden until the team publishes one. */
-function FreeBooks() {
-  const { data } = useFreeBooks()
-  if (!data?.books.length) return null
-  return (
-    <section>
-      <p className="eyebrow">Libros gratis</p>
-      <h2 className="l-h">Hojea libros hechos con Jelyx, y llévatelos gratis.</h2>
-      <p className="l-lede">Libros ilustrados y cuadernillos completos, listos para imprimir. Regístrate gratis para descargarlos.</p>
-      <ul className="library-grid books">{data.books.slice(0, 4).map((b) => <li key={b.id}><BookCard book={b} /></li>)}</ul>
-      <a href="/libros" className="ghost">Ver todos los libros gratis</a>
-    </section>
-  )
-}

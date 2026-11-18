@@ -1089,7 +1089,9 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .admin-tome-b { display: grid; gap: 5px; align-content: start; min-width: 0; }
 .admin-tome-b strong { font-size: 14px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .admin-tome-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.admin-tome-actions { display: flex; gap: 6px; margin-top: 4px; }
+.admin-tome-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.admin-book-cover { width: 96px; height: auto; border-radius: 8px; box-shadow: 0 1px 3px rgb(0 0 0 / .12); }
+.admin-book-link { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
 .review-note { margin: -8px 0 18px; }
 .lab-form { display: grid; gap: 10px; max-width: 720px; margin: 20px 0; }
 .lab-form textarea, .lab-form input { font: inherit; font-size: 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }

@@ -29,8 +29,9 @@ class Finder:
         self.transport = transport
 
     async def find(self, subject: str, kind: str, accept=None) -> Photo | None:
-        """The first result that loads, is big enough, looks like the kind asked for and passes `accept` (the
-        Reviewer: does it show the subject?). An index of the whole web returns plenty of near misses."""
+        """The first result that loads, is big enough, looks like the kind asked for and passes `accept(data, item)`
+        (the Reviewer: does it show the subject? `item` is the result's title and tags). An index of the whole web
+        returns plenty of near misses."""
         async with httpx.AsyncClient(timeout=40, transport=self.transport, follow_redirects=True,
                                      headers={"User-Agent": USER_AGENT}) as http:
             try:
@@ -54,7 +55,7 @@ class Finder:
                     continue
                 if kind == "line_art" and not looks_like_line_art(picture):
                     continue
-                if accept is not None and not await accept(image.content):
+                if accept is not None and not await accept(image.content, item):
                     continue
                 media_type = image.headers.get("content-type", "image/jpeg").split(";")[0]
                 return Photo(image.content, media_type if media_type in ("image/png", "image/jpeg") else "image/jpeg",

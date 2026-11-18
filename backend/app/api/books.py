@@ -1,10 +1,12 @@
-"""The free book library on the landing: whole tomes the team publishes from the admin. Anyone browses them as page
-thumbnails; downloading the PDF needs a Google account, so every download is a sign-up."""
+"""The free book library: whole tomes the team picks in the admin. Only the team sees the library, to copy each
+book's link and share it; whoever opens a link sees that book's pages, and downloading the PDF needs a Google
+account, so every download is a sign-up. Every page of the PDF carries the copyright along its edge."""
 
 import asyncio
 import io
 import json
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
@@ -16,10 +18,11 @@ from app.api.deps import current_user_id
 from app.api.library import _slug
 from app.errors import ApiError
 from app.render import GENRE_LABEL
+from app.stamp import copyright_edge, library_line
 
 router = APIRouter()
 UserId = Annotated[uuid.UUID, Depends(current_user_id)]
-FIELDS = "id::text, slug, title, topic, audience, genre, page_count, pages, downloads, created_at"
+FIELDS = "id::text, series_id::text, slug, title, topic, audience, genre, page_count, pages, downloads, created_at"
 THUMBS = 6  # the cover and the first pages, enough to judge the book
 THUMB_PX = 480
 
@@ -34,9 +37,11 @@ def _public(row, request: Request) -> dict:
     return book
 
 
-@router.get("/api/books")
-async def list_books(request: Request):
+@router.get("/api/admin/books")
+async def list_books(request: Request, user_id: UserId):
+    """The library, for the admins only: they copy each book's link and share it by hand."""
     async with request.app.state.engine.connect() as conn:
+        await _staff(conn, user_id, admin=True)
         rows = (await conn.execute(text(
             f"select {FIELDS} from public.library_books where published order by created_at desc limit 120"
         ))).mappings().all()
@@ -50,10 +55,7 @@ async def get_book(slug: str, request: Request):
                                   {"s": slug})).mappings().first()
         if row is None:
             raise ApiError(404, "not_found", "Ese libro no existe.")
-        related = (await conn.execute(text(
-            f"""select {FIELDS} from public.library_books where published and slug <> :s
-                 order by (topic = :t) desc, created_at desc limit 4"""), {"s": slug, "t": row["topic"]})).mappings().all()
-    return {"book": _public(row, request), "related": [_public(r, request) for r in related]}
+    return {"book": _public(row, request)}  # never the rest of the library: each book is reached by its own link
 
 
 @router.post("/api/books/{slug}/download")
@@ -94,8 +96,8 @@ class NewBook(BaseModel):
 
 @router.post("/api/admin/books", status_code=201)
 async def publish_book(body: NewBook, request: Request, user_id: UserId):
-    """A finished tome published in the free library: its last PDF is copied (later edits do not leak in) and its
-    first pages become the thumbnails visitors see."""
+    """A finished tome published in the free library: its last PDF is copied (later edits do not leak in) with the
+    copyright along every page's edge, and its first pages become the thumbnails visitors see."""
     storage = request.app.state.storage
     async with request.app.state.engine.begin() as conn:
         await _staff(conn, user_id, admin=True)
@@ -119,6 +121,7 @@ async def publish_book(body: NewBook, request: Request, user_id: UserId):
             while (await conn.execute(text("select 1 from public.library_books where slug = :s"), {"s": slug})).first():
                 slug, n = f"{base}-{n}", n + 1
     pdf = await storage.download_private(series["pdf"], "exports")
+    pdf = await asyncio.to_thread(copyright_edge, pdf, library_line(series["title"], datetime.now(UTC).year))
     pages, count = await asyncio.to_thread(thumbnails, pdf)
     keys = []
     for i, data in enumerate(pages):

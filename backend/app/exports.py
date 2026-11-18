@@ -70,7 +70,8 @@ async def run_export(deps, job: dict) -> None:
 
     await asyncio.gather(*(fetch(*row) for row in assets))
     busy = {k: _json(v) for k, v in busy.items()}
-    await _inspect(deps, [a for a in noted if a not in busy and a in images], images, busy)
+    if not series["preview"]:  # the vision inspector is OpenRouter: a free preview keeps the cards where they are
+        await _inspect(deps, [a for a in noted if a not in busy and a in images], images, busy)
     cover_image, media_type = None, "image/png"
     if series["cover_key"]:
         try:

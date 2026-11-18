@@ -1,4 +1,5 @@
-"""The free book library on the landing, and the cover the user edits in the page editor."""
+"""The free book library (only admins list it; a shared link opens one book), and the cover the user edits in the
+page editor."""
 
 import json
 
@@ -48,9 +49,17 @@ async def test_an_admin_publishes_a_tome_as_a_free_book_downloaded_after_signing
     assert book["page_count"] == 2 and len(book["pages"]) == 2 and book["genre_label"] == "Cuento ilustrado"
     assert storage.uploads[("images", f"library/books/{slug}/0.jpg")][1] == "image/jpeg"
 
-    listed = (await client.get("/api/books")).json()["books"]
-    assert any(b["slug"] == slug for b in listed)
-    assert (await client.get(f"/api/books/{slug}")).json()["book"]["title"] == book["title"]
+    import pypdfium2
+
+    stamped = storage.uploads[("exports", f"library/books/{slug}.pdf")][0]
+    for page in pypdfium2.PdfDocument(stamped):  # the copyright along every page's edge
+        assert "Prohibida su venta" in page.get_textpage().get_text_range()
+
+    assert (await client.get("/api/admin/books", headers=bearer(key, owner))).status_code == 403  # admins only
+    listed = (await client.get("/api/admin/books", headers=bearer(key, admin))).json()["books"]
+    assert any(b["slug"] == slug and b["series_id"] == str(sid) for b in listed)
+    shared = (await client.get(f"/api/books/{slug}")).json()  # the shared link: that book, never the rest
+    assert shared["book"]["title"] == book["title"] and "related" not in shared
 
     visitor = await google_user(anonymous=True)
     assert (await client.post(f"/api/books/{slug}/download", headers=bearer(key, visitor))).status_code == 401

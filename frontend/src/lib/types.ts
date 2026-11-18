@@ -234,7 +234,7 @@ export type Block =
 export type PlatePlace = Partial<Record<'q' | 'f' | 'n0' | 'n1' | 'n2' | 'n3', { x: number; y: number }>>
 
 export const DIAGRAM_TYPES = [
-  'staff', 'timeline', 'cycle', 'bar_chart', 'number_line', 'fraction', 'clock', 'sizes', 'phases',
+  'staff', 'timeline', 'cycle', 'bar_chart', 'number_line', 'fraction', 'clock', 'sizes', 'phases', 'pattern',
   // literacy worksheets: also drawn by the backend, with their word pictures inside the SVG
   'syllable_chart', 'picture_words', 'syllable_cards', 'reading', 'dictation', 'fill_sentences', 'word_search',
   'classify', 'draw_frames', 'maze',

@@ -21,7 +21,8 @@ import { FirstVisit, Onboarding } from './routes/Onboarding'
 import { TomePage } from './routes/TomePage'
 import { Welcome } from './routes/Welcome'
 import { Library, LibraryPlate } from './routes/Library'
-import { Book, Books } from './routes/Books'
+import { AdminBooks } from './routes/AdminBooks'
+import { Book } from './routes/Books'
 import { License } from './routes/License'
 import { AdminActivity, AdminFeedback, AdminLicenses } from './routes/AdminAdopters'
 import { usePageViews } from './lib/track'
@@ -43,7 +44,7 @@ export default function App() {
           <PageViews />
           <Routes>
             <Route path="/" element={<Welcome />} />
-            <Route path="/libros" element={<Books />} />
+            <Route path="/libros" element={<Navigate to="/" replace />} />
             <Route path="/libros/:slug" element={<Book />} />
             <Route path="/laminas" element={<Library />} />
             <Route path="/laminas/:slug" element={<LibraryPlate />} />
@@ -61,6 +62,7 @@ export default function App() {
             <Route path="/app/perfil" element={authed(<Profile />)} />
             <Route path="/admin" element={authed(<AdminUsers />)} />
             <Route path="/admin/tomos" element={authed(<AdminTomes />)} />
+            <Route path="/admin/libros" element={authed(<AdminBooks />)} />
             <Route path="/admin/estilos" element={authed(<AdminStyles />)} />
             <Route path="/admin/analytics" element={authed(<Analytics />)} />
             <Route path="/admin/licencias" element={authed(<AdminLicenses />)} />

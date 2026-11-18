@@ -244,48 +244,6 @@ function plateShell(base: string, p: Plate) {
   return shell(base, `/laminas/${p.slug}`, title, description, body, [plateLd(p), crumbs], p.image_url)
 }
 
-type FreeBook = { slug: string; title: string; topic: string; audience: string; genre_label: string; page_count: number; pages: string[] }
-
-/** The published free books, from the API; the build goes on without them when it cannot answer (a cold start). */
-async function books(): Promise<FreeBook[]> {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const res = await fetch(`${API}/api/books`, { signal: AbortSignal.timeout(30_000) })
-      if (res.ok) return ((await res.json()) as { books: FreeBook[] }).books
-    } catch { /* asleep: try again */ }
-  }
-  console.warn('seo: the book library did not answer; no book pages this build')
-  return []
-}
-
-const bookLd = (b: FreeBook) => ({ '@context': 'https://schema.org', '@type': 'Book', name: b.title, url: `${SITE}/libros/${b.slug}`,
-  image: b.pages[0], inLanguage: 'es', numberOfPages: b.page_count, genre: b.genre_label, about: b.topic,
-  educationalLevel: b.audience || undefined, isAccessibleForFree: true, bookFormat: 'https://schema.org/EBook',
-  publisher: { '@type': 'Organization', name: NAME } })
-
-function booksShell(base: string, list: FreeBook[]) {
-  const title = `Libros gratis para imprimir | ${NAME}`
-  const description = 'Libros ilustrados y cuadernillos completos gratis, en español: hojéalos página por página y descárgalos en PDF para imprimir.'
-  const ld = [{ '@context': 'https://schema.org', '@type': 'CollectionPage', name: title, url: `${SITE}/libros`, description,
-    hasPart: list.map((b) => ({ '@type': 'Book', name: b.title, url: `${SITE}/libros/${b.slug}` })) }]
-  const body = `<h1>Libros completos para imprimir, gratis.</h1><p>${esc(description)}</p>
-<ul>${list.map((b) => `<li><a href="/libros/${b.slug}">${esc(b.title)}</a> · ${esc(b.genre_label)} · ${b.page_count} páginas</li>`).join('')}</ul>`
-  return shell(base, '/libros', title, description, body, ld, list[0]?.pages[0])
-}
-
-function bookShell(base: string, b: FreeBook) {
-  const title = `${b.title} — libro gratis para imprimir | ${NAME}`
-  const description = `${b.genre_label} de ${b.topic}${b.audience ? ` para ${b.audience}` : ''}: ${b.page_count} páginas en PDF, gratis para imprimir.`.slice(0, 158)
-  const crumbs = { '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [
-    { '@type': 'ListItem', position: 1, name: NAME, item: `${SITE}/` },
-    { '@type': 'ListItem', position: 2, name: 'Libros gratis', item: `${SITE}/libros` },
-    { '@type': 'ListItem', position: 3, name: b.title, item: `${SITE}/libros/${b.slug}` }] }
-  const body = `<p><a href="/libros">Libros gratis</a> › ${esc(b.topic)}</p><h1>${esc(b.title)}</h1>
-${b.pages.map((p, i) => `<img src="${esc(p)}" alt="${esc(b.title)}, ${i ? `página ${i + 1}` : 'portada'}" width="480" height="593">`).join('')}
-<p>${esc(description)}</p>`
-  return shell(base, `/libros/${b.slug}`, title, description, body, [bookLd(b), crumbs], b.pages[0])
-}
-
 const CSS = `:root{--bg:#fff;--text:#0c0a09;--muted:#6b6864;--surface:#f7f7f6;--border:#e7e5e2;--accent:#5b4cf0;--accent-soft:#eeecfe}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 Geist,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 a{color:inherit}main{max-width:980px;margin:0 auto;padding:0 16px 64px}
@@ -363,13 +321,7 @@ for (const p of library) {
   writeFileSync(new URL(`laminas/${p.slug}/index.html`, DIST), plateShell(base, p))
   pages.push({ path: `/laminas/${p.slug}`, images: [p.image_url] })
 }
-const shelf = await books()
-mkdirSync(new URL('libros/', DIST), { recursive: true })
-writeFileSync(new URL('libros/index.html', DIST), booksShell(base, shelf))
-for (const b of shelf) {
-  mkdirSync(new URL(`libros/${b.slug}/`, DIST), { recursive: true })
-  writeFileSync(new URL(`libros/${b.slug}/index.html`, DIST), bookShell(base, b))
-}
+// The free books are not indexed: only the team sees the library and each book is reached by the link it shares.
 writeFileSync(index, homeShell(base))
 
 const today = new Date().toISOString().slice(0, 10)
@@ -385,6 +337,7 @@ Disallow: /app
 Disallow: /admin
 Disallow: /auth
 Disallow: /api
+Disallow: /libros
 
 Sitemap: ${SITE}/sitemap.xml
 `)

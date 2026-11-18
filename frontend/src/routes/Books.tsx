@@ -1,51 +1,17 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router'
+import { useParams, useSearchParams } from 'react-router'
 import { useAuth } from '../auth/context'
 import { rememberReturnTo, saveWithGoogle, signInWithGoogle } from '../auth/google'
 import { errorText } from '../components/ErrorNote'
 import { api } from '../lib/apiClient'
-import { type FreeBook, useFreeBooks } from '../lib/queries'
+import type { FreeBook } from '../lib/queries'
 import { usePageTitle } from '../lib/seo'
 import { LibraryShell } from './Library'
 
 
-/** A book as a shelf card: its cover, with its first inner pages as miniatures beneath. */
-export function BookCard({ book }: { book: FreeBook }) {
-  const [cover, ...inside] = book.pages
-  return (
-    <Link to={`/libros/${book.slug}`} className="free-book">
-      {cover && <img src={cover} alt={`Portada de ${book.title}`} loading="lazy" width={480} height={593} />}
-      {inside.length > 0 && <span className="book-minis" aria-hidden="true">
-        {inside.slice(0, 3).map((p) => <img key={p} src={p} alt="" loading="lazy" />)}
-      </span>}
-      <span className="muted small">{book.genre_label} · {book.page_count} págs.{book.audience ? ` · ${book.audience}` : ''}</span>
-      <strong>{book.title}</strong>
-    </Link>
-  )
-}
-
-/** The free book library: whole books to browse page by page and download after signing in. */
-export function Books() {
-  usePageTitle('Libros gratis para imprimir | Jelyx Docs')
-  const { data, error } = useFreeBooks()
-  return (
-    <LibraryShell>
-      <section className="library-head">
-        <p className="eyebrow">Biblioteca gratuita</p>
-        <h1 className="display sm">Libros completos para imprimir, gratis.</h1>
-        <p className="lede">Libros ilustrados y cuadernillos hechos con Jelyx Docs. Hojéalos aquí, descárgalos en PDF y, si te gustan, crea el tuyo sobre tu tema.</p>
-      </section>
-      {error && <p className="error">{errorText(error, 'No pudimos cargar la biblioteca.')}</p>}
-      <ul className="library-grid books">
-        {data?.books.map((b) => <li key={b.id}><BookCard book={b} /></li>)}
-      </ul>
-      {data?.books.length === 0 && <p className="muted">Pronto habrá libros aquí.</p>}
-    </LibraryShell>
-  )
-}
-
-/** One book: its pages as miniatures, the free PDF for signed-in users and the way to make one's own. */
+/** One free book, reached by the link the team shares: its pages as miniatures, the PDF after signing up with
+ * Google (the page starts the download on the way back) and the way to make one's own. */
 export function Book() {
   const { slug = '' } = useParams()
   const [params] = useSearchParams()
@@ -55,7 +21,7 @@ export function Book() {
   const [open, setOpen] = useState(0)
   const { data, error } = useQuery({
     queryKey: ['free-book', slug],
-    queryFn: () => api.get<{ book: FreeBook; related: FreeBook[] }>(`/api/books/${slug}`),
+    queryFn: () => api.get<{ book: FreeBook }>(`/api/books/${slug}`),
   })
   const download = useMutation({
     mutationFn: () => api.post<{ url: string }>(`/api/books/${slug}/download`),
@@ -112,12 +78,6 @@ export function Book() {
             </div>
           </div>
         </article>
-      )}
-      {!!data?.related.length && (
-        <section>
-          <h2 className="l-h sm">Más libros gratis</h2>
-          <ul className="library-grid books">{data.related.map((b) => <li key={b.id}><BookCard book={b} /></li>)}</ul>
-        </section>
       )}
     </LibraryShell>
   )

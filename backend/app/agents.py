@@ -22,7 +22,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@6", "writer": "writer@10", "editor": "editor@2", "cover": "cover@6", "designer": "designer@4", "art": "art@5", "casting": "casting@2", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@4", "rewriter": "rewriter@1"}
+PROMPT_VERSION = {"architect": "architect@7", "writer": "writer@11", "editor": "editor@2", "cover": "cover@6", "designer": "designer@4", "art": "art@5", "casting": "casting@2", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@4", "rewriter": "rewriter@1", "picture_match": "picture_match@1"}
 
 
 @dataclass
@@ -108,6 +108,8 @@ diseñas el TOMO completo.
      vecino es un dinosaurio»), cuando el pedido habla de cuento, historia o aventura. Las secciones son los actos
      de la historia (1 a 3: inicio, problema y aventura, final) y sus key_points son los momentos, uno por página.
    - "coloring_book": libro de colorear; cada sección es una página con un dibujo de línea a página completa.
+     También los libros de mandalas, patrones, mosaicos o grafomotricidad (trazos para repasar): el código dibuja
+     esas páginas.
    - "worksheets": cuadernillo de fichas de actividades (repasar, colorear, unir, recortar, completar).
    - "tutorial": método o guía paso a paso para aprender una habilidad (instrumento, oficio, software…).
    - "lesson_series": secuencia didáctica de lecciones para docentes.
@@ -182,8 +184,12 @@ Catálogo de bloques (usa solo estos "type"):
   dinosaurios por largo, animales por altura. Datos reales, no inventados.
 - phases {phases: [{label, lit (0 a 1), waxing}], caption?}  ← fases de la Luna en orden: lit 0 nueva,
   0.5 cuarto, 1 llena; waxing true mientras crece.
-
-Diagramas: los bloques staff, timeline, cycle, bar_chart, number_line, fraction, clock, sizes, phases, keyboard, tracing y
+- pattern {kind: mandala|tiles|trace, motifs?: [petal|leaf|drop|heart|star|circle|dot|triangle|scallop|diamond]
+  (1 a 6, de dentro hacia fuera), strokes?: [zigzag|waves|loops|castle|arches|steps] (solo trace, 1 a 6),
+  symmetry?: 4-24, detail: simple|medium|detailed, caption?}  ← patrón vectorial a página completa: mandala o
+  mosaico para colorear, o trazos de grafomotricidad para repasar (trace). detail según la edad: preescolar
+  simple, primaria medium, mayores y adultos detailed
+Diagramas: los bloques staff, timeline, cycle, bar_chart, number_line, fraction, clock, sizes, phases, pattern, keyboard, tracing y
 letter_grid los dibuja el código: son exactos, con texto real y gratis. Úsalos siempre que sirvan y nunca pidas
 una image para un pentagrama, una línea de tiempo, un ciclo, una gráfica, una recta, fracciones, un reloj, un
 laberinto (usa maze) o una sopa de letras (usa word_search).
@@ -243,8 +249,10 @@ Reglas según el género:
   lo intenta, hay un giro y un final cálido; lo que aprende el niño (el tema del pedido) va dentro de la
   aventura, con datos reales y exactos. La última página de la última sección es «¿Sabías que…?»: una lámina
   con question «¿Sabías que…?», answer breve y 3 o 4 notes con datos reales del tema, sin narration.
-- coloring_book: un heading con el título y un image line_art size "full" por página; texto mínimo.
-- worksheets: cada ficha empieza con heading "Ficha N"; instrucciones cortas para niños; usa tracing,
+- coloring_book: un heading con el título y un image line_art size "full" por página; texto mínimo. Si el pedido
+  habla de mandalas, patrones, mosaicos, figuras geométricas o grafomotricidad, cada página es un heading y un
+  pattern (varía kind, motifs, symmetry y detail de una página a otra) en lugar de la image.
+- worksheets: cada ficha empieza con heading "Ficha N"; instrucciones cortas para niños; usa tracing, pattern trace,
   letter_grid, word_search, maze, image line_art, writing_lines y exercise; separa fichas con page_break.
 - método de lectoescritura (si se te indican letras): cada sección es una semana de fichas de su letra, cada
   una en su página (heading "Ficha N" + una ficha + page_break), en este orden: syllable_chart, tracing de la
@@ -976,3 +984,22 @@ async def _json_call(llm: LLM, messages: list[dict], model: type[T], *, temperat
         attempts.append(Attempt("ok", messages, completion))
         return AgentResult(value, attempts)
     raise AgentFailed("invalid_output", "El modelo devolvió contenido inválido dos veces.", attempts)
+
+
+class PictureMatch(BaseModel):
+    matches: bool
+
+
+PICTURE_MATCH_SYSTEM = """Decides if a picture found on the web shows what a children's book page needs, judging
+only by the picture's title and tags (you cannot see it). Say true only when the title or tags name the same thing
+(the same animal, object, place or scene, in any language); false when they name something else, are generic
+(«image», «photo», «drawing»), mention text, logos, a person's portrait or anything unfit for children.
+Answer only with json: {"matches": true|false}"""
+
+
+async def picture_match(llm: LLM, subject: str, title: str, tags: list[str]) -> AgentResult[PictureMatch]:
+    """The free Reviewer: DeepSeek reads a found picture's title and tags instead of a vision model looking at it."""
+    messages = [{"role": "system", "content": PICTURE_MATCH_SYSTEM},
+                {"role": "user", "content": json.dumps({"page_needs": subject, "title": title, "tags": tags[:20]},
+                                                       ensure_ascii=False)}]
+    return await _json_call(llm, messages, PictureMatch, temperature=0, max_tokens=20)
