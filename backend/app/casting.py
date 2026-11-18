@@ -552,9 +552,12 @@ SEED = [
     dict(name="Chispa", role="companion", archetype="robot amigable", palette=["#26C6DA", "#FFB300", "#ECEFF1"],
          signature="a light-bulb antenna that glows yellow",
          personality="Entusiasta; se ilumina cuando aprende algo.",
-         look="A small round turquoise robot the size of a cat, a glossy dome head with a dark screen face showing "
-              "two oval eyes and a smile, a light-bulb antenna glowing yellow, stubby arms with round hands, floats "
-              "on a small hover base. Simple rounded shapes."),
+         # Never compare it to an animal: painted from text alone (the free preview), "the size of a cat" gave it
+         # cat ears and a cat face.
+         look="A small round turquoise robot, knee-high to a child, a glossy dome head with no ears and a dark "
+              "screen face showing two oval eyes and a smile, a single light-bulb antenna glowing yellow on top, "
+              "stubby arms with round hands, floats on a small hover base. A machine, not an animal: no ears, fur, "
+              "whiskers or tail. Simple rounded shapes."),
     dict(name="Kiki", role="companion", archetype="patito escondido", palette=["#FFD600", "#FF6D00", "#FFFFFF"],
          signature="tiny, always hidden somewhere in the picture",
          personality="Tímido; se esconde en cada página para que lo encuentres.",
