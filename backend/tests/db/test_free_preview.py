@@ -98,14 +98,15 @@ async def test_the_preview_is_illustrated_like_the_real_tome_at_our_cost(raw_db,
     cover = json.loads(await raw_db.fetchval("select cover from public.series where id = $1", sid))
     assert cover["free"] is True and cover["spent_usd"] == 0 and len(free.calls) == 1
 
-    # The pages: written at our cost, then illustrated by the premium Illustrator, as the bought tome will be.
+    # The pages: written at our cost, then illustrated by the free Illustrator: OpenRouter paints only paid tomes.
     job = await run_next(engine, ScriptedLLM(json.dumps(PICTURED_SECTION)))
     assert job["kind"] == "lesson" and job["payload"] == {"preview": True}
-    job = await run_next(engine, ScriptedLLM(json.dumps(ART)), images=paid, storage=storage, vision=FakeVision())
+    painted = len(free.calls)
+    job = await run_next(engine, ScriptedLLM(json.dumps(ART)), images=paid, free_images=free, storage=storage,
+                         vision=FakeVision())
     assert job["kind"] == "illustration" and job["payload"] == {"preview": True}
-    assert paid.calls and {c["resolution"] for c in paid.calls} == {"1K"}  # drafts: thumbnails need no more
-    assert await raw_db.fetchval("select bool_and(draft) and not bool_or(library) from public.assets"
-                                 " where series_id = $1", sid)
+    assert not paid.calls and len(free.calls) > painted
+    assert await raw_db.fetchval("select bool_and(style_key = 'free') from public.assets where series_id = $1", sid)
     assert await raw_db.fetchval("select count(*) from public.credit_ledger l join public.memberships m using (org_id)"
                                  " where m.user_id = $1", anon) == 0  # on us
 
@@ -115,15 +116,15 @@ async def test_the_preview_is_illustrated_like_the_real_tome_at_our_cost(raw_db,
     assert await raw_db.fetchval("select count(*) from public.generation_jobs where series_id = $1 and kind = 'cover'"
                                  " and status = 'queued' and payload = '{}'", sid) == 1
 
-    # ...and the preview's 1K pictures go to print size for free and join the shared library.
+    # ...and the preview's free pictures come off its pages: the premium Illustrator paints them.
     await raw_db.execute("update public.generation_jobs set status = 'cancelled' where series_id = $1 and kind <> 'illustration'", sid)
-    job = await run_next(engine, ScriptedLLM(), images=paid, storage=storage, vision=FakeVision())
+    job = await run_next(engine, ScriptedLLM(json.dumps(ART)), images=paid, storage=storage, vision=FakeVision())
     assert job["kind"] == "illustration" and job["payload"] == {}
-    rows = await raw_db.fetch("select draft, library, storage_key, media_type from public.assets where series_id = $1", sid)
-    assert rows and all(not r["draft"] and r["library"] for r in rows)
-    for r in rows:
-        if r["media_type"] == "image/jpeg":
-            assert r["storage_key"].endswith("-print.jpg") and ("images", r["storage_key"]) in storage.uploads
+    assert paid.calls
+    used = await raw_db.fetch("""select a.style_key from public.lessons l, jsonb_array_elements(l.content_json->'blocks') b
+                                   join public.assets a on a.id = (b->>'asset_id')::uuid
+                                  where l.series_id = $1 and b->>'type' = 'image'""", sid)
+    assert used and all(r["style_key"] != "free" for r in used)
 
 
 async def test_a_bought_preview_keeps_its_pages_and_charges_only_what_is_new(raw_db, google_user, client, key, engine):

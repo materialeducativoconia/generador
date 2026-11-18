@@ -128,6 +128,12 @@ class Image(_Block):
     question: Short | None = None
     answer: Annotated[str, Field(max_length=500)] | None = None
     notes: list[Annotated[str, Field(min_length=1, max_length=140)]] = Field(default_factory=list, max_length=4)
+
+    @field_validator("notes")
+    @classmethod
+    def _distinct_notes(cls, notes: list[str]) -> list[str]:
+        """The Writer sometimes gives the same fact twice; a plate prints it once."""
+        return list(dict.fromkeys(n.strip() for n in notes))
     find: Short | None = None
     # A bleed plate's texts where the user dragged them in the page editor: "q" the question (or story) card and "f"
     # the find strip, which span the page (only y counts), "n0".."n3" each fact. Unset: the automatic layout.

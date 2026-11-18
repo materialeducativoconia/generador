@@ -22,7 +22,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@7", "writer": "writer@11", "editor": "editor@2", "cover": "cover@6", "designer": "designer@4", "art": "art@5", "casting": "casting@2", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@4", "rewriter": "rewriter@1", "picture_match": "picture_match@1"}
+PROMPT_VERSION = {"architect": "architect@7", "writer": "writer@12", "editor": "editor@2", "cover": "cover@6", "designer": "designer@4", "art": "art@5", "casting": "casting@2", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@4", "rewriter": "rewriter@1", "picture_match": "picture_match@1"}
 
 
 @dataclass
@@ -239,7 +239,10 @@ Reglas según el género:
   responde una pregunta que un niño curioso haría sobre el tema de la sección, de lo más simple a lo más
   asombroso. Si la sección tiene 3 páginas o más, la última es un «¡Pon a prueba lo que sabes!»: un heading,
   de 3 a 5 exercise (multiple_choice o true_false, con answer) y un draw_frames, precedido de un page_break.
-  Para niños de preescolar las respuestas son de 1 o 2 frases muy cortas. Si la lámina lleva inset, usa como
+  Para niños de preescolar las respuestas son de 1 o 2 frases muy cortas. Un ilustrador no sabe contar: si el
+  tema son números o cantidades, el subject nunca fija cuántas cosas hay («diez galletas», «once botones»); la
+  cantidad exacta va en un counting o picture_math en la página «¡Pon a prueba lo que sabes!» y la lámina
+  muestra la escena (contar con los dedos, una tienda, un mercado) sin números que verificar. Si la lámina lleva inset, usa como
   máximo 2 notes.
 - story_book (cuento): cada página es una image size "plate" con "narration": el texto de esa página, para leer
   en voz alta (preescolar: 1 o 2 frases cortas; primaria: 2 a 4), con ritmo, una frase que se repite como

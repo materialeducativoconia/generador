@@ -55,7 +55,7 @@ class Deps:
     edit: bool = True  # the Editor proofreads each section after the Writer
     finder: Any = None  # app.free_images.Finder (openly licensed pictures); the free preview's first stop
     free_images: Any = None  # app.free_images.WorkersAI; None leaves the preview with what the Finder found
-    preview_paint: bool = True  # a preview picture the shared library lacks: painted at 1K (True) or left for later
+    preview_paint: bool = True  # a preview picture the shared library lacks: painted free (True) or left for later
 
 
 class JobFailed(Exception):
@@ -785,6 +785,34 @@ async def _is_preview(conn, series_id) -> bool:
         "select preview and outline_approved_at is null from public.series where id = :s"), {"s": series_id})).scalar_one())
 
 
+async def _drop_free_pictures(deps: Deps, series, lessons) -> list:
+    """A bought preview: the free pictures its plates and drawings wore (FLUX or the web) come off, so the premium
+    Illustrator paints them; worksheet icons stay. Returns the lessons as they are now."""
+    ids = {b["asset_id"] for lesson in lessons for b in (_json(lesson["content_json"]) or {}).get("blocks", [])
+           if b.get("type") == "image" and b.get("asset_id")}
+    if not ids:
+        return lessons
+    async with deps.engine.begin() as conn:
+        free = set((await conn.execute(text(
+            "select id::text from public.assets where id::text = any(:ids) and style_key = :fs"),
+            {"ids": list(ids), "fs": FREE_STYLE})).scalars())
+        if not free:
+            return lessons
+        out = []
+        for lesson in lessons:
+            content = _json(lesson["content_json"]) or {}
+            dropped = False
+            for b in content.get("blocks", []):
+                if b.get("type") == "image" and b.get("asset_id") in free:
+                    b.pop("asset_id")
+                    dropped = True
+            if dropped:
+                await conn.execute(text("update public.lessons set content_json = cast(:c as jsonb) where id = cast(:id as uuid)"),
+                                   {"id": lesson["id"], "c": json.dumps(content)})
+            out.append({**lesson, "content_json": content})
+    return out
+
+
 async def _upscale_drafts(deps: Deps, series) -> None:
     """A bought preview: its 1K pictures go to print size (free, local) and, without a brand, join the library."""
     async with deps.engine.connect() as conn:
@@ -808,10 +836,14 @@ async def _upscale_drafts(deps: Deps, series) -> None:
 
 
 async def _from_library(conn, r: "ImageRequest", topic: str):
-    """The shared library's closest premium picture of the same kind and shape, or None."""
+    """The shared library's closest premium picture of the same kind and shape, or None. Only from a tome on the same
+    topic, or the very same scene: long scene descriptions share their generic words («escena», «salón infantil»,
+    «alfombra de colores»), and a counting book's plates came out of a tome about talking to a robot."""
     return (await conn.execute(text(
         """select id from public.assets
             where library and kind = :k and aspect = :a and extensions.similarity(subject_norm, :sn) > 0.3
+              and (extensions.similarity(coalesce(topic_norm, ''), :tn) > 0.35
+                   or extensions.similarity(subject_norm, :sn) > 0.6)
             order by extensions.similarity(subject_norm, :sn) + 0.5 * extensions.similarity(coalesce(topic_norm, ''), :tn)
                      desc, use_count desc limit 1"""),
         {"k": r.kind, "a": ASPECT.get(r.size, "3:4"), "sn": normalize_subject(r.subject), "tn": topic})).scalar_one_or_none()
@@ -824,9 +856,10 @@ async def _illustration(deps: Deps, job: dict) -> None:
         lessons = (await conn.execute(text(
             "select id::text, position, content_json from public.lessons where series_id = :s order by position"
         ), {"s": job["series_id"]})).mappings().all()
-    preview = bool(job["payload"].get("preview"))  # a visitor's preview: the shared library first, then 1K drafts
+    preview = bool(job["payload"].get("preview"))  # a visitor's preview: the shared library, then the free pictures
     if not preview:
         await _upscale_drafts(deps, series)
+        lessons = await _drop_free_pictures(deps, series, lessons)
     requests = _picture_requests(lessons)
     free = bool(job["payload"].get("free"))  # the free preview's sample: library, web and free Illustrator only
     if free:
@@ -872,7 +905,7 @@ async def _illustration(deps: Deps, job: dict) -> None:
         async with deps.engine.begin() as conn:
             await _succeed(conn, job)
         return
-    if free:
+    if free or preview:  # OpenRouter paints only paid tomes: a visitor's preview gets FLUX or an open picture
         await _free_pictures(deps, job, series, design, unique)
         return
     if deps.images is None:

@@ -640,11 +640,15 @@ async def generate_lessons(series_id: uuid.UUID, body: Generate, request: Reques
                       outline_approved_at = coalesce(outline_approved_at, now()) where id = :s"""
         ), {"s": series_id})
         await conn.execute(text("select public.refresh_series_status(:s)"), {"s": series_id})  # nothing left: ready
-        # The preview's 1K pictures go to print size now (the illustration job upscales them first).
+        # The preview's 1K pictures go to print size now (the illustration job upscales them first), and its free
+        # pictures (FLUX or the web) come off so the premium Illustrator paints them.
         await conn.execute(text(
             """insert into public.generation_jobs (user_id, series_id, kind, status, payload, max_attempts)
                select :u, :s, 'illustration', 'queued', '{}', 3
-                where exists (select 1 from public.assets where series_id = :s and draft)
+                where (exists (select 1 from public.assets where series_id = :s and draft)
+                       or exists (select 1 from public.lessons l, jsonb_array_elements(l.content_json->'blocks') b
+                                    join public.assets a on a.id::text = b->>'asset_id'
+                                   where l.series_id = :s and b->>'type' = 'image' and a.style_key = 'free'))
                   and not exists (select 1 from public.generation_jobs where series_id = :s and kind = 'illustration'
                                      and status in ('queued', 'running'))"""), {"u": user_id, "s": series_id})
         return {"series": {"id": str(series_id), "status": "generating"}, "jobs": jobs}
