@@ -109,8 +109,12 @@ class SceneCoder:
             messages = [*messages, {"role": "assistant", "content": reply}, {"role": "user", "content": FIX.format(why=why)}]
         raise UpstreamError("invalid_output", f"Claude no devolvió una escena válida ({why}).")
 
-    async def _ask(self, model: str, messages: list[dict]) -> tuple[str, float]:
-        body = {"model": model, "messages": messages, "temperature": 0.8, "max_tokens": 8000, "usage": {"include": True}}
+    async def ask(self, model: str, messages: list[dict], max_tokens: int = 8000) -> tuple[str, float]:
+        """Claude's plain reply and what it cost."""
+        return await self._ask(model, messages, max_tokens)
+
+    async def _ask(self, model: str, messages: list[dict], max_tokens: int = 8000) -> tuple[str, float]:
+        body = {"model": model, "messages": messages, "temperature": 0.8, "max_tokens": max_tokens, "usage": {"include": True}}
         try:
             async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as http:
                 response = await http.post("https://openrouter.ai/api/v1/chat/completions", json=body,
@@ -141,3 +145,51 @@ def fill(template: str, **values) -> str:
     for key, value in values.items():
         template = template.replace("{" + key + "}", str(value))
     return template
+
+
+# «Generar prompt para Claude»: the brief a motion designer would want, from the tome and a line of idea. It works
+# pasted here («Pegar prompt para Claude») or in Claude Code / claude.ai with Remotion.
+PROMPT_WRITER = """Eres director creativo de Jelyx (docs.jelyx.app), una app que convierte el tema de una clase en un
+libro ilustrado en PDF (con personajes, actividades y solucionario) para docentes y familias de habla hispana.
+
+Escribe un PROMPT para Claude, que hará con Remotion (React) un video de motion graphics premium. El prompt debe
+bastar solo, sin más contexto, y decir en español:
+1. Objetivo y público del video, y la idea central en una frase.
+2. Formato ({format}, {width}×{height}, 30 fps) y duración ({duration} s).
+3. Estilo visual: paleta (fondo, texto, acento: {colors}), tipografía grande y bold, ritmo, tipo de transiciones,
+   referencias (anuncios de Apple, Linear, Duolingo). Nada genérico.
+4. El guion escena por escena: para cada una, segundos, lo que dice la voz en off (natural, de tú, corta), el texto en
+   pantalla (pocas palabras) y qué se ve y cómo se mueve (metáforas visuales, iconos, números que cuentan,
+   diagramas). Marca con [libro] las escenas que deben mostrar el libro real (su portada o sus páginas).
+5. Cierre: «Pruébalo gratis en docs.jelyx.app».
+6. Reglas técnicas: todo animado desde useCurrentFrame con spring/interpolate; nada de CSS animations; sin blur ni 3D.
+
+Devuelve solo el prompt, sin explicaciones antes ni después."""
+
+BOARD_SYSTEM = """Eres el director de los videos de Jelyx (docs.jelyx.app: un tema de clase → un libro ilustrado en PDF).
+El equipo te da un prompt (lo que quiere ver) y tú armas el storyboard. Después, un motion designer programará a
+medida las escenas que marques con "tailor": true; las demás usan las escenas de la app que ya existen.
+
+Tipos de escena (type):
+{scenes}
+
+Reglas:
+- Sigue el prompt: su guion, su tono y su orden. Si trae voz en off, úsala tal cual (puedes acortarla).
+- Duración total cercana a {duration} s; cada escena de 1.5 a 12 s; la voz cabe en su escena (≈ 2.6 palabras por s).
+- Las escenas de motion graphics, ideas, metáforas, datos y textos animados: type "motion" (o el más parecido) con
+  "tailor": true. Las que muestran el libro real (cover, pages, pdf, plan, characters, formats) o la app real:
+  "tailor": false, porque su plantilla usa las imágenes reales.
+- Termina con type "cta" (caption «Pruébalo gratis»).
+- caption: pocas palabras (máx. 70 caracteres); voice: máx. 300; text solo para los tipos que lo usan.
+- look: "claro", "oscuro", "color" o "noche"; post: el texto para publicar (con 2-4 hashtags).
+
+Responde solo JSON:
+{"title": "...", "look": "noche", "post": "...", "scenes": [{"type": "motion", "seconds": 4, "caption": "...", "voice": "...", "text": "", "capture": "", "focus": 0, "tailor": true}]}"""
+
+
+def json_of(text: str) -> dict:
+    """The JSON object in a reply (Claude may fence it or say a word before it)."""
+    try:
+        return json.loads(text[text.index("{"):text.rindex("}") + 1])
+    except ValueError as exc:
+        raise UpstreamError("invalid_output", "Claude no devolvió el storyboard en JSON.") from exc

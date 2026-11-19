@@ -14,12 +14,12 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import text
 
 from app.agents import AgentFailed
-from app.coder import CHANGE, SYSTEM, USER, fill, label
+from app.coder import BOARD_SYSTEM, CHANGE, PROMPT_WRITER, SYSTEM, USER, fill, json_of, label
 from app.api.admin import _staff
 from app.api.deps import current_user_id
 from app.errors import ApiError
 from app.llm import UpstreamAuthError, UpstreamError
-from app.marketing import (MUSIC, STRUCTURES, Storyboard, VideoScript, director, pick_music, pick_structure, script_director,
+from app.marketing import (MUSIC, SCENE_LIST, STRUCTURES, Scene, Storyboard, VideoScript, director, pick_music, pick_structure, script_director,
                            tidy_storyboard, video_script)
 from app.render import GENRE_LABEL
 from app.voice import seconds
@@ -61,15 +61,12 @@ class NewVideo(BaseModel):
     script: dict | None = None  # a storyboard already proposed and reviewed: saved as it is, without asking again
     script_text: str | None = Field(default=None, max_length=4000)  # «Desde mi guion»: the team's own words
     music: str = "auto"  # a key of MUSIC, «auto» (the kind's) or «none»
+    claude_prompt: str | None = Field(default=None, max_length=8000)  # «Pegar prompt para Claude»: Claude directs it
+    model: str = ""  # the Claude model of the prompt modes; empty: the first configured
 
 
-async def _write(request: Request, user_id: uuid.UUID, body: NewVideo) -> Storyboard | VideoScript:
-    """DeepSeek directs the video of a tome (a few seconds); nothing is saved."""
-    llm = request.app.state.llm
-    if llm is None:
-        raise ApiError(503, "unavailable", "El guionista no está configurado.")
-    if body.structure != "auto" and body.structure not in STRUCTURES:
-        raise ApiError(422, "invalid_request", "Esa estructura no existe.")
+async def _context(request: Request, user_id: uuid.UUID, series_id: uuid.UUID):
+    """The tome a video shows, the last storyboards and the real screenshots; 404 for a tome that does not exist."""
     async with request.app.state.engine.connect() as conn:
         await _staff(conn, user_id)
         series = (await conn.execute(text(
@@ -82,7 +79,7 @@ async def _write(request: Request, user_id: uuid.UUID, body: NewVideo) -> Storyb
                         order by l.position limit 1) as sample,
                       (select string_agg(c->>'name', ', ') from jsonb_array_elements(
                           case when jsonb_typeof(s."cast") = 'array' then s."cast" else '[]'::jsonb end) c) as cast_names
-                 from public.series s where id = :s"""), {"s": body.series_id})).mappings().first()
+                 from public.series s where id = :s"""), {"s": series_id})).mappings().first()
         # The last storyboards, so the next one is told another way.
         recent = (await conn.execute(text(
             """select script->>'title' as title, script->>'structure' as structure, script->>'kind' as kind,
@@ -96,6 +93,19 @@ async def _write(request: Request, user_id: uuid.UUID, body: NewVideo) -> Storyb
                     ))).mappings().all()]
     if series is None:
         raise ApiError(404, "not_found", "Ese tomo no existe.")
+    return series, recent, captures
+
+
+async def _write(request: Request, user_id: uuid.UUID, body: NewVideo) -> Storyboard | VideoScript:
+    """DeepSeek (or Claude, from a prompt) directs the video of a tome; nothing is saved."""
+    if body.template == "storyboard" and (body.claude_prompt or "").strip():
+        return await _claude_board(request, user_id, body)
+    llm = request.app.state.llm
+    if llm is None:
+        raise ApiError(503, "unavailable", "El guionista no está configurado.")
+    if body.structure != "auto" and body.structure not in STRUCTURES:
+        raise ApiError(422, "invalid_request", "Esa estructura no existe.")
+    series, recent, captures = await _context(request, user_id, body.series_id)
     book = dict(title=series["title"], topic=series["topic"], audience=series["audience"], sections=list(series["sections"]))
     book_kind = GENRE_LABEL.get(series["genre"] or "", "Libro")
     try:
@@ -124,6 +134,107 @@ async def _write(request: Request, user_id: uuid.UUID, body: NewVideo) -> Storyb
     return result.value
 
 
+def _coder_model(request: Request, model: str):
+    coder = request.app.state.coder
+    if coder is None or not coder.models:
+        raise ApiError(503, "unavailable", "Claude no está configurado (OPENROUTER_API_KEY).")
+    model = model or coder.models[0]
+    if model not in coder.models:
+        raise ApiError(422, "invalid_request", "Ese modelo no está disponible.")
+    return coder, model
+
+
+def _book_facts(series, captures) -> str:
+    facts = (f"Libro que se muestra: {series['title']} ({GENRE_LABEL.get(series['genre'] or '', 'Libro')})\n"
+             f"Tema: {series['topic']}\nPara: {series['audience'] or 'sin indicar'}\n"
+             f"Secciones: {'; '.join(list(series['sections'])[:8]) or 'sin secciones'}\n"
+             + (f"Personajes: {series['cast_names']}\n" if series["cast_names"] else "Sin personajes fijos.\n")
+             + (f"Una página de ejemplo: {series['sample']}\n" if series["sample"] else ""))
+    if captures:
+        facts += ("Capturas reales de la app para type screen (id: qué muestra):\n"
+                  + "\n".join(f"- {c['id']}: {c['name']} {c['description'] or ''}".rstrip() for c in captures) + "\n")
+    return facts
+
+
+async def _claude(coder, model: str, messages: list[dict], max_tokens: int) -> tuple[str, float]:
+    try:
+        return await coder.ask(model, messages, max_tokens)
+    except UpstreamAuthError as exc:
+        raise ApiError(503, "unavailable", "OpenRouter rechazó la clave o no tiene saldo.") from exc
+    except UpstreamError as exc:
+        log.warning("claude failed: %s", exc)
+        raise ApiError(502, "upstream_error", f"{exc} Inténtalo de nuevo.") from exc
+
+
+class PromptAsk(BaseModel):
+    series_id: uuid.UUID
+    ask: str = Field(default="", max_length=500)
+    kind: Literal["marketing", "explainer", "tutorial", "motion"] = "motion"
+    format: Format = "9:16"
+    duration: Literal[15, 30, 45, 60] = 30
+    model: str = ""
+
+
+@router.post("/api/admin/marketing/claude-prompt")
+async def claude_prompt(body: PromptAsk, request: Request, user_id: UserId):
+    """«Generar prompt para Claude»: the full brief of a motion-graphics video, to paste here or in Claude Code."""
+    coder, model = _coder_model(request, body.model)
+    series, _, captures = await _context(request, user_id, body.series_id)
+    width, height = SIZES[body.format]
+    system = fill(PROMPT_WRITER, format=body.format, width=width, height=height, duration=body.duration,
+                  colors="fondo #08071a o #ffffff, texto #ffffff o #0c0a09, acento #5b4cf0 / #8f7dff, cálido #ffd166")
+    user = (f"Tipo de video: {body.kind}\nIdea del equipo: {body.ask.strip() or 'muestra lo que hace la app con este libro'}\n"
+            + _book_facts(series, captures))
+    prompt, cost = await _claude(coder, model, [{"role": "system", "content": system}, {"role": "user", "content": user}], 4000)
+    return {"prompt": prompt.strip()[:8000], "model": model, "cost": cost}
+
+
+# Scenes drawn from the real tome or app (its cover, pages, characters, screenshots): never replaced by code.
+REAL_SCENES = {"cover", "pages", "pdf", "plan", "characters", "formats", "screen", "compose", "editor_open", "editor_move",
+               "editor_facts", "editor_repaint", "editor_cover", "editor_save"}
+
+
+async def _claude_board(request: Request, user_id: uuid.UUID, body: NewVideo) -> Storyboard:
+    """«Pegar prompt para Claude»: Claude reads the team's prompt and directs the storyboard; the scenes it marks are
+    then programmed a medida (request.state.tailor says which)."""
+    coder, model = _coder_model(request, body.model)
+    series, _, captures = await _context(request, user_id, body.series_id)
+    known = {c["id"]: len(c["focus"]) for c in captures}
+    system = BOARD_SYSTEM.replace("{scenes}", SCENE_LIST).replace("{duration}", str(body.duration))
+    user = _book_facts(series, captures) + f"\nFormato: {body.format}\n\nPrompt del equipo:\n{body.claude_prompt.strip()}"
+    reply, _ = await _claude(coder, model, [{"role": "system", "content": system}, {"role": "user", "content": user}], 6000)
+    data = json_of(reply)
+    raw = data.get("scenes") if isinstance(data.get("scenes"), list) else []
+    scenes, tailor = [], []
+    for sc in raw[:24]:
+        if not isinstance(sc, dict):
+            continue
+        sc = dict(sc)
+        wants = bool(sc.pop("tailor", False))
+        if sc.get("type") == "screen" and sc.get("capture") not in known:
+            sc["type"], wants = "motion", True
+        try:
+            scene = Scene.model_validate({**sc, "seconds": min(12, max(1.5, float(sc.get("seconds") or 4)))})
+        except (ValidationError, TypeError, ValueError):
+            scene, wants = Scene(type="motion", caption=str(sc.get("caption") or "")[:70], voice=str(sc.get("voice") or "")[:300]), True
+        if wants and scene.type != "cta" and scene.type not in REAL_SCENES:
+            tailor.append(len(scenes))
+        scenes.append(scene)
+    if not scenes:
+        raise ApiError(502, "upstream_error", "Claude no devolvió escenas; inténtalo de nuevo.")
+    try:
+        board = Storyboard.model_validate({"kind": body.kind, "duration": body.duration, "source": "ask", "structure": "claude",
+                                           "look": data.get("look") if data.get("look") in LOOK_COLORS else "noche",
+                                           "title": str(data.get("title") or series["title"])[:80], "post": str(data.get("post") or ""),
+                                           "music": pick_music(body.music, body.kind), "scenes": [sc.model_dump() for sc in scenes]})
+    except ValidationError as exc:
+        raise ApiError(502, "upstream_error", "Claude devolvió un storyboard incompleto; inténtalo de nuevo.") from exc
+    marked = [board.scenes[i] for i in tailor]
+    board = tidy_storyboard(board)  # may open on a title or drop a call to action in the middle: found by identity
+    request.state.tailor = [i for i, sc in enumerate(board.scenes) if any(sc is m for m in marked)]
+    return board
+
+
 @router.get("/api/admin/marketing/structures")
 async def structures(request: Request, user_id: UserId):
     async with request.app.state.engine.connect() as conn:
@@ -137,7 +248,8 @@ async def structures(request: Request, user_id: UserId):
 @router.post("/api/admin/marketing/storyboard")
 async def propose(body: NewVideo, request: Request, user_id: UserId):
     """A storyboard to look at, change or ask again before the video exists."""
-    return {"script": (await _write(request, user_id, body.model_copy(update={"template": "storyboard"}))).model_dump()}
+    script = await _write(request, user_id, body.model_copy(update={"template": "storyboard"}))
+    return {"script": script.model_dump(), "tailor": getattr(request.state, "tailor", [])}
 
 
 @router.post("/api/admin/marketing/videos", status_code=201)
@@ -180,12 +292,7 @@ class SceneAsk(BaseModel):
 @router.post("/api/admin/marketing/scene-code")
 async def scene_code(body: SceneAsk, request: Request, user_id: UserId):
     """«Escena a medida»: Claude programs one scene as a Remotion component; nothing is saved (the board keeps it)."""
-    coder = request.app.state.coder
-    if coder is None or not coder.models:
-        raise ApiError(503, "unavailable", "Claude no está configurado (OPENROUTER_API_KEY).")
-    model = body.model or coder.models[0]
-    if model not in coder.models:
-        raise ApiError(422, "invalid_request", "Ese modelo no está disponible.")
+    coder, model = _coder_model(request, body.model)
     async with request.app.state.engine.connect() as conn:
         await _staff(conn, user_id)
     try:

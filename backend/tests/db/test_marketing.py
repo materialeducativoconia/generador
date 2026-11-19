@@ -404,3 +404,43 @@ async def test_claude_programs_a_scene_a_medida_and_a_forbidden_reply_is_asked_a
     assert wrong.status_code == 422
     assert problem("function Scene(){ fetch('/x') }") and problem("function Scene(){ return Math.random() }")
     assert problem(good) is None
+
+
+async def test_claude_writes_a_prompt_and_directs_a_video_from_a_pasted_one(raw_db, google_user, client, key,
+                                                                            engine):  # noqa: F811
+    import httpx
+
+    from app.coder import SceneCoder
+
+    owner = await google_user()
+    sid = await _written(raw_db, client, key, engine, owner)
+    admin = await google_user(email="prompt@jelyx.test")
+    await raw_db.execute("update public.profiles set platform_role = 'admin' where id = $1", admin)
+    board = {"title": "Tu domingo libre", "look": "noche", "post": "Listo. #docentes", "scenes": [
+        {"type": "motion", "seconds": 5, "caption": "3 horas cada domingo", "voice": "¿Otro domingo armando material?", "tailor": True},
+        {"type": "pages", "seconds": 4, "caption": "Tu libro, listo", "voice": "Tu libro ilustrado.", "tailor": True},
+        {"type": "screen", "seconds": 4, "caption": "Así de fácil", "capture": "no-existe", "tailor": False},
+        {"type": "cta", "seconds": 3, "caption": "Pruébalo gratis", "tailor": True}]}
+    replies = ["PROMPT: un video de 30 s sobre domingos libres…", "Aquí va:\n```json\n" + json.dumps(board) + "\n```"]
+    asked = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        asked.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": replies[len(asked) - 1]}}], "usage": {"cost": 0.02}})
+
+    client._transport.app.state.coder = SceneCoder("k", ["anthropic/claude-opus-5.5", "anthropic/claude-sonnet-5.5"],
+                                                   transport=httpx.MockTransport(answer))
+    made = await client.post("/api/admin/marketing/claude-prompt", headers=bearer(key, admin),
+                             json={"series_id": str(sid), "ask": "domingos libres", "model": "anthropic/claude-sonnet-5.5"})
+    assert made.status_code == 200, made.text
+    assert made.json()["prompt"].startswith("PROMPT") and asked[0]["model"] == "anthropic/claude-sonnet-5.5"
+    assert "domingos libres" in asked[0]["messages"][1]["content"] and "1080×1920" in asked[0]["messages"][0]["content"]
+
+    out = await client.post("/api/admin/marketing/storyboard", headers=bearer(key, admin), json={
+        "series_id": str(sid), "kind": "motion", "duration": 30, "claude_prompt": made.json()["prompt"], "music": "none"})
+    assert out.status_code == 200, out.text
+    script, tailor = out.json()["script"], out.json()["tailor"]
+    assert [s["type"] for s in script["scenes"]] == ["motion", "pages", "motion", "cta"]  # an unknown capture: motion
+    assert tailor == [0, 2]  # never the real book's pages, nor the call to action
+    assert script["structure"] == "claude" and abs(sum(s["seconds"] for s in script["scenes"]) - 30) < 0.1
+    assert "PROMPT: un video" in asked[1]["messages"][1]["content"] and "motion" in asked[1]["messages"][0]["content"]

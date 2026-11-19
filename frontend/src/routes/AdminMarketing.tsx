@@ -1,6 +1,6 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Player } from '@remotion/player'
-import { createContext, useContext, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { Navigate } from 'react-router'
 import { AppShell } from '../components/AppShell'
 import { errorText } from '../components/ErrorNote'
@@ -50,6 +50,20 @@ const SCRIPT_HINT = `¿Otro domingo armando material?
 Descárgalo en PDF y llévalo a tu salón.
 
 [cierre] Pruébalo gratis en docs.jelyx.app`
+type Mode = 'script' | 'ask' | 'gen' | 'paste'
+const MODES: Record<Mode, string> = { script: 'Desde mi guion', ask: 'Pedir una idea', gen: 'Generar prompt para Claude', paste: 'Pegar prompt para Claude' }
+
+function Durations({ duration, setDuration }: { duration: 15 | 30 | 45 | 60; setDuration: (d: 15 | 30 | 45 | 60) => void }) {
+  return (
+    <fieldset className="field"><legend>Duración</legend>
+      <div className="segmented-inline">
+        {([15, 30, 45, 60] as const).map((d) => (
+          <button key={d} type="button" className={duration === d ? 'chip on' : 'chip'} onClick={() => setDuration(d)}>{d} s</button>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
 const headline = (v: Video) => v.template === 'storyboard' ? v.script.title : v.script.hook
 
 /** The tome as the video shows it: its cover, its first pictures and its sections. */
@@ -98,7 +112,11 @@ export function AdminMarketing() {
   const [kind, setKind] = useState<VideoKind>('tutorial')
   const [duration, setDuration] = useState<15 | 30 | 45 | 60>(30)
   const [structure, setStructure] = useState('auto')
-  const [mode, setMode] = useState<'ask' | 'script'>('script')
+  const [mode, setMode] = useState<Mode>('script')
+  const [claudePrompt, setClaudePrompt] = useState('')
+  const [made, setMade] = useState<{ prompt: string; cost: number } | null>(null)  // «Generar prompt para Claude»
+  const [autoTailor, setAutoTailor] = useState<number[]>([])  // the scenes Claude marked to program a medida
+  const [proposal, setProposal] = useState(0)  // each new proposal is a new Draft
   const [scriptText, setScriptText] = useState('')
   const [music, setMusic] = useState('auto')
   const [draft, setDraft] = useState<Storyboard | null>(null)  // proposed, seen and changed before the video exists
@@ -113,14 +131,23 @@ export function AdminMarketing() {
   const setModel = (m: string) => { setModelState(m); try { localStorage.setItem(MODEL_KEY, m) } catch { /* private window */ } }
   const tailorFor = (f: Format, book: string): Tailoring => ({ coders, model: coders.some((c) => c.key === model) ? model : coders[0]?.key ?? '', setModel, format: f, book })
   const captures = useCaptures(staff)
+  const titles: Record<string, string> = Object.fromEntries((tomes.data?.series ?? []).map((t) => [t.id, t.title]))
   const shelf = useShelf(tomes.data?.series ?? [])
   const ways = (structures.data?.structures ?? []).filter((st) => st.kinds.includes(kind))
   const fromScript = mode === 'script'
-  const asked = { series_id: seriesId, format, ask: fromScript ? null : ask.trim() || null, kind, duration, music,
-    script_text: fromScript ? scriptText.trim() || null : null }
+  const pasted = mode === 'paste'
+  const tailoring = tailorFor(format, titles[seriesId] ?? '')
+  const asked = { series_id: seriesId, format, ask: mode === 'ask' ? ask.trim() || null : null, kind, duration, music,
+    script_text: fromScript ? scriptText.trim() || null : null, claude_prompt: pasted ? claudePrompt.trim() || null : null,
+    model: tailoring.model }
   const propose = useMutation({
-    mutationFn: () => api.post<{ script: Storyboard }>('/api/admin/marketing/storyboard', { ...asked, structure }),
-    onSuccess: ({ script }) => { setDraft(script); setOpen(null) },
+    mutationFn: () => api.post<{ script: Storyboard; tailor?: number[] }>('/api/admin/marketing/storyboard', { ...asked, structure }),
+    onSuccess: ({ script, tailor }) => { setDraft(script); setAutoTailor(tailor ?? []); setProposal((n) => n + 1); setOpen(null) },
+  })
+  const writePrompt = useMutation({
+    mutationFn: () => api.post<{ prompt: string; cost: number }>('/api/admin/marketing/claude-prompt',
+      { series_id: seriesId, ask: ask.trim(), kind, format, duration, model: tailoring.model }),
+    onSuccess: setMade,
   })
   const create = useMutation({
     mutationFn: () => api.post<{ video: Video }>('/api/admin/marketing/videos', { ...asked, script: draft }),
@@ -138,7 +165,6 @@ export function AdminMarketing() {
   })
   if (me && !staff) return <Navigate to="/app" replace />
   const current = videos.data?.videos.find((v) => v.id === open)
-  const titles = Object.fromEntries((tomes.data?.series ?? []).map((t) => [t.id, t.title]))
 
   return (
     <AppShell>
@@ -173,11 +199,38 @@ export function AdminMarketing() {
         </fieldset>
         <fieldset className="field"><legend>¿Cómo lo armamos?</legend>
           <div className="segmented-inline">
-            <button type="button" className={fromScript ? 'chip on' : 'chip'} onClick={() => setMode('script')}>Desde mi guion</button>
-            <button type="button" className={fromScript ? 'chip' : 'chip on'} onClick={() => setMode('ask')}>Pedir una idea</button>
+            {(Object.keys(MODES) as Mode[]).map((m) => (
+              <button key={m} type="button" className={mode === m ? 'chip on' : 'chip'} onClick={() => setMode(m)}>{MODES[m]}</button>
+            ))}
           </div>
         </fieldset>
-        {fromScript ? (
+        {(mode === 'gen' || pasted) && <TailorContext.Provider value={tailoring}>
+          {tailoring.coders.length ? <label className="field"><span>Modelo de Claude</span><ModelPicker /></label>
+            : <p className="error small">Claude no está configurado en el servidor (OPENROUTER_API_KEY).</p>}
+        </TailorContext.Provider>}
+        {mode === 'gen' ? <>
+          <label className="field"><span>Tu idea, en una línea</span>
+            <textarea value={ask} onChange={(e) => setAsk(e.target.value)} maxLength={500} rows={2} placeholder={KIND_HINT[kind]} /></label>
+          <Durations duration={duration} setDuration={setDuration} />
+          <button className="primary" onClick={() => writePrompt.mutate()} disabled={!seriesId || writePrompt.isPending || !tailoring.coders.length}>
+            {writePrompt.isPending ? 'Claude escribe el prompt…' : made ? 'Generar otro prompt' : 'Generar prompt para Claude'}</button>
+          {writePrompt.error && <p className="error small" role="alert">{errorText(writePrompt.error, 'Claude no pudo escribir el prompt.')}</p>}
+          {made && <label className="field"><span>Prompt para Claude · US$ {made.cost.toFixed(3)}</span>
+            <textarea value={made.prompt} onChange={(e) => setMade({ ...made, prompt: e.target.value })} rows={14} maxLength={8000} />
+            <span className="muted small">Úsalo aquí (Claude arma el video y programa sus escenas) o cópialo a Claude Code / claude.ai para hacerlo con Remotion allá.</span>
+            <div className="board-head">
+              <button type="button" className="primary small" onClick={() => { setClaudePrompt(made.prompt); setMode('paste') }}>Usar este prompt aquí</button>
+              <CopyButton text={made.prompt} label="Copiar prompt" />
+            </div>
+          </label>}
+        </> : pasted ? <>
+          <label className="field"><span>Prompt para Claude</span>
+            <textarea value={claudePrompt} onChange={(e) => setClaudePrompt(e.target.value)} maxLength={8000} rows={12}
+              placeholder="Pega aquí tu prompt (o genera uno en «Generar prompt para Claude»): la idea, el estilo, el guion escena por escena…" />
+            <span className="muted small">Claude arma el storyboard siguiendo tu prompt y luego programa a medida sus escenas de motion graphics. Las que muestran tu libro real (portada, páginas) usan sus imágenes.</span>
+          </label>
+          <Durations duration={duration} setDuration={setDuration} />
+        </> : fromScript ? (
           <label className="field"><span>Tu guion</span>
             <textarea value={scriptText} onChange={(e) => setScriptText(e.target.value)} maxLength={4000} rows={9} placeholder={SCRIPT_HINT} />
             <span className="muted small">Un párrafo por escena (o una línea, si no dejas líneas en blanco). La voz lo lee tal cual y cada escena dura lo que tarda en leerse. Si quieres, fija la escena al inicio: [portada], [páginas], [pdf], [número], [lista], [chat], [teléfono], [motion órbita|proceso|estallido|datos|tarjetas], [cierre].</span>
@@ -185,13 +238,7 @@ export function AdminMarketing() {
         ) : <>
         <label className="field"><span>¿Qué video necesitas?</span>
           <textarea value={ask} onChange={(e) => setAsk(e.target.value)} maxLength={500} rows={3} placeholder={KIND_HINT[kind]} /></label>
-        <fieldset className="field"><legend>Duración</legend>
-          <div className="segmented-inline">
-            {([15, 30, 45, 60] as const).map((d) => (
-              <button key={d} type="button" className={duration === d ? 'chip on' : 'chip'} onClick={() => setDuration(d)}>{d} s</button>
-            ))}
-          </div>
-        </fieldset>
+        <Durations duration={duration} setDuration={setDuration} />
         <fieldset className="field"><legend>Estructura</legend>
           <div className="segmented-inline">
             <button type="button" className={structure === 'auto' ? 'chip on' : 'chip'} onClick={() => setStructure('auto')}>Automática</button>
@@ -210,14 +257,16 @@ export function AdminMarketing() {
           </select>
           <span className="muted small">Pistas libres de Kevin MacLeod (CC BY 4.0): el crédito se añade solo al texto de la publicación. Los cortes caen en el pulso.</span>
         </label>
-        <button className="primary" onClick={() => propose.mutate()} disabled={!seriesId || propose.isPending || (fromScript && !scriptText.trim())}>
-          {propose.isPending ? 'DeepSeek dirige el video…' : fromScript ? (draft ? 'Armarlo otra vez' : 'Armar el video con mi guion') : draft ? 'Proponer otra estructura' : 'Ver la estructura'}
-        </button>
+        {mode !== 'gen' && <button className="primary" onClick={() => propose.mutate()}
+          disabled={!seriesId || propose.isPending || (fromScript && !scriptText.trim()) || (pasted && (!claudePrompt.trim() || !tailoring.coders.length))}>
+          {propose.isPending ? (pasted ? 'Claude dirige el video…' : 'DeepSeek dirige el video…') : pasted ? (draft ? 'Que Claude lo haga otra vez' : 'Que Claude haga el video')
+            : fromScript ? (draft ? 'Armarlo otra vez' : 'Armar el video con mi guion') : draft ? 'Proponer otra estructura' : 'Ver la estructura'}
+        </button>}
         {propose.error && <p className="error small" role="alert">{errorText(propose.error, 'No se pudo escribir el guion.')}</p>}
       </section>
 
-      {draft && <TailorContext.Provider value={tailorFor(format, titles[seriesId] ?? '')}><Draft board={draft} setBoard={setDraft as Dispatch<SetStateAction<Storyboard>>} seriesId={seriesId} format={format} onChange={setDraft} onAgain={() => propose.mutate()} again={propose.isPending}
-        onCreate={() => create.mutate()} creating={create.isPending} error={create.error} onDiscard={() => setDraft(null)}
+      {draft && <TailorContext.Provider value={tailoring}><Draft key={proposal} auto={autoTailor} board={draft} setBoard={setDraft as Dispatch<SetStateAction<Storyboard>>} seriesId={seriesId} format={format} onChange={setDraft} onAgain={() => propose.mutate()} again={propose.isPending}
+        onCreate={() => create.mutate()} creating={create.isPending} error={create.error} onDiscard={() => { setDraft(null); setAutoTailor([]) }}
         structure={structures.data?.structures.find((st) => st.key === draft.structure)?.label} captures={captures} shelf={shelf} /></TailorContext.Provider>}
 
       {videos.error && <p className="error">{errorText(videos.error, 'No pudimos cargar los videos.')}</p>}
@@ -249,8 +298,8 @@ export function AdminMarketing() {
 }
 
 /** The proposed storyboard before it is a video: its structure at a glance, playing, and changed scene by scene. */
-function Draft({ board, setBoard, seriesId, format, structure, captures, shelf, onChange, onAgain, again, onCreate, creating, error, onDiscard }: {
-  board: Storyboard; setBoard: Dispatch<SetStateAction<Storyboard>>; seriesId: string; format: Format; structure?: string; captures: Record<string, Capture>; shelf: ShelfBook[]; onChange: (b: Storyboard) => void
+function Draft({ auto, board, setBoard, seriesId, format, structure, captures, shelf, onChange, onAgain, again, onCreate, creating, error, onDiscard }: {
+  auto: number[]; board: Storyboard; setBoard: Dispatch<SetStateAction<Storyboard>>; seriesId: string; format: Format; structure?: string; captures: Record<string, Capture>; shelf: ShelfBook[]; onChange: (b: Storyboard) => void
   onAgain: () => void; again: boolean; onCreate: () => void; creating: boolean; error: unknown; onDiscard: () => void
 }) {
   const series = useFilmedTome(seriesId)
@@ -283,10 +332,10 @@ function Draft({ board, setBoard, seriesId, format, structure, captures, shelf, 
             ))}
           </ol>
           <Styling board={board} onChange={onChange} />
-          <TailorAll board={board} setBoard={setBoard} />
+          <TailorAll board={board} setBoard={setBoard} auto={auto} />
           <button className="primary" onClick={onCreate} disabled={creating}>{creating ? 'Guardando…' : 'Crear este video'}</button>
           {error ? <p className="error small" role="alert">{errorText(error, 'No se pudo crear el video.')}</p> : null}
-          <button type="button" className="ghost small" onClick={onAgain} disabled={again}>{again ? 'DeepSeek dirige otra…' : 'Otra estructura'}</button>
+          {board.structure !== 'claude' && <button type="button" className="ghost small" onClick={onAgain} disabled={again}>{again ? 'DeepSeek dirige otra…' : 'Otra estructura'}</button>}
           <button type="button" className="ghost small" onClick={() => setEditing(!editing)}>{editing ? 'Ocultar escenas' : 'Editar escenas'}</button>
           {editing && <BoardFields board={board} onChange={onChange} setBoard={setBoard} captures={captures} />}
         </div>
@@ -529,15 +578,22 @@ function ModelPicker() {
 }
 
 /** «Escena a medida» for the whole video: Claude programs every scene (three at a time) like Claude Code would. */
-function TailorAll({ board, setBoard }: { board: Storyboard; setBoard: Dispatch<SetStateAction<Storyboard>> }) {
+function TailorAll({ board, setBoard, auto }: { board: Storyboard; setBoard: Dispatch<SetStateAction<Storyboard>>; auto?: number[] }) {
   const { coders } = useContext(TailorContext)
   const tailor = useTailor(setBoard)
   const [busy, setBusy] = useState<{ done: number; of: number } | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const tailored = board.scenes.filter((sc) => sc.code).length
+  const started = useRef(false)
+  useEffect(() => {  // a video Claude directed: the scenes it marked are programmed at once
+    if (started.current || !auto?.length || !coders.length) return
+    started.current = true
+    void all(auto)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto, coders.length])
   if (!coders.length) return null
-  async function all(only: 'missing' | 'every') {
-    const todo = board.scenes.map((sc, i) => (only === 'every' || !sc.code ? i : -1)).filter((i) => i >= 0)
+  async function all(only: 'missing' | 'every' | number[]) {
+    const todo = Array.isArray(only) ? only : board.scenes.map((sc, i) => (only === 'every' || !sc.code ? i : -1)).filter((i) => i >= 0)
     setBusy({ done: 0, of: todo.length })
     setNote(null)
     let cost = 0, failed = 0
