@@ -14,6 +14,7 @@ from sqlalchemy import text
 from uuid6 import uuid7
 
 from app import credits
+from app.plans import PAID
 from app.api.deps import current_user_id
 from app.api.series import _jsonable, _own_series, _parse, is_staff
 from app.errors import ApiError
@@ -55,15 +56,31 @@ async def create_export(series_id: uuid.UUID, body: ExportOptions, request: Requ
         # signature), without the plan checks; the file belongs to the user.
         reviewing = series["user_id"] != user_id
         user_id = series["user_id"]
-        if not reviewing:
+        # A visitor's free preview, not bought: its PDF downloads without a plan, «MUESTRA» across every page.
+        sample = (bool(series["preview"]) and series["outline_approved_at"] is None and not reviewing
+                  and (await credits.account(conn, user_id)).plan_key not in PAID)
+        if sample:
+            if body.format != "pdf" or body.edition != "digital":
+                raise ApiError(402, "plan_required", "La muestra se descarga en PDF digital; elige un plan para Word o imprenta.",
+                               {"feature": "download"})
+            busy = (await conn.execute(text(
+                """select exists (select 1 from public.lessons where series_id = :s and status in ('queued', 'generating'))
+                       or exists (select 1 from public.generation_jobs where series_id = :s and kind in ('illustration', 'cover')
+                                     and status in ('queued', 'running'))
+                       or not exists (select 1 from public.lessons where series_id = :s
+                                         and status in ('generated', 'edited', 'approved'))"""),
+                {"s": series_id})).scalar_one()
+            if busy:
+                raise ApiError(409, "invalid_state", "Tu muestra todavía se está escribiendo o ilustrando.")
+        elif not reviewing:
             await credits.require_download(conn, user_id)
             if body.format == "docx":
                 await credits.require(conn, user_id, "word", "Descargar en Word")
             if body.edition == "print":
                 await credits.require(conn, user_id, "print_edition", "La edición para imprenta")
         acc, signature = await signature_of(conn, user_id)
-        watermark, sources = acc.plan.watermark, acc.plan.sources
-        if series["status"] != "ready":
+        watermark, sources = acc.plan.watermark or sample, acc.plan.sources
+        if series["status"] != "ready" and not sample:
             raise ApiError(409, "invalid_state", "Todas las secciones deben estar generadas para exportar.")
         versions = (await conn.execute(text(
             "select id, content_version from public.lessons where series_id = :s order by position"
@@ -72,7 +89,7 @@ async def create_export(series_id: uuid.UUID, body: ExportOptions, request: Requ
             "title": series["title"], "lessons": [[str(i), v] for i, v in versions], "options": body.model_dump(),
             "cover": series["cover_key"], "cover_options": _parse(series["cover_options"]) or {},
             "design": _jsonable_design(series["design"]), "watermark": watermark,
-            "sources": sources, "signature": signature,
+            "sources": sources, "signature": signature, "sample": sample,
         }, sort_keys=True).encode()).hexdigest()
         existing = (await conn.execute(text(
             """select * from public.exports where series_id = :s and content_hash = :h and status <> 'failed'
@@ -85,7 +102,7 @@ async def create_export(series_id: uuid.UUID, body: ExportOptions, request: Requ
             """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload)
                values (:j, :u, :s, 'pdf_export', 'queued', cast(:p as jsonb))"""
         ), {"j": job_id, "u": user_id, "s": series_id,
-            "p": json.dumps({"export_id": str(export_id), "watermark": watermark, "sources": sources,
+            "p": json.dumps({"export_id": str(export_id), "watermark": watermark, "sources": sources, "sample": sample,
                             "signature": signature})})
         row = (await conn.execute(text(
             """insert into public.exports (id, series_id, user_id, job_id, status, options, content_hash)

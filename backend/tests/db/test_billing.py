@@ -67,8 +67,8 @@ async def test_each_plan_unlocks_its_features(raw_db, google_user, client, key):
     sid = (await create_tome(client, key, user, page_count=4))["series"]["id"]  # the free preview (4 pages at most)
     await outline_ready(raw_db, sid)
     await raw_db.execute("update public.series set status = 'ready' where id = $1", sid)
-    pdf = await client.post(f"/api/series/{sid}/exports", json={}, headers=h)
-    assert pdf.status_code == 403 and pdf.json()["error"]["details"]["feature"] == "download"
+    word = await client.post(f"/api/series/{sid}/exports", json={"format": "docx"}, headers=h)
+    assert word.status_code == 402 and word.json()["error"]["details"]["feature"] == "download"  # only the PDF sample
 
     await subscribe(raw_db, user, "docente")
     word = await client.post(f"/api/series/{sid}/exports", json={"format": "docx"}, headers=h)

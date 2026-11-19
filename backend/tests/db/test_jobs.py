@@ -272,7 +272,7 @@ async def test_the_narrator_writes_the_whole_story_once_and_each_act_takes_its_p
     assert all(b["size"] == "plate" and not b.get("question") for b in first)
     assert last[0]["narration"].startswith("Página 3") and last[1]["question"] == "¿Sabías que…?"
     assert await raw_db.fetchval(
-        "select count(*) from public.generation_logs where series_id = $1 and prompt_version = 'narrator@4'", sid) == 1
+        "select count(*) from public.generation_logs where series_id = $1 and prompt_version = 'narrator@5'", sid) == 1
 
 
 async def test_without_sections_the_architect_splits_the_pages(raw_db, google_user, client, key, engine):

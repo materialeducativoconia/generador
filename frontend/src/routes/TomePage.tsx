@@ -145,7 +145,8 @@ function PreviewPages({ series: s, progress }: { series: Series; progress?: Prog
     <section className="preview-pages" aria-label="Vista previa de tu tomo" onContextMenu={(e) => e.preventDefault()} onDragStart={(e) => e.preventDefault()}>
       <header>
         <h2 className="section-h">{writing ? 'Escribiendo e ilustrando tu tomo…' : 'Así quedó tu tomo'}</h2>
-        <p className="muted small">Vista previa protegida. Con un plan lo ves en grande, lo editas, lo descargas e imprimes.</p>
+        <p className="muted small">Vista previa protegida. Descarga la muestra en PDF con marca de agua; con un plan lo editas, lo descargas sin marca e imprimes.</p>
+        {!writing && !painting && <SampleDownload series={s} />}
       </header>
       <ul>
         {pages.map((p) => (
@@ -162,6 +163,40 @@ function PreviewPages({ series: s, progress }: { series: Series; progress?: Prog
         ))}
       </ul>
     </section>
+  )
+}
+
+/** The free preview as a PDF with «MUESTRA» across every page (a visitor signs in with Google first, so it is kept). */
+function SampleDownload({ series: s }: { series: Series }) {
+  const { data: me } = useMe()
+  const [exportId, setExportId] = useState<string | null>(null)
+  const current = useExport(exportId)
+  const book = s.genre === 'picture_book' || s.genre === 'story_book'
+  const create = useMutation({
+    mutationFn: () => api.post<{ export: Export }>(`/api/series/${s.id}/exports`,
+      { paper: book ? '17x21' : 'A4', include_answer_key: true, edition: 'digital', format: 'pdf', ink: 'color' }),
+    onSuccess: (data) => setExportId(data.export.id),
+  })
+  const download = useMutation({
+    mutationFn: (path: string) => api.get<{ url: string }>(path),
+    onSuccess: ({ url }) => window.location.assign(url),
+  })
+  const status = current.data?.status
+  const url = current.data?.download_url
+  useEffect(() => {
+    if (status === 'succeeded' && url && !download.isPending && !download.isSuccess) download.mutate(url)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, url])
+  const busy = create.isPending || status === 'queued' || status === 'running' || download.isPending
+  return (
+    <div className="sample-download">
+      <button className="primary small" disabled={busy}
+        onClick={() => (me?.anonymous ? saveWithGoogle(window.location.pathname) : url ? download.mutate(url) : create.mutate())}>
+        {busy ? 'Preparando tu PDF…' : me?.anonymous ? 'Guarda tu cuenta para descargar la muestra' : download.isSuccess ? 'Descargar otra vez' : 'Descargar muestra (PDF con marca de agua)'}
+      </button>
+      {(create.error || download.error || status === 'failed') && <p className="error small" role="alert">
+        {errorText(create.error ?? download.error, 'No pudimos preparar el PDF; inténtalo de nuevo.')}</p>}
+    </div>
   )
 }
 

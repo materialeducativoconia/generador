@@ -23,6 +23,13 @@ def visitor(key, user, ip="203.0.113.7"):
     return {**bearer(key, user), "X-Forwarded-For": f"{ip}, 10.0.0.1"}
 
 
+async def paint_cover(engine, images=None, storage=None):
+    """The preview's cover job: it casts the characters, queues the sections and paints the premium cover."""
+    from tests.db.test_covers import fake_references
+    return await run_next(engine, ScriptedLLM(json.dumps(DESIGN), json.dumps(PLAN)), covers=True,
+                          images=images or FakeImages(), storage=storage or FakeStorage(), references=fake_references)
+
+
 async def test_a_visitor_gets_the_whole_small_tome_free_and_nothing_more(raw_db, google_user, client, key, engine):
     anon = await google_user(anonymous=True)
     h = visitor(key, anon, ip="203.0.113.10")
@@ -37,8 +44,13 @@ async def test_a_visitor_gets_the_whole_small_tome_free_and_nothing_more(raw_db,
     assert await raw_db.fetchval("select count(*) from public.credit_ledger l join public.memberships m "
                                  "using (org_id) where m.user_id = $1", anon) == 0
 
-    await run_next(engine, ScriptedLLM(json.dumps(OUTLINE)))
+    await run_next(engine, ScriptedLLM(json.dumps(OUTLINE)), covers=True)
     assert await raw_db.fetchval("select status from public.series where id = $1", sid) == "outline_ready"
+    # The sections wait for the cover job: it casts the characters the story is written with.
+    assert await raw_db.fetchval("select count(*) from public.generation_jobs where series_id = $1 and kind = 'lesson'", sid) == 0
+    assert await raw_db.fetchval("select payload from public.generation_jobs where series_id = $1 and kind = 'cover'",
+                                 sid) == '{"preview_lessons": true}'
+    assert (await paint_cover(engine))["kind"] == "cover"
     jobs = await raw_db.fetch("select payload from public.generation_jobs where series_id = $1 and kind = 'lesson'", sid)
     sections = await raw_db.fetchval("select count(*) from public.lessons where series_id = $1", sid)
     assert len(jobs) == sections and all(json.loads(j["payload"]) == {"preview": True} for j in jobs)
@@ -91,40 +103,30 @@ async def test_the_preview_is_illustrated_like_the_real_tome_at_our_cost(raw_db,
     await run_next(engine, ScriptedLLM(json.dumps({**OUTLINE, "sections": OUTLINE["sections"][:1]})), covers=True)
     paid, free, storage = FakeImages(), FakeImages(), FakeStorage()
 
-    # The cover: the free Illustrator paints it, marked free.
-    job = await run_next(engine, ScriptedLLM(json.dumps(DESIGN), json.dumps(PLAN)), covers=True, images=paid,
-                         free_images=free, storage=storage)
+    # The cover: the premium Illustrator paints it, at our cost (the PDF carries «MUESTRA»).
+    job = await paint_cover(engine, images=paid, storage=storage)
     assert job["kind"] == "cover"
     cover = json.loads(await raw_db.fetchval("select cover from public.series where id = $1", sid))
-    assert cover["free"] is True and cover["spent_usd"] == 0 and len(free.calls) == 1
+    assert not cover.get("free") and cover["spent_usd"] > 0 and len(paid.calls) == 1 and paid.calls[0]["resolution"] == "4K"
 
-    # The pages: written at our cost, then illustrated by the free Illustrator: OpenRouter paints only paid tomes.
+    # The pages: written at our cost, then illustrated by the premium Illustrator in 1K drafts.
     job = await run_next(engine, ScriptedLLM(json.dumps(PICTURED_SECTION)))
     assert job["kind"] == "lesson" and job["payload"] == {"preview": True}
-    painted = len(free.calls)
     job = await run_next(engine, ScriptedLLM(json.dumps(ART)), images=paid, free_images=free, storage=storage,
                          vision=FakeVision())
     assert job["kind"] == "illustration" and job["payload"] == {"preview": True}
-    assert not paid.calls and len(free.calls) > painted
-    assert await raw_db.fetchval("select bool_and(style_key = 'free') from public.assets where series_id = $1", sid)
+    assert not free.calls and len(paid.calls) > 1 and all(c["resolution"] == "1K" for c in paid.calls[1:])
+    assert await raw_db.fetchval("select bool_and(draft) from public.assets where series_id = $1", sid)
     assert await raw_db.fetchval("select count(*) from public.credit_ledger l join public.memberships m using (org_id)"
                                  " where m.user_id = $1", anon) == 0  # on us
 
-    # Bought: the full tome brings the premium cover, paid with credits.
+    # Bought: the premium cover stays (no second painting) and the drafts go to print size.
     await subscribe(raw_db, anon, "docente", 40)
     assert (await client.post(f"/api/series/{sid}/lessons/generate", json={}, headers=h)).status_code == 202
     assert await raw_db.fetchval("select count(*) from public.generation_jobs where series_id = $1 and kind = 'cover'"
-                                 " and status = 'queued' and payload = '{}'", sid) == 1
-
-    # ...and the preview's free pictures come off its pages: the premium Illustrator paints them.
-    await raw_db.execute("update public.generation_jobs set status = 'cancelled' where series_id = $1 and kind <> 'illustration'", sid)
-    job = await run_next(engine, ScriptedLLM(json.dumps(ART)), images=paid, storage=storage, vision=FakeVision())
-    assert job["kind"] == "illustration" and job["payload"] == {}
-    assert paid.calls
-    used = await raw_db.fetch("""select a.style_key from public.lessons l, jsonb_array_elements(l.content_json->'blocks') b
-                                   join public.assets a on a.id = (b->>'asset_id')::uuid
-                                  where l.series_id = $1 and b->>'type' = 'image'""", sid)
-    assert used and all(r["style_key"] != "free" for r in used)
+                                 " and status = 'queued'", sid) == 0
+    assert await raw_db.fetchval("select count(*) from public.generation_jobs where series_id = $1 and kind = 'illustration'"
+                                 " and status = 'queued'", sid) == 1
 
 
 async def test_a_bought_preview_keeps_its_pages_and_charges_only_what_is_new(raw_db, google_user, client, key, engine):
@@ -178,7 +180,8 @@ async def test_a_preview_takes_matching_art_from_the_shared_library_for_free(raw
     anon = await google_user(anonymous=True)
     sid = (await client.post("/api/series", json={**PREVIEW, "section_count": 1, "page_count": 1},
                              headers=visitor(key, anon, ip="203.0.113.95"))).json()["series"]["id"]
-    await run_next(engine, ScriptedLLM(json.dumps({**OUTLINE, "sections": OUTLINE["sections"][:1]})))
+    await run_next(engine, ScriptedLLM(json.dumps({**OUTLINE, "sections": OUTLINE["sections"][:1]})), covers=True)
+    await paint_cover(engine)
     only_barn = {**PICTURED_SECTION, "blocks": [b for b in PICTURED_SECTION["blocks"] if b["id"] != "b2"]}
     await run_next(engine, ScriptedLLM(json.dumps(only_barn)))
 
@@ -212,3 +215,37 @@ async def test_the_next_visitor_with_the_same_request_gets_the_finished_preview_
     assert copy["status"] == "outline_ready" and copy["title"] == "El agua" and str(copy["cloned_from"]) == sid
     assert await raw_db.fetchval("select count(*) from public.lessons where series_id = $1 and status = 'generated'",
                                  served.json()["series"]["id"]) == 1
+
+
+async def test_a_visitor_downloads_the_finished_preview_as_a_pdf_marked_muestra(raw_db, google_user, client, key):
+    import io
+
+    import pypdf
+    import weasyprint
+
+    from app.stamp import sample_watermark
+
+    anon = await google_user(anonymous=True)
+    h = visitor(key, anon, ip="203.0.113.120")
+    sid = (await client.post("/api/series", json={**PREVIEW, "section_count": 1, "page_count": 1}, headers=h)).json()["series"]["id"]
+    await raw_db.execute("update public.generation_jobs set status = 'succeeded' where series_id = $1", sid)
+    await raw_db.execute("update public.series set status = 'outline_ready', title = 'El agua', design = $2::jsonb where id = $1",
+                         sid, json.dumps(DESIGN))
+    await raw_db.execute("insert into public.lessons (series_id, position, title, objectives, key_points, content_json, status, pages)"
+                         " values ($1, 1, 'Lluvia', '[]', '[]', $2::jsonb, 'generating', 1)", sid, json.dumps(SECTION))
+    pdf = {"paper": "A4", "format": "pdf", "edition": "digital", "ink": "color", "include_answer_key": True}
+
+    still = await client.post(f"/api/series/{sid}/exports", json=pdf, headers=h)
+    assert still.status_code == 409  # not while it is being written
+    await raw_db.execute("update public.lessons set status = 'generated' where series_id = $1", sid)
+    word = await client.post(f"/api/series/{sid}/exports", json={**pdf, "format": "docx"}, headers=h)
+    assert word.status_code == 402  # Word and the print edition need a plan
+    made = await client.post(f"/api/series/{sid}/exports", json=pdf, headers=h)
+    assert made.status_code == 202, made.text
+    payload = json.loads(await raw_db.fetchval(
+        "select payload from public.generation_jobs where series_id = $1 and kind = 'pdf_export'", sid))
+    assert payload["sample"] is True and payload["watermark"] is True
+
+    page = weasyprint.HTML(string="<p>Lluvia</p>").write_pdf()
+    text = pypdf.PdfReader(io.BytesIO(sample_watermark(page))).pages[0].extract_text()
+    assert "MUESTRA" in text and "Lluvia" in text and "docs.jelyx.app" in text

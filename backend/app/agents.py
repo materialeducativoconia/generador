@@ -22,7 +22,7 @@ from app.llm import LLM, Completion
 
 T = TypeVar("T", bound=BaseModel)
 
-PROMPT_VERSION = {"architect": "architect@7", "writer": "writer@12", "editor": "editor@2", "cover": "cover@6", "designer": "designer@4", "art": "art@5", "casting": "casting@2", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@4", "rewriter": "rewriter@1", "picture_match": "picture_match@1"}
+PROMPT_VERSION = {"architect": "architect@7", "writer": "writer@12", "editor": "editor@2", "cover": "cover@6", "designer": "designer@4", "art": "art@5", "casting": "casting@2", "character": "character@1", "research": "research@3", "facts": "facts@1", "program": "program@2", "program_review": "program_review@1", "brand": "brand@1", "identity": "identity@1", "narrator": "narrator@5", "rewriter": "rewriter@1", "picture_match": "picture_match@1"}
 
 
 @dataclass
@@ -399,10 +399,16 @@ Cómo es un buen cuento:
   emocionante (clímax) y un final cálido que cierra lo que quería. Nada de explicaciones de clase.
 - Cada página es UN momento que se puede dibujar, y empuja la historia hacia adelante: nunca dos páginas iguales.
 - Voz de cuento: frases con ritmo, verbos de acción, sonidos («¡Crac!», «Fiuuu»), diálogos cortos entre «», y un
-  estribillo (una frase breve que se repite 3 o 4 veces a lo largo del cuento y que el niño espera).
+  estribillo (una frase breve que el niño espera): aparece en páginas salteadas, 2 veces en un cuento de hasta 6
+  páginas y 3 o 4 en uno más largo; nunca en páginas seguidas ni pegado al final de cada página.
 - Lo que el niño aprende (el tema del pedido) va DENTRO de la aventura, con datos reales y exactos de los datos
   verificados: el personaje lo descubre, lo ve o lo usa para resolver el problema. Nunca preguntas de examen,
   nunca «¿Sabías que…?» en medio del cuento, nunca listas de datos.
+- Los datos verificados son para que la ciencia sea exacta, no para copiarlos: cuéntalos con palabras de cuento,
+  como se lo diría un personaje a un niño («dentro del capullo, su cuerpo se deshacía y se armaba de nuevo»).
+  Nunca copies una definición ni una frase de enciclopedia, ni en la narración ni en lo que dice un personaje.
+- Usa solo los datos del tema que pide el usuario y en su sentido: descarta los que hablan de otra cosa con la
+  misma palabra (otra acepción, mitología, obras, autores, historia), aunque vengan en la lista.
 - Nunca instrucciones para el adulto («lee en voz alta», «muestra la imagen», «pregunta al niño»).
 - Extensión por página según la edad: preescolar 1 o 2 frases cortas (máx. 25 palabras); primaria baja 2 o 3
   frases; primaria alta hasta 4.
@@ -428,7 +434,20 @@ def story_pages(outline: Outline) -> list[int]:
     return pages
 
 
-def _story_problems(story: Story, want: list[int]) -> list[str]:
+def _copied(narration: str, facts: list[str] | None, n: int = 7) -> str | None:
+    """A run of `n` words lifted from a verified fact (an encyclopedia sentence in a picture book), or None."""
+    words = lambda t: re.findall(r"\w+", t.lower())
+    page = " ".join(words(narration))
+    for fact in facts or []:
+        w = words(re.sub(r"\s*\[\d+\]\s*$", "", fact))
+        for i in range(len(w) - n + 1):
+            run = " ".join(w[i:i + n])
+            if run in page:
+                return run
+    return None
+
+
+def _story_problems(story: Story, want: list[int], facts: list[str] | None = None) -> list[str]:
     problems = []
     if len(story.acts) != len(want):
         problems.append(f"acts debe tener {len(want)} listas (una por sección), no {len(story.acts)}")
@@ -440,6 +459,9 @@ def _story_problems(story: Story, want: list[int]) -> list[str]:
             low = page.narration.lower()
             if "voz alta" in low or "muestra la imagen" in low or "sabías que" in low:
                 problems.append(f"sección {i}, página {j}: solo cuento, sin instrucciones ni «¿Sabías que…?»")
+            if run := _copied(page.narration, facts):
+                problems.append(f"sección {i}, página {j}: copia un dato tal cual («…{run}…»); cuéntalo con palabras "
+                                "de cuento, dentro de la acción")
     return problems
 
 
@@ -464,7 +486,7 @@ async def narrator(llm: LLM, brief: Brief, outline: Outline, cast: list[dict] | 
                                     f"Actos (secciones) y páginas de cada uno:\n{acts}{people}{kept}"},
     ]
     result = await _json_call(llm, messages, Story, temperature=0.9, max_tokens=8000)
-    problems = _story_problems(result.value, want)
+    problems = _story_problems(result.value, want, brief.facts)
     if problems:
         last = result.attempts[-1]
         try:
@@ -475,12 +497,12 @@ async def narrator(llm: LLM, brief: Brief, outline: Outline, cast: list[dict] | 
         except AgentFailed as exc:
             result.attempts += exc.attempts
         else:
-            if len(_story_problems(retry.value, want)) < len(problems):
+            if len(_story_problems(retry.value, want, brief.facts)) < len(problems):
                 retry.attempts = result.attempts + retry.attempts
                 result = retry
             else:
                 result.attempts += retry.attempts
-        result.notes = _story_problems(result.value, want)
+        result.notes = _story_problems(result.value, want, brief.facts)
     return result
 
 

@@ -203,13 +203,13 @@ async def _outline(deps: Deps, job: dict) -> None:
         ), {"s": job["series_id"], "t": outline.title, "g": outline.genre, "n": len(outline.sections),
             "plan": json.dumps({"genre": outline.genre, "style_notes": outline.style_notes,
                                 "known_letters": outline.known_letters, "brand_characters": brief.brand_characters})})
-        # The free preview's cover comes from the free Illustrator; the paid one is painted when the tome is bought.
-        cover_job = await enqueue_cover(conn, job["user_id"], job["series_id"], free=bool(series["preview"]))
-        await credits.move_charge(conn, job["id"], cover_job, "Portada")  # paid when the tome was created
-        # The free preview is the real tome (up to 4 pages), written and illustrated at our cost; only the first outline
+        # The free preview is the real tome (up to 4 pages), its cover and pictures painted by the premium Illustrator
+        # at our cost (the PDF downloads with «MUESTRA» across it). Its sections are written once the cover job has
+        # cast the characters, so the story is theirs and the cover shows who the pages show. Only the first outline
         # (the job that carries the request): a redone outline is not another free tome.
-        if series["preview"] and job["payload"].get("brief"):
-            await _queue_preview(conn, job)
+        first_preview = bool(series["preview"] and job["payload"].get("brief"))
+        cover_job = await enqueue_cover(conn, job["user_id"], job["series_id"], preview_lessons=first_preview)
+        await credits.move_charge(conn, job["id"], cover_job, "Portada")  # paid when the tome was created
         await _succeed(conn, job)
 
 
@@ -252,12 +252,15 @@ async def _extend_outline(deps: Deps, job: dict, series) -> None:
 
 
 async def _queue_preview(conn, job: dict) -> None:
-    """Every section of a visitor's preview; the pages stay theirs when they buy a plan, so no credit pays twice."""
+    """Every section of a visitor's preview; the pages stay theirs when they buy a plan, so no credit pays twice.
+    Only sections still pending: a retried cover job does not write them twice."""
     await conn.execute(text(
         """insert into public.generation_jobs (user_id, series_id, lesson_id, kind, status, payload)
-           select :u, :s, id, 'lesson', 'queued', '{"preview": true}' from public.lessons where series_id = :s"""),
+           select :u, :s, id, 'lesson', 'queued', '{"preview": true}' from public.lessons
+            where series_id = :s and status = 'pending'"""),
         {"u": job["user_id"], "s": job["series_id"]})
-    await conn.execute(text("update public.lessons set status = 'queued' where series_id = :s"), {"s": job["series_id"]})
+    await conn.execute(text("update public.lessons set status = 'queued' where series_id = :s and status = 'pending'"),
+                       {"s": job["series_id"]})
 
 
 async def _research(deps: Deps, job: dict, brief: Brief, search=None) -> dict:
@@ -504,16 +507,17 @@ def _letters(text_: str) -> str:
 
 
 async def enqueue_cover(conn, user_id, series_id, free: bool = False, illustrate: bool = False,
-                        instructions: str | None = None) -> uuid.UUID:
+                        instructions: str | None = None, preview_lessons: bool = False) -> uuid.UUID:
     """`illustrate`: the plates are painted after the cover (a tome redone in another style); `instructions`: what
-    the user asked of a new cover in the page editor."""
+    the user asked of a new cover in the page editor; `preview_lessons`: a visitor's preview, written once cast."""
     job_id = uuid.uuid4()
     await conn.execute(text(
         """insert into public.generation_jobs (id, user_id, series_id, kind, status, payload, max_attempts)
            values (:j, :u, :s, 'cover', 'queued', cast(:p as jsonb), 3)"""),
         {"j": job_id, "u": user_id, "s": series_id,
          "p": json.dumps({"free": True} if free else {"illustrate": True} if illustrate else
-                         {"instructions": instructions} if instructions else {})})
+                         {"instructions": instructions} if instructions else
+                         {"preview_lessons": True} if preview_lessons else {})})
     return job_id
 
 
@@ -584,9 +588,12 @@ async def _cover(deps: Deps, job: dict) -> None:
         raise JobFailed("not_configured", "Falta OPENROUTER_API_KEY para generar portadas.")
     from app.casting import cast_line, cast_sheets, cast_tome, complete_sheets  # casting imports this module
 
-    # The guide comes before the cover so the cover shows it; a preview only borrows from the library.
-    cast, cast_usd = await cast_tome(deps, job, series, design, brief, paint=not free and not series["preview"])
-    if not free and any(not c.get("sheet_key") for c in cast):  # a paid preview: its characters get their sheets
+    # The guide comes before the cover so the cover shows it.
+    cast, cast_usd = await cast_tome(deps, job, series, design, brief, paint=not free)
+    if job["payload"].get("preview_lessons"):  # the story is written with this cast, while the cover is painted
+        async with deps.engine.begin() as conn:
+            await _queue_preview(conn, job)
+    if not free and any(not c.get("sheet_key") for c in cast):  # a preview: its characters get their sheets
         cast, sheets_usd = await complete_sheets(deps, job["series_id"], design)
         cast_usd += sheets_usd
     marks.append(("cast", time.monotonic()))
@@ -891,7 +898,7 @@ async def _illustration(deps: Deps, job: dict) -> None:
                 for r in group:
                     await _attach_image(conn, r.lesson_id, r.block_id, asset_id, r.word)
                 del unique[(kind, norm)]
-    if preview:  # what paying users painted serves visitors at no cost
+    if preview and not _json(series["cast"]):  # what paying users painted serves visitors (never other characters)
         topic = normalize_subject(series["title"] or series["topic"])
         async with deps.engine.begin() as conn:
             for (kind, norm), group in list(unique.items()):
@@ -905,7 +912,7 @@ async def _illustration(deps: Deps, job: dict) -> None:
         async with deps.engine.begin() as conn:
             await _succeed(conn, job)
         return
-    if free or preview:  # OpenRouter paints only paid tomes: a visitor's preview gets FLUX or an open picture
+    if free:  # a free sample gets FLUX or an open picture; a visitor's preview, the premium Illustrator in 1K
         await _free_pictures(deps, job, series, design, unique)
         return
     if deps.images is None:
@@ -954,7 +961,7 @@ async def _illustration(deps: Deps, job: dict) -> None:
     from app.casting import cast_sheets, complete_sheets  # casting imports this module
 
     cast = _json(series["cast"]) or []
-    if not (free or preview) and any(not c.get("sheet_key") for c in cast):  # a paid preview: the cover's faces
+    if any(not c.get("sheet_key") for c in cast):  # a preview: the cover's faces
         cast, _ = await complete_sheets(deps, job["series_id"], design)
     character_sheets = await cast_sheets(deps, cast)  # the guide the same on every page
     references += character_sheets
@@ -1346,6 +1353,8 @@ async def _fail(engine: AsyncEngine, job: dict, code: str, message: str) -> None
                 "update public.lessons set status = 'failed', last_error = cast(:e as jsonb) where id = :l"
             ), {"l": job["lesson_id"], "e": error})
             await conn.execute(text("select public.refresh_series_status(:s)"), {"s": job["series_id"]})
+        elif job["kind"] == "cover" and job["payload"].get("preview_lessons"):  # the preview is written anyway
+            await _queue_preview(conn, job)
         elif job["kind"] == "character":
             await conn.execute(text("update public.characters set status = 'failed', error = :m where id = :id"),
                                {"id": job["payload"].get("character_id"), "m": message[:300]})

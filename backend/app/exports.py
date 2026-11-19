@@ -11,6 +11,7 @@ from app.content import Design, SectionContent, block_assets
 from app.illustrator import ink_saver, vectorize
 from app.printing import preflight
 from app.render import Tome, TomeSection, render_checked, render_cover_wrap
+from app.stamp import sample_watermark
 from app.word import render_docx
 
 MONO = ["#FFFFFF", "#262626", "#737373"]  # paper, ink, accent for the black-and-white edition
@@ -124,6 +125,8 @@ async def run_export(deps, job: dict) -> None:
                           print_edition=print_edition),
         timeout=240,  # up to three layout passes on a slow CPU
     )
+    if job["payload"].get("sample"):  # a visitor's free preview
+        pdf = await asyncio.to_thread(sample_watermark, pdf)
     base = f"{job['user_id']}/{job['series_id']}/{export_id}"
     storage_key, cover_key = f"{base}.pdf", None
     await deps.storage.upload(storage_key, pdf)

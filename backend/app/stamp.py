@@ -45,3 +45,37 @@ def copyright_edge(pdf: bytes, line: str) -> bytes:
 def library_line(title: str, year: int, brand: str = "Jelyx Docs") -> str:
     return (f"© {year} {brand} · «{title}» · Descarga gratuita para uso personal y en el aula · "
             f"Prohibida su venta o redistribución")
+
+
+def _sample_overlay(width_pt: float, height_pt: float, line: str) -> bytes:
+    w, h = width_pt * PT_TO_MM, height_pt * PT_TO_MM
+    # A big diagonal word across the page, light enough to read the page under it, and the line at the foot.
+    doc = f"""<html><head><style>
+      @page {{ size: {w:.2f}mm {h:.2f}mm; margin: 0; }}
+      html, body {{ margin: 0; background: transparent; }}
+      .big {{ position: absolute; left: {w / 2:.2f}mm; top: {h / 2:.2f}mm; transform: translate(-50%, -50%) rotate(-35deg);
+              white-space: nowrap; font: 900 {min(w, h) * 0.16:.1f}mm Nunito, sans-serif; letter-spacing: .06em;
+              color: rgba(30, 27, 24, .15); text-align: center; }}
+      .big.light {{ color: rgba(255, 255, 255, .30); margin: -.8mm 0 0 -.8mm; }}  /* reads over dark pictures too */
+      .big small {{ display: block; font-size: 32%; letter-spacing: .12em; margin-top: 2mm; }}
+      .foot {{ position: absolute; left: 0; right: 0; bottom: 3mm; text-align: center;
+               font: 700 7pt Nunito, sans-serif; color: rgba(40, 36, 32, .85); }}
+      .foot span {{ background: rgba(255, 255, 255, .8); padding: .6mm 2.5mm; border-radius: 2mm; }}
+    </style></head><body><div class="big">MUESTRA<small>docs.jelyx.app</small></div><div class="big light">MUESTRA<small>docs.jelyx.app</small></div>
+    <div class="foot"><span>{html.escape(line)}</span></div></body></html>"""
+    return weasyprint.HTML(string=doc).write_pdf()
+
+
+def sample_watermark(pdf: bytes, line: str = "Muestra gratuita · Crea el libro completo, sin marca de agua, en docs.jelyx.app") -> bytes:
+    """A visitor's free sample: «MUESTRA» across every page and the line at its foot, over the book's own content."""
+    book = pypdf.PdfWriter(clone_from=pypdf.PdfReader(io.BytesIO(pdf)))
+    overlays: dict[tuple[int, int], pypdf.PageObject] = {}
+    for page in book.pages:
+        w, h = float(page.mediabox.width), float(page.mediabox.height)
+        key = (round(w), round(h))
+        if key not in overlays:
+            overlays[key] = pypdf.PdfReader(io.BytesIO(_sample_overlay(w, h, line))).pages[0]
+        page.merge_page(overlays[key], over=True)
+    out = io.BytesIO()
+    book.write(out)
+    return out.getvalue()
