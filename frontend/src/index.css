@@ -1163,6 +1163,9 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .board-motion { display: grid; gap: 6px; padding: 8px; border-radius: 10px; background: var(--surface-2); }
 .board-motion .board-head input:not([type=color]) { flex: 1; min-width: 0; }
 .board-motion input[type=color] { width: 34px; height: 30px; padding: 2px; border-radius: 8px; }
+.board-tailor { display: grid; gap: 6px; }
+.board-tailor .board-head { flex-wrap: wrap; }
+.board-tailor .board-head input { flex: 1; min-width: 160px; }
 .board-motion .board-value { flex: 0 0 80px !important; }
 .board-head strong { flex: 1; font-size: 13px; }
 .board-head input { width: 56px; }

@@ -357,3 +357,50 @@ def test_the_voice_reads_the_address_spelled_out():
     from app.api.marketing import said
 
     assert said("Entra a https://docs.jelyx.app/ hoy") == "Entra a docs punto jelyx punto app hoy"
+
+
+async def test_claude_programs_a_scene_a_medida_and_a_forbidden_reply_is_asked_again(raw_db, google_user, client, key):
+    import httpx
+
+    from app.coder import SceneCoder, problem
+
+    admin = await google_user(email="medida@jelyx.test")
+    await raw_db.execute("update public.profiles set platform_role = 'admin' where id = $1", admin)
+    good = "function Scene({ frame, dur, look, caption }) {\n  return <AbsoluteFill style={{ opacity: frame / dur }}>{caption}</AbsoluteFill>\n}"
+    replies = ["```jsx\nfunction Scene() { return <img src='x' /> }\n```", f"Aquí está:\n```jsx\n{good}\n```"]
+    asked = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        asked.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": replies[len(asked) - 1]}}], "usage": {"cost": 0.05}})
+
+    app = client._transport.app
+    app.state.coder = SceneCoder("k", ["anthropic/claude-opus-5.5", "anthropic/claude-sonnet-5.5"], transport=httpx.MockTransport(answer))
+    board = {"title": "Tu domingo libre", "look": "noche", "scenes": [
+        {"type": "title", "seconds": 3, "caption": "¿Otro domingo así?", "voice": "¿Otro domingo armando material?"},
+        {"type": "cta", "seconds": 3, "caption": "Pruébalo gratis"}]}
+
+    listed = (await client.get("/api/admin/marketing/structures", headers=bearer(key, admin))).json()["coders"]
+    assert listed == [{"key": "anthropic/claude-opus-5.5", "label": "Claude Opus 5.5"},
+                      {"key": "anthropic/claude-sonnet-5.5", "label": "Claude Sonnet 5.5"}]
+    out = await client.post("/api/admin/marketing/scene-code", headers=bearer(key, admin),
+                            json={"board": board, "index": 0, "model": "anthropic/claude-sonnet-5.5", "format": "1:1"})
+    assert out.status_code == 200, out.text
+    assert out.json() == {"code": good, "model": "anthropic/claude-sonnet-5.5", "cost": 0.1}
+    assert len(asked) == 2 and asked[0]["model"] == "anthropic/claude-sonnet-5.5"
+    assert "1080×1080" in asked[0]["messages"][0]["content"] and "#08071a" in asked[0]["messages"][1]["content"]
+    assert "▶ 1. title" in asked[0]["messages"][1]["content"]
+    assert "etiqueta que no está permitida" in asked[1]["messages"][-1]["content"]  # told why, once
+
+    board["scenes"][0]["code"] = good  # a change rewrites the current code
+    replies.append(f"```jsx\n{good}\n```")
+    await client.post("/api/admin/marketing/scene-code", headers=bearer(key, admin),
+                      json={"board": board, "index": 0, "change": "más dinámica"})
+    assert asked[2]["model"] == "anthropic/claude-opus-5.5" and "más dinámica" in asked[2]["messages"][-1]["content"]
+    assert good in asked[2]["messages"][-1]["content"]
+
+    wrong = await client.post("/api/admin/marketing/scene-code", headers=bearer(key, admin),
+                              json={"board": board, "index": 0, "model": "openai/gpt-x"})
+    assert wrong.status_code == 422
+    assert problem("function Scene(){ fetch('/x') }") and problem("function Scene(){ return Math.random() }")
+    assert problem(good) is None

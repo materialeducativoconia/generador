@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import text
 
 from app.agents import AgentFailed
+from app.coder import CHANGE, SYSTEM, USER, fill, label
 from app.api.admin import _staff
 from app.api.deps import current_user_id
 from app.errors import ApiError
@@ -129,7 +130,8 @@ async def structures(request: Request, user_id: UserId):
         await _staff(conn, user_id)
     return {"structures": [dict(key=k, label=label, kinds=list(kinds), how=how)
                            for k, (label, kinds, how) in STRUCTURES.items()],
-            "music": [dict(key=k, title=title, mood=mood, bpm=bpm) for k, (title, mood, bpm, _) in MUSIC.items()]}
+            "music": [dict(key=k, title=title, mood=mood, bpm=bpm) for k, (title, mood, bpm, _) in MUSIC.items()],
+            "coders": [dict(key=m, label=label(m)) for m in (request.app.state.coder.models if request.app.state.coder else [])]}
 
 
 @router.post("/api/admin/marketing/storyboard")
@@ -156,6 +158,67 @@ async def new_video(body: NewVideo, request: Request, user_id: UserId):
             {"s": body.series_id, "t": body.template, "f": body.format, "sc": script.model_dump_json(),
              "u": user_id})).mappings().one()
     return {"video": _out(row)}
+
+
+SIZES = {"9:16": (1080, 1920), "1:1": (1080, 1080), "16:9": (1920, 1080)}
+FPS = 30
+ICON_NAMES = ("sparkle, book, pencil, clock, star, heart, check, palette, download, people, idea, rocket, puzzle, globe, "
+              "apple, music, leaf, calculator, school, printer")
+LOOK_COLORS = {"claro": ("#ffffff", "#0c0a09", "#5b4cf0"), "oscuro": ("#0c0a09", "#ffffff", "#a99cff"),
+               "color": ("#5b4cf0", "#ffffff", "#ffd166"), "noche": ("#08071a", "#ffffff", "#8f7dff")}
+
+
+class SceneAsk(BaseModel):
+    board: dict  # the storyboard as it is now (a draft or a saved video's)
+    index: int = Field(ge=0, lt=24)  # the scene to program
+    format: Format = "9:16"
+    book: str = Field(default="", max_length=200)
+    model: str = ""  # one of the configured Claude models; empty: the first
+    change: str | None = Field(default=None, max_length=400)  # «hazla más dinámica»: rewrites the scene's current code
+
+
+@router.post("/api/admin/marketing/scene-code")
+async def scene_code(body: SceneAsk, request: Request, user_id: UserId):
+    """«Escena a medida»: Claude programs one scene as a Remotion component; nothing is saved (the board keeps it)."""
+    coder = request.app.state.coder
+    if coder is None or not coder.models:
+        raise ApiError(503, "unavailable", "Claude no está configurado (OPENROUTER_API_KEY).")
+    model = body.model or coder.models[0]
+    if model not in coder.models:
+        raise ApiError(422, "invalid_request", "Ese modelo no está disponible.")
+    async with request.app.state.engine.connect() as conn:
+        await _staff(conn, user_id)
+    try:
+        board = Storyboard.model_validate(body.board)
+    except ValidationError as exc:
+        raise ApiError(422, "validation_error", "Revisa el guion.", {"errors": exc.errors()}) from exc
+    if body.index >= len(board.scenes):
+        raise ApiError(422, "invalid_request", "Esa escena no existe.")
+    scene = board.scenes[body.index]
+    width, height = SIZES[body.format]
+    bg, ink, accent = LOOK_COLORS[board.look]
+    outline = "\n".join(f"{'▶' if i == body.index else ' '} {i + 1}. {s.type} · {s.seconds:g} s · «{s.caption or s.voice[:60]}»"
+                         for i, s in enumerate(board.scenes))
+    extra = (f"Dato extra (text): «{scene.text}»" if scene.text else "") + (
+        "\nEs la última escena: cierra con «docs.jelyx.app» bien visible." if body.index == len(board.scenes) - 1 else "")
+    messages = [
+        {"role": "system", "content": fill(SYSTEM, fps=FPS, width=width, height=height, icons=ICON_NAMES, max=12000)},
+        {"role": "user", "content": fill(USER, title=board.title, book=body.book or board.title, bg=bg, ink=ink, accent=accent,
+                                         outline=outline, seconds=f"{scene.seconds:g}", dur=round(scene.seconds * FPS),
+                                         caption=scene.caption, voice=scene.voice, extra=extra)},
+    ]
+    if body.change and scene.code:
+        messages.append({"role": "user", "content": fill(CHANGE, code=scene.code, change=body.change.strip())})
+    elif body.change:
+        messages[-1]["content"] += f"\nIndicación del equipo: {body.change.strip()}"
+    try:
+        code, cost = await coder.write(model, messages)
+    except UpstreamAuthError as exc:
+        raise ApiError(503, "unavailable", "OpenRouter rechazó la clave o no tiene saldo.") from exc
+    except UpstreamError as exc:
+        log.warning("scene code failed: %s", exc)
+        raise ApiError(502, "upstream_error", f"{exc} Inténtalo de nuevo.") from exc
+    return {"code": code, "model": model, "cost": cost}
 
 
 class VideoEdit(BaseModel):

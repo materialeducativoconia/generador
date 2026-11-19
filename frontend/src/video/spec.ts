@@ -27,7 +27,8 @@ export const fontsReady = geist.waitUntilDone
 // The director's storyboard (backend app/marketing.py Storyboard): any video, scene by scene.
 export type SceneType = 'title' | 'compose' | 'plan' | 'cover' | 'pages' | 'pdf' | 'editor_open' | 'editor_move' | 'editor_facts'
   | 'editor_repaint' | 'editor_cover' | 'editor_save' | 'list' | 'versus' | 'number' | 'formats' | 'characters' | 'screen' | 'phone' | 'devices' | 'zoom' | 'kinetic' | 'bento' | 'chat' | 'logo' | 'motion' | 'cta'
-export type Scene = { type: SceneType; seconds: number; caption: string; voice: string; text: string; capture?: string; focus?: number; motion?: Motion | null }
+export type Scene = { type: SceneType; seconds: number; caption: string; voice: string; text: string; capture?: string; focus?: number; motion?: Motion | null
+  code?: string }  // «a medida»: the scene as Claude programmed it, drawn instead of its type
 /** A motion graphic as the director described it from the request (backend app/marketing.py Motion). */
 export type MotionIcon = 'sparkle' | 'book' | 'pencil' | 'clock' | 'star' | 'heart' | 'check' | 'palette' | 'download' | 'people' | 'idea'
   | 'rocket' | 'puzzle' | 'globe' | 'apple' | 'music' | 'leaf' | 'calculator' | 'school' | 'printer'

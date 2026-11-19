@@ -11,6 +11,7 @@ from app.config import Settings
 from app.db import make_engine
 from app.errors import install_error_handlers
 from app.images import OpenRouterImages
+from app.coder import SceneCoder
 from app.voice import OpenRouterVoice
 from app.llm import DeepSeek
 from app.storage import Storage
@@ -41,6 +42,9 @@ def create_app(engine: AsyncEngine | None = None, verifier: TokenVerifier | None
                                   if settings and settings.stripe_secret_key else None)
     app.state.images = (OpenRouterImages(settings.openrouter_api_key, settings.openrouter_image_model)
                         if settings and settings.openrouter_api_key else None)
+    app.state.coder = (SceneCoder(settings.openrouter_api_key,
+                                  [m.strip() for m in settings.openrouter_scene_models.split(",") if m.strip()])
+                       if settings and settings.openrouter_api_key else None)
     app.state.voice = (OpenRouterVoice(settings.openrouter_api_key, settings.openrouter_tts_model,
                                        settings.openrouter_tts_voice)
                        if settings and settings.openrouter_api_key else None)

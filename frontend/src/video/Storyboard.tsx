@@ -2,6 +2,7 @@ import { AbsoluteFill, Easing, interpolate, Sequence, useCurrentFrame } from 're
 import { ComposeScene, CoverScene, CtaScene, EditorCoverScene, EditorFactsScene, EditorMoveScene, EditorOpenScene, EditorRepaintScene,
   EditorSaveScene, ListScene, NumberScene, PagesScene, PdfScene, PlanScene, ScreenScene, FormatsScene, CharactersScene, TitleScene, VersusScene } from './scenes'
 import { MotionScene } from './motion'
+import { CustomScene } from './custom'
 import { BentoScene, ChatScene, DevicesScene, KineticScene, LogoScene, PhoneScene, ZoomScene } from './startup'
 import { FONT, LOOKS, timeline, type Capture, type Look, type Scene, type ShelfBook, type StoryboardProps, type Transition, type VideoTome } from './spec'
 
@@ -20,7 +21,7 @@ export function StoryboardVideo({ board, tome, captures = {}, shelf = [] }: Stor
           <Sequence key={i} from={from} durationInFrames={frames + over}>
             <Move bg={scene.type === 'plan' || scene.type === 'pages' ? '#ffffff' : undefined} enter={enter} exit={over ? kind : 'corte'} frames={frames} over={over}
               enterOver={i > 0 ? Math.min(OVER, Math.floor(frames / 3)) : 0}>
-              <SceneView scene={scene} dur={over ? frames + over + 10 : frames} step={step} tome={tome} look={look}
+              <SceneView title={board.title} scene={scene} dur={over ? frames + over + 10 : frames} step={step} tome={tome} look={look}
                 capture={scene.capture ? captures[scene.capture] : undefined} shelf={shelf} />
             </Move>
           </Sequence>
@@ -58,7 +59,14 @@ function Move({ bg, enter, exit, frames, over, enterOver, children }: { bg?: str
   return <AbsoluteFill style={style}>{children}</AbsoluteFill>
 }
 
-function SceneView({ scene, dur, step, tome, look, capture, shelf }: { scene: Scene; dur: number; step?: number; tome: VideoTome; look: Look; capture?: Capture; shelf: ShelfBook[] }) {
+function SceneView({ title, scene, ...rest }: { title: string; scene: Scene; dur: number; step?: number; tome: VideoTome; look: Look; capture?: Capture; shelf: ShelfBook[] }) {
+  const template = <TemplateView scene={scene} {...rest} />
+  if (!scene.code) return template
+  return <CustomScene code={scene.code} fallback={template} dur={rest.dur} look={rest.look} caption={scene.caption} voice={scene.voice} text={scene.text}
+    title={title} book={rest.tome.title} step={rest.step ?? null} />
+}
+
+function TemplateView({ scene, dur, step, tome, look, capture, shelf }: { scene: Scene; dur: number; step?: number; tome: VideoTome; look: Look; capture?: Capture; shelf: ShelfBook[] }) {
   const p = { dur, caption: scene.caption, step, tome, text: scene.text, look: LOOKS[look] }
   switch (scene.type) {
     case 'title': return <TitleScene {...p} />

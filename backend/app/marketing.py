@@ -233,6 +233,7 @@ class Scene(BaseModel):
     capture: str = ""  # a screen scene's capture (marketing_captures id)
     focus: int = Field(default=0, ge=0, le=20)  # and which of its marked points the camera goes to
     motion: Motion | None = None  # a motion scene's graphic, as the director described it
+    code: str = Field(default="", max_length=24000)  # «a medida»: the scene as Claude programmed it (drawn over its type)
 
 
 # Free music (Kevin MacLeod, incompetech.com, CC BY 4.0: free to use crediting him), cut to 100 s in

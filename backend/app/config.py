@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     openrouter_search_model: str = "perplexity/sonar"  # web search with citations, for official programs
     openrouter_tts_model: str = "google/gemini-3.8-flash-tts"  # the marketing videos' voiceover
     openrouter_tts_voice: str = "Kore"
+    # «Escena a medida» in /admin/marketing: the Claude models the team can pick, the first one by default
+    openrouter_scene_models: str = "anthropic/claude-opus-5.5,anthropic/claude-sonnet-5.5"
     cloudflare_account_id: str = ""  # Workers AI: the free preview's Illustrator (free daily allowance)
     cloudflare_ai_token: str = ""
     stripe_secret_key: str = ""  # sk_live_… / sk_test_…; empty disables billing

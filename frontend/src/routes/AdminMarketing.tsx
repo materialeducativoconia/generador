@@ -1,6 +1,6 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Player } from '@remotion/player'
-import { useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { Navigate } from 'react-router'
 import { AppShell } from '../components/AppShell'
 import { errorText } from '../components/ErrorNote'
@@ -8,6 +8,7 @@ import { api } from '../lib/apiClient'
 import { GENRE_LABEL } from '../lib/labels'
 import { useMe, useSeries } from '../lib/queries'
 import type { Genre, Series } from '../lib/types'
+import { codeProblem } from '../video/custom'
 import { MOTION_ICONS, MOTION_STYLES } from '../video/motion'
 import { StoryboardVideo } from '../video/Storyboard'
 import { TopicToBook } from '../video/TopicToBook'
@@ -21,6 +22,11 @@ type Video = { id: string; series_id: string | null; format: Format; created_at:
   & ({ template: 'storyboard'; script: Storyboard } | { template: 'topic_to_book'; script: VideoScript })
 type Tome = { id: string; title: string; genre: Genre | null; cover_url: string | null }
 type Structure = { key: string; label: string; kinds: VideoKind[]; how: string }
+type Coder = { key: string; label: string }
+/** What «Escena a medida» needs wherever a board is edited: the Claude model picked, the size and the tome. */
+type Tailoring = { coders: Coder[]; model: string; setModel: (m: string) => void; format: Format; book: string }
+const TailorContext = createContext<Tailoring>({ coders: [], model: '', setModel: () => {}, format: '9:16', book: '' })
+const MODEL_KEY = 'marketing-scene-model'
 
 const FIELDS: [keyof VideoScript, string, number][] = [
   ['hook', 'Gancho (los primeros 3 s)', 60], ['request', 'Lo que escribe la docente', 140], ['plan', 'Subtítulo: el plan', 60],
@@ -101,7 +107,11 @@ export function AdminMarketing() {
   const tomes = useQuery({ queryKey: ['admin-series', 'ready-for-video'], enabled: staff,
     queryFn: () => api.get<{ series: Tome[] }>('/api/admin/series?status=ready&limit=96') })
   const structures = useQuery({ queryKey: ['marketing-structures'], enabled: staff, staleTime: Infinity,
-    queryFn: () => api.get<{ structures: Structure[] }>('/api/admin/marketing/structures') })
+    queryFn: () => api.get<{ structures: Structure[]; coders: Coder[] }>('/api/admin/marketing/structures') })
+  const [model, setModelState] = useState(() => { try { return localStorage.getItem(MODEL_KEY) ?? '' } catch { return '' } })
+  const coders = structures.data?.coders ?? []
+  const setModel = (m: string) => { setModelState(m); try { localStorage.setItem(MODEL_KEY, m) } catch { /* private window */ } }
+  const tailorFor = (f: Format, book: string): Tailoring => ({ coders, model: coders.some((c) => c.key === model) ? model : coders[0]?.key ?? '', setModel, format: f, book })
   const captures = useCaptures(staff)
   const shelf = useShelf(tomes.data?.series ?? [])
   const ways = (structures.data?.structures ?? []).filter((st) => st.kinds.includes(kind))
@@ -206,12 +216,13 @@ export function AdminMarketing() {
         {propose.error && <p className="error small" role="alert">{errorText(propose.error, 'No se pudo escribir el guion.')}</p>}
       </section>
 
-      {draft && <Draft board={draft} seriesId={seriesId} format={format} onChange={setDraft} onAgain={() => propose.mutate()} again={propose.isPending}
+      {draft && <TailorContext.Provider value={tailorFor(format, titles[seriesId] ?? '')}><Draft board={draft} setBoard={setDraft as Dispatch<SetStateAction<Storyboard>>} seriesId={seriesId} format={format} onChange={setDraft} onAgain={() => propose.mutate()} again={propose.isPending}
         onCreate={() => create.mutate()} creating={create.isPending} error={create.error} onDiscard={() => setDraft(null)}
-        structure={structures.data?.structures.find((st) => st.key === draft.structure)?.label} captures={captures} shelf={shelf} />}
+        structure={structures.data?.structures.find((st) => st.key === draft.structure)?.label} captures={captures} shelf={shelf} /></TailorContext.Provider>}
 
       {videos.error && <p className="error">{errorText(videos.error, 'No pudimos cargar los videos.')}</p>}
-      {current && <VideoEditor key={current.id} captures={captures} shelf={shelf} video={current} title={current.series_id ? titles[current.series_id] : undefined} onClose={() => setOpen(null)} />}
+      {current && <TailorContext.Provider value={tailorFor(current.format, (current.series_id && titles[current.series_id]) || '')}>
+        <VideoEditor key={current.id} captures={captures} shelf={shelf} video={current} title={current.series_id ? titles[current.series_id] : undefined} onClose={() => setOpen(null)} /></TailorContext.Provider>}
       <section className="marketing-videos">
         <h2 className="section-h">Tus videos</h2>
         {fetchMp4.error && <p className="error small" role="alert">{errorText(fetchMp4.error, 'No se pudo descargar.')}</p>}
@@ -238,8 +249,8 @@ export function AdminMarketing() {
 }
 
 /** The proposed storyboard before it is a video: its structure at a glance, playing, and changed scene by scene. */
-function Draft({ board, seriesId, format, structure, captures, shelf, onChange, onAgain, again, onCreate, creating, error, onDiscard }: {
-  board: Storyboard; seriesId: string; format: Format; structure?: string; captures: Record<string, Capture>; shelf: ShelfBook[]; onChange: (b: Storyboard) => void
+function Draft({ board, setBoard, seriesId, format, structure, captures, shelf, onChange, onAgain, again, onCreate, creating, error, onDiscard }: {
+  board: Storyboard; setBoard: Dispatch<SetStateAction<Storyboard>>; seriesId: string; format: Format; structure?: string; captures: Record<string, Capture>; shelf: ShelfBook[]; onChange: (b: Storyboard) => void
   onAgain: () => void; again: boolean; onCreate: () => void; creating: boolean; error: unknown; onDiscard: () => void
 }) {
   const series = useFilmedTome(seriesId)
@@ -264,7 +275,7 @@ function Draft({ board, seriesId, format, structure, captures, shelf, onChange, 
             {timeline(board).map(({ scene, from, frames, step }, i) => (
               <li key={i}>
                 <span className="muted small">{clock(from)}–{clock(from + frames)}</span>
-                <strong>{step ? `Paso ${step} · ` : ''}{SCENES[scene.type].label}</strong>
+                <strong>{step ? `Paso ${step} · ` : ''}{scene.code ? 'A medida · ' : ''}{SCENES[scene.type].label}</strong>
                 {scene.type === 'screen' && <span className="muted small">{(scene.capture && captures[scene.capture]?.name) || 'sin captura'}</span>}
                 {scene.caption && <span>«{scene.caption}»</span>}
                 {scene.text && <span className="muted small">{scene.text}</span>}
@@ -272,11 +283,12 @@ function Draft({ board, seriesId, format, structure, captures, shelf, onChange, 
             ))}
           </ol>
           <Styling board={board} onChange={onChange} />
+          <TailorAll board={board} setBoard={setBoard} />
           <button className="primary" onClick={onCreate} disabled={creating}>{creating ? 'Guardando…' : 'Crear este video'}</button>
           {error ? <p className="error small" role="alert">{errorText(error, 'No se pudo crear el video.')}</p> : null}
           <button type="button" className="ghost small" onClick={onAgain} disabled={again}>{again ? 'DeepSeek dirige otra…' : 'Otra estructura'}</button>
           <button type="button" className="ghost small" onClick={() => setEditing(!editing)}>{editing ? 'Ocultar escenas' : 'Editar escenas'}</button>
-          {editing && <BoardFields board={board} onChange={onChange} captures={captures} />}
+          {editing && <BoardFields board={board} onChange={onChange} setBoard={setBoard} captures={captures} />}
         </div>
       </div>
     </section>
@@ -295,6 +307,7 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
   const [width, height] = SIZES[format]
   const board = video.template === 'storyboard' ? script as Storyboard : null
   const fixed = board ? null : script as VideoScript
+  const setBoard: Dispatch<SetStateAction<Storyboard>> = (next) => setScript((s) => typeof next === 'function' ? next(s as Storyboard) : next)
   const frames = board ? boardFrames(board) : DURATION
   const dirty = JSON.stringify(script) !== JSON.stringify(video.script) || format !== video.format
   const save = useMutation({
@@ -392,8 +405,8 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
               ))}
             </div>
           </fieldset>
-          {board && <Styling board={board} onChange={setScript} />}
-          {board ? <BoardFields board={board} onChange={setScript} captures={captures} /> : FIELDS.map(([key, label, max]) => (
+          {board && <><Styling board={board} onChange={setScript} /><TailorAll board={board} setBoard={setBoard} /></>}
+          {board ? <BoardFields board={board} onChange={setScript} setBoard={setBoard} captures={captures} /> : FIELDS.map(([key, label, max]) => (
             <label key={key} className="field"><span>{label}</span>
               {key === 'request'
                 ? <textarea value={fixed![key]} onChange={(e) => setScript({ ...fixed!, [key]: e.target.value })} rows={2} maxLength={max} />
@@ -434,7 +447,8 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
 }
 
 /** The storyboard, scene by scene: what it shows, how long, its line on screen and its voice; reordered or removed. */
-function BoardFields({ board, onChange, captures }: { board: Storyboard; onChange: (b: Storyboard) => void; captures: Record<string, Capture> }) {
+function BoardFields({ board, onChange, setBoard, captures }: { board: Storyboard; onChange: (b: Storyboard) => void; setBoard: Dispatch<SetStateAction<Storyboard>>
+  captures: Record<string, Capture> }) {
   const [adding, setAdding] = useState<SceneType>('editor_open')
   const set = (i: number, scene: Partial<Scene>) => onChange({ ...board, scenes: board.scenes.map((sc, j) => (j === i ? { ...sc, ...scene } : sc)) })
   const move = (i: number, by: number) => {
@@ -477,6 +491,7 @@ function BoardFields({ board, onChange, captures }: { board: Storyboard; onChang
             {sc.type === 'motion' && <MotionFields motion={sc.motion} onChange={(motion) => set(i, { motion })} />}
             {SCENES[sc.type].types && <input value={sc.text} onChange={(e) => set(i, { text: e.target.value })} maxLength={140} placeholder={SCENES[sc.type].types} />}
             <textarea value={sc.voice} onChange={(e) => set(i, { voice: e.target.value })} maxLength={300} rows={2} placeholder="Voz en off de esta escena" />
+            <TailorScene board={board} index={i} setBoard={setBoard} />
           </li>
         ))}
       </ol>
@@ -488,6 +503,91 @@ function BoardFields({ board, onChange, captures }: { board: Storyboard; onChang
           scenes: [...board.scenes.slice(0, -1), { type: adding, seconds: 4, caption: '', voice: '', text: '' }, ...board.scenes.slice(-1)] })}>
           + Añadir escena</button>
       </div>
+    </div>
+  )
+}
+
+/** One scene programmed by Claude (OpenRouter): the board's other scenes and the tome are its context. */
+function useTailor(setBoard: Dispatch<SetStateAction<Storyboard>>) {
+  const { model, format, book } = useContext(TailorContext)
+  return (board: Storyboard, index: number, change?: string) => api.post<{ code: string; cost: number }>('/api/admin/marketing/scene-code',
+    { board, index, format, book, model, change: change || null })
+    .then(({ code, cost }) => {
+      setBoard((b) => ({ ...b, scenes: b.scenes.map((sc, j) => (j === index ? { ...sc, code } : sc)) }))
+      return cost
+    })
+}
+
+function ModelPicker() {
+  const { coders, model, setModel } = useContext(TailorContext)
+  if (coders.length < 2) return null
+  return (
+    <select value={model} onChange={(e) => setModel(e.target.value)} aria-label="Modelo de Claude">
+      {coders.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+    </select>
+  )
+}
+
+/** «Escena a medida» for the whole video: Claude programs every scene (three at a time) like Claude Code would. */
+function TailorAll({ board, setBoard }: { board: Storyboard; setBoard: Dispatch<SetStateAction<Storyboard>> }) {
+  const { coders } = useContext(TailorContext)
+  const tailor = useTailor(setBoard)
+  const [busy, setBusy] = useState<{ done: number; of: number } | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  const tailored = board.scenes.filter((sc) => sc.code).length
+  if (!coders.length) return null
+  async function all(only: 'missing' | 'every') {
+    const todo = board.scenes.map((sc, i) => (only === 'every' || !sc.code ? i : -1)).filter((i) => i >= 0)
+    setBusy({ done: 0, of: todo.length })
+    setNote(null)
+    let cost = 0, failed = 0
+    const queue = [...todo]
+    await Promise.all(Array.from({ length: 3 }, async () => {
+      for (let i = queue.shift(); i !== undefined; i = queue.shift()) {
+        try { cost += await tailor(board, i) } catch { failed++ }
+        setBusy((b) => b && { ...b, done: b.done + 1 })
+      }
+    }))
+    setBusy(null)
+    setNote(`${todo.length - failed} escenas a medida · US$ ${cost.toFixed(2)}${failed ? ` · ${failed} fallaron (quedan con su plantilla; pruébalas otra vez)` : ''}`)
+  }
+  return (
+    <fieldset className="field board-tailor"><legend>Escenas a medida (Claude)</legend>
+      <span className="muted small">Claude programa cada escena desde cero con tu texto y tu voz, como un motion designer. Si una escena falla, se ve su plantilla.</span>
+      <div className="board-head">
+        <ModelPicker />
+        <button type="button" className="primary small" disabled={!!busy} onClick={() => all(tailored ? 'missing' : 'every')}>
+          {busy ? `Claude programa… ${busy.done}/${busy.of}` : tailored ? 'Diseñar las que faltan' : 'Diseñar todas a medida'}</button>
+        {tailored > 0 && !busy && <button type="button" className="ghost small" onClick={() => all('every')}>Rehacer todas</button>}
+        {tailored > 0 && !busy && <button type="button" className="ghost small"
+          onClick={() => setBoard((b) => ({ ...b, scenes: b.scenes.map((sc) => ({ ...sc, code: '' })) }))}>Volver a las plantillas</button>}
+      </div>
+      {note && <span className="muted small">{note}</span>}
+    </fieldset>
+  )
+}
+
+/** One scene a medida: programmed, changed in words («más dinámica») or back to its template. */
+function TailorScene({ board, index, setBoard }: { board: Storyboard; index: number; setBoard: Dispatch<SetStateAction<Storyboard>> }) {
+  const { coders } = useContext(TailorContext)
+  const tailor = useTailor(setBoard)
+  const [change, setChange] = useState('')
+  const run = useMutation({ mutationFn: (fresh: boolean) => tailor(board, index, fresh ? '' : change.trim()), onSuccess: () => setChange('') })
+  const code = board.scenes[index].code
+  if (!coders.length) return null
+  const broken = code ? codeProblem(code) : null
+  return (
+    <div className="board-tailor">
+      <div className="board-head">
+        <span className={code ? (broken ? 'pill idle' : 'pill ok') : 'pill idle'}>{code ? (broken ? 'Falla: plantilla' : 'A medida') : 'Plantilla'}</span>
+        {code && <input value={change} onChange={(e) => setChange(e.target.value)} maxLength={400} placeholder="Cambios: p. ej. más dinámica, iconos más grandes" />}
+        <button type="button" className="ghost small" disabled={run.isPending || (!!code && !change.trim() && !broken)}
+          onClick={() => run.mutate(false)}>{run.isPending ? 'Claude programa…' : code ? (broken ? 'Rehacer' : 'Aplicar cambios') : 'Diseñar a medida'}</button>
+        {code && !run.isPending && <button type="button" className="ghost small" onClick={() => run.mutate(true)} title="Otra versión desde cero">Otra versión</button>}
+        {code && <button type="button" className="ghost small" onClick={() => setBoard((b) => ({ ...b, scenes: b.scenes.map((sc, j) => (j === index ? { ...sc, code: '' } : sc)) }))}>Quitar</button>}
+      </div>
+      {broken && <span className="error small">{broken}</span>}
+      {run.error && <span className="error small" role="alert">{errorText(run.error, 'Claude no pudo programar la escena.')}</span>}
     </div>
   )
 }
