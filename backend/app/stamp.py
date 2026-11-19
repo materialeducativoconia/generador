@@ -1,11 +1,11 @@
 """The free library's copyright: one line set vertically along the outer edge of every page of a published book,
 so a copy passed around still says whose it is and that it is not for sale. WeasyPrint sets the line on a blank
-page of the same size and pdfium lays that page over each one as a form, so the book's own pages stay untouched."""
+page of the same size and pypdf lays that page over each one, so the book's own pages stay untouched."""
 
 import html
 import io
 
-import pypdfium2
+import pypdf
 import weasyprint
 
 PT_TO_MM = 25.4 / 72
@@ -27,23 +27,18 @@ def _overlay(width_pt: float, height_pt: float, line: str) -> bytes:
 
 
 def copyright_edge(pdf: bytes, line: str) -> bytes:
-    """The book with `line` along the right edge of each page."""
-    book = pypdfium2.PdfDocument(pdf)
-    overlays: dict[tuple[int, int], tuple] = {}
-    for i in range(len(book)):
-        page = book[i]
-        w, h = page.get_size()
+    """The book with `line` along the right edge of each page. pypdf lays the line's page over each one and keeps
+    the book's own content stream as it is: pdfium regenerated it (gen_content) and garbled the cover's outlined title."""
+    book = pypdf.PdfWriter(clone_from=pypdf.PdfReader(io.BytesIO(pdf)))
+    overlays: dict[tuple[int, int], pypdf.PageObject] = {}
+    for page in book.pages:
+        w, h = float(page.mediabox.width), float(page.mediabox.height)
         key = (round(w), round(h))
         if key not in overlays:
-            source = pypdfium2.PdfDocument(_overlay(w, h, line))
-            overlays[key] = (source, source.page_as_xobject(0, book))
-        _, xobject = overlays[key]
-        page.insert_obj(xobject.as_pageobject())
-        page.gen_content()
+            overlays[key] = pypdf.PdfReader(io.BytesIO(_overlay(w, h, line))).pages[0]
+        page.merge_page(overlays[key], over=True)
     out = io.BytesIO()
-    book.save(out)
-    for source, _ in overlays.values():
-        source.close()
+    book.write(out)
     return out.getvalue()
 
 

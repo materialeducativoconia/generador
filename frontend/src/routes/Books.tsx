@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { useAuth } from '../auth/context'
 import { rememberReturnTo, saveWithGoogle, signInWithGoogle } from '../auth/google'
 import { errorText } from '../components/ErrorNote'
@@ -19,13 +19,17 @@ export function Book() {
   const signedIn = !!session && !session.user.is_anonymous
   const [signing, setSigning] = useState(false)
   const [open, setOpen] = useState(0)
+  const navigate = useNavigate()
   const { data, error } = useQuery({
     queryKey: ['free-book', slug],
     queryFn: () => api.get<{ book: FreeBook }>(`/api/books/${slug}`),
   })
   const download = useMutation({
     mutationFn: () => api.post<{ url: string }>(`/api/books/${slug}/download`),
-    onSuccess: ({ url }) => window.location.assign(url),
+    onSuccess: ({ url }) => {  // the PDF comes as an attachment, so the page stays and takes them to their account
+      window.location.assign(url)
+      setTimeout(() => navigate('/app', { replace: true }), 600)
+    },
   })
   const wantsIt = params.get('descargar') === '1'
   const { mutate, isIdle } = download
@@ -67,9 +71,9 @@ export function Book() {
             <h1 className="display sm">{book.title}</h1>
             <p className="muted small">{book.page_count} páginas{book.audience ? ` · ${book.audience}` : ''} · PDF para imprimir</p>
             <button className="primary" onClick={get} disabled={loading || signing || download.isPending}>
-              {download.isPending ? 'Preparando PDF…' : signedIn ? 'Descargar PDF gratis' : 'Regístrate con Google y descárgalo gratis'}
+              {download.isPending ? 'Preparando PDF…' : 'Descarga gratis'}
             </button>
-            {!signedIn && <span className="muted small">Gratis: solo te pedimos una cuenta para descargar.</span>}
+            {!signedIn && <span className="muted small">Entras con Google y el PDF se descarga.</span>}
             {download.error && <p className="error small">{errorText(download.error, 'No se pudo descargar.')}</p>}
             <div className="plate-cta">
               <strong>¿Te gustó? Crea uno igual sobre tu tema.</strong>

@@ -53,7 +53,8 @@ async def test_an_admin_publishes_a_tome_as_a_free_book_downloaded_after_signing
 
     stamped = storage.uploads[("exports", f"library/books/{slug}.pdf")][0]
     for page in pypdfium2.PdfDocument(stamped):  # the copyright along every page's edge
-        assert "Prohibida su venta" in page.get_textpage().get_text_range()
+        text = page.get_textpage().get_text_range()
+        assert "Prohibida su venta" in text and ("Portada" in text or "Página 2" in text)  # the page itself intact
 
     assert (await client.get("/api/admin/books", headers=bearer(key, owner))).status_code == 403  # admins only
     listed = (await client.get("/api/admin/books", headers=bearer(key, admin))).json()["books"]
