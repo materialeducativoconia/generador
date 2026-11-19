@@ -24,11 +24,18 @@ def price(client, key: str, name: str, cents: int, recurring: bool, mxn_cents: i
     found = client.v1.prices.list({"lookup_keys": [key], "limit": 1, "expand": ["data.currency_options"]}).data
     if found:
         options = found[0].currency_options or {}
+        old = found[0]
         if "mxn" in options and options["mxn"].unit_amount == mxn_cents:
             print(f"= {key}")
-        else:
-            client.v1.prices.update(found[0].id, {"currency_options": mxn})
+        elif "mxn" not in options:
+            client.v1.prices.update(old.id, {"currency_options": mxn})
             print(f"~ {key}: MXN {mxn_cents / 100:.0f}")
+        else:  # Stripe never changes an amount already set: a new price takes the lookup key, the old one retires
+            client.v1.prices.create({"product": old.product, "currency": old.currency, "unit_amount": old.unit_amount,
+                                     "lookup_key": key, "transfer_lookup_key": True, "currency_options": mxn,
+                                     **({"recurring": {"interval": old.recurring.interval}} if old.recurring else {})})
+            client.v1.prices.update(old.id, {"active": False})
+            print(f"* {key}: MXN {options['mxn'].unit_amount / 100:.0f} → {mxn_cents / 100:.0f} (precio nuevo)")
         return
     product = client.v1.products.create({"name": name})
     client.v1.prices.create({"product": product.id, "currency": "usd", "unit_amount": cents, "lookup_key": key,
