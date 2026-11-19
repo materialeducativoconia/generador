@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Billing } from '../lib/queries'
+import { type Currency } from '../lib/currency'
 
 export type PlanInfo = Billing['plans'][number]
 
@@ -10,7 +11,7 @@ const PITCH: Record<string, string> = {
 }
 
 /** The plans side by side, as pricing pages do: price, the button, then what is in (✓) and what is not (✗). */
-export function PlanCards({ plans, current, action }: { plans: PlanInfo[]; current?: string; action: (p: PlanInfo) => ReactNode }) {
+export function PlanCards({ plans, current, action, currency = 'usd' }: { plans: PlanInfo[]; current?: string; action: (p: PlanInfo) => ReactNode; currency?: Currency }) {
   return (
     <div className="plan-grid">
       {plans.map((p) => (
@@ -20,7 +21,7 @@ export function PlanCards({ plans, current, action }: { plans: PlanInfo[]; curre
             {p.key === 'creador' && <span className="plan-badge">Más elegido</span>}
           </header>
           <p className="plan-pitch">{PITCH[p.key]}</p>
-          <p className="plan-price"><strong>${p.price_usd}</strong><span>USD / mes</span></p>
+          <p className="plan-price"><strong>${(currency === 'mxn' ? p.price_mxn : p.price_usd).toLocaleString('es-MX')}</strong><span>{currency.toUpperCase()} / mes</span></p>
           <p className="plan-credits"><strong>{p.credits.toLocaleString('es-MX')}</strong> créditos al mes · ~{Math.round(p.credits / 29)} tomos de 24 páginas</p>
           <div className="plan-cta">{action(p)}</div>
           <Features plan={p} />

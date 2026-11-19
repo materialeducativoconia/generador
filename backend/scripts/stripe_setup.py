@@ -1,4 +1,5 @@
-"""Creates (once) the Stripe products and USD prices the app finds by lookup key, and the webhook endpoint.
+"""Creates (once) the Stripe products and prices the app finds by lookup key, in USD and MXN (currency_options), and
+the webhook endpoint. A price made before MXN existed gets its MXN amount added.
 
     STRIPE_SECRET_KEY=sk_test_… uv run python scripts/stripe_setup.py https://<api-host>
 
@@ -12,19 +13,26 @@ import sys
 import stripe
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from app.plans import PACKS, PAID, PLANS, lookup_key  # noqa: E402
+from app.plans import PACKS, PAID, PLANS, PRICE_MXN, lookup_key  # noqa: E402
 
 EVENTS = ["checkout.session.completed", "invoice.paid", "customer.subscription.updated",
           "customer.subscription.deleted"]
 
 
-def price(client, key: str, name: str, cents: int, recurring: bool) -> None:
-    if client.v1.prices.list({"lookup_keys": [key], "limit": 1}).data:
-        print(f"= {key}")
+def price(client, key: str, name: str, cents: int, recurring: bool, mxn_cents: int) -> None:
+    mxn = {"mxn": {"unit_amount": mxn_cents}}
+    found = client.v1.prices.list({"lookup_keys": [key], "limit": 1, "expand": ["data.currency_options"]}).data
+    if found:
+        options = found[0].currency_options or {}
+        if "mxn" in options and options["mxn"].unit_amount == mxn_cents:
+            print(f"= {key}")
+        else:
+            client.v1.prices.update(found[0].id, {"currency_options": mxn})
+            print(f"~ {key}: MXN {mxn_cents / 100:.0f}")
         return
     product = client.v1.products.create({"name": name})
     client.v1.prices.create({"product": product.id, "currency": "usd", "unit_amount": cents, "lookup_key": key,
-                             **({"recurring": {"interval": "month"}} if recurring else {})})
+                             "currency_options": mxn, **({"recurring": {"interval": "month"}} if recurring else {})})
     print(f"+ {key}")
 
 
@@ -32,9 +40,10 @@ def main() -> None:
     client = stripe.StripeClient(os.environ["STRIPE_SECRET_KEY"])
     for plan in PAID:
         p = PLANS[plan]
-        price(client, lookup_key(plan), f"Plan {p.label} · {p.credits} créditos al mes", p.price_usd * 100, True)
+        price(client, lookup_key(plan), f"Plan {p.label} · {p.credits} créditos al mes", p.price_usd * 100, True,
+              PRICE_MXN[plan] * 100)
     for key, (n, usd) in PACKS.items():
-        price(client, key, f"Paquete de {n} créditos", usd * 100, False)
+        price(client, key, f"Paquete de {n} créditos", usd * 100, False, PRICE_MXN[key] * 100)
     if len(sys.argv) > 1:
         url = sys.argv[1].rstrip("/") + "/api/stripe/webhook"
         if any(e.url == url for e in client.v1.webhook_endpoints.list({"limit": 100}).data):

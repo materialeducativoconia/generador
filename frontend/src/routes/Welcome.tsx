@@ -8,6 +8,7 @@ import { SHOWCASE_BASE, Showcase } from '../components/Showcase'
 import { useSeriesList } from '../lib/queries'
 import { PUBLIC_PLAN_INFO } from '../lib/pricing'
 import { PlanCards } from '../components/PlanCards'
+import { CurrencyToggle, useCurrency } from '../lib/currency'
 import { TOPICS, topicHref } from '../lib/topics'
 import { HOUSE_STYLES, sampleOf } from '../lib/houseStyles'
 import { usePageTitle } from '../lib/seo'
@@ -27,6 +28,7 @@ export function Welcome() {
   const { session, loading } = useAuth()
   const [params, setParams] = useSearchParams()
   const [starting, setStarting] = useState(false)
+  const [currency, setCurrency] = useCurrency()
   const [previewing, setPreviewing] = useState(false)  // the visitor's anonymous session must not bounce them to /app
   const [error, setError] = useState<string | null>(() => ERRORS[params.get('error') ?? ''] ?? null)
   const [joining, setJoining] = useState<string | null>(null)  // the plan whose button is signing in
@@ -186,7 +188,8 @@ export function Welcome() {
         <p className="eyebrow">Planes</p>
         <h2 className="l-h">Empieza hoy. Cancela cuando quieras.</h2>
         <p className="l-lede">Tu vista previa es gratis. Con un plan generas tomos completos, los editas y los descargas. 1 crédito ≈ 1 página, y si una generación falla te devolvemos los créditos.</p>
-        <PlanCards plans={PUBLIC_PLAN_INFO} action={(p) => (
+        <CurrencyToggle currency={currency} onChange={setCurrency} />
+        <PlanCards plans={PUBLIC_PLAN_INFO} currency={currency} action={(p) => (
           <button className={`${p.key === 'creador' ? 'primary' : 'ghost'} block`} onClick={() => void subscribe(p.key)} disabled={!!joining}>
             {joining === p.key ? 'Abriendo…' : 'Suscribirme'}
           </button>

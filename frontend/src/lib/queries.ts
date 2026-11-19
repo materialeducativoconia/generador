@@ -46,10 +46,10 @@ export type Billing = {
   can_manage: boolean
   enabled: boolean
   trial_credits: number
-  plans: { key: string; label: string; price_usd: number; credits: number; watermark: boolean; commercial: boolean; word: boolean;
+  plans: { key: string; label: string; price_usd: number; price_mxn: number; credits: number; watermark: boolean; commercial: boolean; word: boolean;
            print_edition: boolean; styles: number; identities: number; logo: boolean; premium: boolean; max_pages: number;
            concurrent: number; seats: number }[]
-  packs: { key: string; credits: number; price_usd: number }[]
+  packs: { key: string; credits: number; price_usd: number; price_mxn: number }[]
   history: { delta: number; kind: string; reason: string; created_at: string }[]
 }
 

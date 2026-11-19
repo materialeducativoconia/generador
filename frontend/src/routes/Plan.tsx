@@ -7,6 +7,7 @@ import { api } from '../lib/apiClient'
 import { useBilling, useMe } from '../lib/queries'
 import { PlanCards } from '../components/PlanCards'
 import { saveWithGoogle } from '../auth/google'
+import { CurrencyToggle, money, useCurrency } from '../lib/currency'
 
 const date = (iso: string) => new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'long' })
 
@@ -15,6 +16,7 @@ export function Plan() {
   const { data: b, isLoading } = useBilling()
   const { data: me } = useMe()
   const qc = useQueryClient()
+  const [currency, setCurrency] = useCurrency()
   const [params, setParams] = useSearchParams()
   const paid = params.get('pago') === 'ok'
   const tome = useWaitingTome(params.get('tomo'))
@@ -28,15 +30,15 @@ export function Plan() {
     mutationFn: ({ path, body }: { path: string; body?: object }) => api.post<{ url: string }>(path, body),
     onSuccess: ({ url }) => window.location.assign(url),
   })
-  const choose = (plan: string) => go.mutate({ path: '/api/billing/checkout', body: { plan } })
+  const choose = (plan: string) => go.mutate({ path: '/api/billing/checkout', body: { plan, currency } })
   // The landing's "Suscribirme" signs in with Google and lands here with ?plan=: straight on to Stripe.
   const wanted = params.get('plan')
   const started = useRef(false)
   useEffect(() => {
     if (started.current || !wanted || !b?.enabled || !me || me.anonymous || b.plan === wanted || !b.plans.some((p) => p.key === wanted)) return
     started.current = true
-    go.mutate({ path: '/api/billing/checkout', body: { plan: wanted } })
-  }, [wanted, b, me, go])
+    go.mutate({ path: '/api/billing/checkout', body: { plan: wanted, currency } })
+  }, [wanted, b, me, go, currency])
   // Arriving from the landing's button: a calm hand-off screen instead of the plan page flashing by.
   const handingOff = !!wanted && !go.isError && (!b || !me || (b.enabled && !me.anonymous && b.plan !== wanted && b.plans.some((p) => p.key === wanted)))
   if (handingOff) return (
@@ -78,7 +80,8 @@ export function Plan() {
       {!b.enabled && <p className="notice">Los pagos se activan muy pronto.</p>}
       {go.error && <p className="error" role="alert">{errorText(go.error, 'No pudimos abrir el pago.')}</p>}
 
-      <PlanCards plans={b.plans} current={b.plan} action={(p) => p.key === b.plan ? <button className="ghost block" disabled>Tu plan actual</button> : (
+      <CurrencyToggle currency={currency} onChange={setCurrency} />
+      <PlanCards plans={b.plans} current={b.plan} currency={currency} action={(p) => p.key === b.plan ? <button className="ghost block" disabled>Tu plan actual</button> : (
         <button className={`${p.key === 'creador' ? 'primary' : 'ghost'} block`} disabled={!b.enabled || go.isPending || me?.anonymous}
           onClick={() => choose(p.key)}>
           {go.isPending && go.variables?.body && (go.variables.body as { plan?: string }).plan === p.key ? 'Abriendo pago…' : current ? 'Cambiar a este plan' : 'Suscribirme'}
@@ -91,8 +94,8 @@ export function Plan() {
         <div className="pack-row">
           {b.packs.map((k) => (
             <button key={k.key} className="panel pack" disabled={!b.enabled || go.isPending}
-              onClick={() => go.mutate({ path: '/api/billing/packs', body: { pack: k.key } })}>
-              <strong>{k.credits} créditos</strong><span>${k.price_usd} USD</span>
+              onClick={() => go.mutate({ path: '/api/billing/packs', body: { pack: k.key, currency } })}>
+              <strong>{k.credits} créditos</strong><span>{money(k, currency)}</span>
             </button>
           ))}
         </div>

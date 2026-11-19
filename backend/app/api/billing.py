@@ -12,7 +12,7 @@ from sqlalchemy import text
 from app import credits
 from app.api.deps import current_user_id
 from app.errors import ApiError
-from app.plans import APP, PACK_MONTHS, PACKS, PAID, PLANS, TRIAL_CREDITS, plan_for_key
+from app.plans import APP, PACK_MONTHS, PACKS, PAID, PLANS, PRICE_MXN, TRIAL_CREDITS, Currency, plan_for_key
 
 router = APIRouter()
 log = logging.getLogger("billing")
@@ -21,10 +21,12 @@ UserId = Annotated[uuid.UUID, Depends(current_user_id)]
 
 class PlanCheckout(BaseModel):
     plan: Literal["docente", "creador", "editorial"]
+    currency: Currency = "usd"
 
 
 class PackCheckout(BaseModel):
     pack: Literal["pack_100", "pack_300", "pack_1000"]
+    currency: Currency = "usd"
 
 
 @router.get("/api/billing")
@@ -41,8 +43,8 @@ async def billing(request: Request, user_id: UserId):
         "plan": acc.plan_key, "status": acc.status,
         "period_end": acc.period_end.isoformat() if acc.period_end else None,
         "credits": wallet, "can_manage": customer is not None,
-        "plans": [{"key": k, **vars(p)} for k, p in PLANS.items() if k in PAID],
-        "packs": [{"key": k, "credits": c, "price_usd": usd} for k, (c, usd) in PACKS.items()],
+        "plans": [{"key": k, **vars(p), "price_mxn": PRICE_MXN[k]} for k, p in PLANS.items() if k in PAID],
+        "packs": [{"key": k, "credits": c, "price_usd": usd, "price_mxn": PRICE_MXN[k]} for k, (c, usd) in PACKS.items()],
         "trial_credits": TRIAL_CREDITS,
         "history": [{**h, "created_at": h["created_at"].isoformat()} for h in history],
         "enabled": request.app.state.stripe is not None,
@@ -61,7 +63,7 @@ async def checkout_plan(body: PlanCheckout, request: Request, user_id: UserId):
             raise ApiError(409, "invalid_state", "Tu suscripción no tiene cliente en Stripe.")
         return {"url": await gateway.portal(customer)}
     return {"url": await gateway.checkout_plan(org_id=str(acc.org_id), plan=body.plan, email=email,
-                                               customer=customer)}
+                                               customer=customer, currency=body.currency)}
 
 
 @router.post("/api/billing/packs")
@@ -72,7 +74,7 @@ async def checkout_pack(body: PackCheckout, request: Request, user_id: UserId):
     if email is None:
         raise ApiError(409, "account_required", "Entra con Google para comprar créditos; tu vista previa se guarda.")
     return {"url": await gateway.checkout_pack(org_id=str(acc.org_id), pack=body.pack, email=email,
-                                               customer=customer)}
+                                               customer=customer, currency=body.currency)}
 
 
 @router.post("/api/billing/portal")

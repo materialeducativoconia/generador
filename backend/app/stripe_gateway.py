@@ -6,10 +6,13 @@ run in a thread. Tests swap this class for a fake (app.state.stripe).
 
 import asyncio
 import json
+import logging
 
 import stripe
 
-from app.plans import PACKS, lookup_key
+from app.plans import PACKS, Currency, lookup_key
+
+log = logging.getLogger("billing")
 
 
 class StripeGateway:
@@ -28,7 +31,19 @@ class StripeGateway:
             self._prices[key] = found.data[0].id
         return self._prices[key]
 
-    async def checkout_plan(self, *, org_id: str, plan: str, email: str, customer: str | None) -> str:
+    async def _session(self, params: dict, currency: Currency) -> str:
+        """A Checkout session in the customer's currency. If Stripe refuses it (the price has no MXN yet, or the
+        customer already pays in the other currency) the session is made in the other one, never a failed checkout."""
+        try:
+            session = await asyncio.to_thread(self.client.v1.checkout.sessions.create, {**params, "currency": currency})
+        except stripe.InvalidRequestError as exc:
+            other = "usd" if currency == "mxn" else "mxn"
+            log.warning("checkout in %s refused (%s); trying %s", currency, exc.user_message or exc, other)
+            session = await asyncio.to_thread(self.client.v1.checkout.sessions.create, {**params, "currency": other})
+        return session.url
+
+    async def checkout_plan(self, *, org_id: str, plan: str, email: str, customer: str | None,
+                            currency: Currency = "usd") -> str:
         params = {
             "mode": "subscription", "client_reference_id": org_id,
             "line_items": [{"price": await self._price(lookup_key(plan)), "quantity": 1}],
@@ -38,10 +53,10 @@ class StripeGateway:
             "allow_promotion_codes": True,
             **({"customer": customer} if customer else {"customer_email": email}),
         }
-        session = await asyncio.to_thread(self.client.v1.checkout.sessions.create, params)
-        return session.url
+        return await self._session(params, currency)
 
-    async def checkout_pack(self, *, org_id: str, pack: str, email: str, customer: str | None) -> str:
+    async def checkout_pack(self, *, org_id: str, pack: str, email: str, customer: str | None,
+                            currency: Currency = "usd") -> str:
         params = {
             "mode": "payment", "client_reference_id": org_id,
             "line_items": [{"price": await self._price(pack), "quantity": 1}],
@@ -49,8 +64,7 @@ class StripeGateway:
             "success_url": f"{self.app_url}/app/plan?pago=ok", "cancel_url": f"{self.app_url}/app/plan",
             **({"customer": customer} if customer else {"customer_email": email, "customer_creation": "always"}),
         }
-        session = await asyncio.to_thread(self.client.v1.checkout.sessions.create, params)
-        return session.url
+        return await self._session(params, currency)
 
     async def portal(self, customer: str) -> str:
         session = await asyncio.to_thread(self.client.v1.billing_portal.sessions.create,

@@ -5,6 +5,7 @@ even when every page is illustrated. Prices and grants live here and in Stripe (
 """
 
 from dataclasses import dataclass
+from typing import Literal
 
 APP = "generador"
 
@@ -43,6 +44,12 @@ FREE_PREVIEWS_PER_DAY = 100  # for everyone: a preview is the real tome, text an
 # Extra credits, one-off: pricier per credit than a plan, so moving up a plan is the better deal. Valid 12 months.
 PACKS: dict[str, tuple[int, int]] = {"pack_100": (100, 8), "pack_300": (300, 21), "pack_1000": (1000, 60)}
 PACK_MONTHS = 12
+# The same plans and packs in Mexican pesos: many Mexican cards decline a charge in dollars (a foreign purchase), so
+# Checkout charges in the currency the customer picks. Stripe keeps both on one price (currency_options), set by
+# scripts/stripe_setup.py; credits never depend on the amount.
+PRICE_MXN: dict[str, int] = {"docente": 179, "creador": 449, "editorial": 1299,
+                             "pack_100": 149, "pack_300": 399, "pack_1000": 1149}
+Currency = Literal["mxn", "usd"]
 
 # Credits per action
 OUTLINE = 1  # research + the Architect + the Designer

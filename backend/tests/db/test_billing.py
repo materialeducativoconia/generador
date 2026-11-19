@@ -136,7 +136,11 @@ async def test_stripe_grants_packs_and_monthly_credits_once(raw_db, google_user,
 
     assert (await client.post("/api/billing/checkout", json={"plan": "docente"}, headers=h)).json()["url"] \
         == "https://checkout.stripe.test/plan"
-    assert stripe.sessions[0][1]["org_id"] == str(org)
+    assert stripe.sessions[0][1]["org_id"] == str(org) and stripe.sessions[0][1]["currency"] == "usd"
+    await client.post("/api/billing/packs", json={"pack": "pack_100", "currency": "mxn"}, headers=h)
+    assert stripe.sessions[-1][1]["currency"] == "mxn"
+    listed = (await client.get("/api/billing", headers=h)).json()
+    assert [p["price_mxn"] for p in listed["plans"]] == [179, 449, 1299] and listed["packs"][0]["price_mxn"] == 149
     assert (await send(client, "evt_x", "invoice.paid", {}, signature="forged")).status_code == 400
 
     pack = {"id": f"cs_{RUN}", "mode": "payment", "payment_status": "paid", "client_reference_id": str(org),
@@ -164,3 +168,28 @@ async def test_stripe_grants_packs_and_monthly_credits_once(raw_db, google_user,
 
     await send(client, "evt_5", "customer.subscription.deleted", stripe.subscriptions["sub_1"])
     assert (await client.get("/api/me", headers=h)).json()["plan"]["key"] == "prueba"
+
+
+async def test_checkout_charges_in_pesos_and_falls_back_to_dollars_when_stripe_refuses():
+    import stripe
+
+    from app.stripe_gateway import StripeGateway
+
+    made = []
+
+    class Sessions:
+        def create(self, params):
+            made.append(params)
+            if params["currency"] == "mxn" and params.get("customer") == "cus_usd":
+                raise stripe.InvalidRequestError("You cannot combine currencies on a single customer.", "currency")
+            return type("S", (), {"url": f"https://checkout.stripe.test/{params['currency']}"})()
+
+    gateway = StripeGateway("sk_test_x", "whsec_x", "https://docs.jelyx.app")
+    gateway.client = type("C", (), {"v1": type("V", (), {"checkout": type("K", (), {"sessions": Sessions()})()})()})()
+    gateway._prices = {"docente_monthly": "price_d", "pack_100": "price_p"}
+
+    assert await gateway.checkout_plan(org_id="o", plan="docente", email="a@b.mx", customer=None, currency="mxn") \
+        == "https://checkout.stripe.test/mxn"
+    assert await gateway.checkout_pack(org_id="o", pack="pack_100", email="a@b.mx", customer="cus_usd", currency="mxn") \
+        == "https://checkout.stripe.test/usd"  # a customer who already pays in dollars
+    assert [m["currency"] for m in made] == ["mxn", "mxn", "usd"]
