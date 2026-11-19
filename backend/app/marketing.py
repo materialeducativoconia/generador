@@ -109,23 +109,27 @@ SCENES = {
     "chat": "el chat con la IA, como en las apps que crean con un prompt: se escribe el pedido y se envía, la IA "
             "marca sus pasos (plan, portada, ilustraciones) y responde con el libro terminado (text: el pedido)",
     "logo": "revelado del logo de Jelyx Docs con un anillo de luz y el caption como lema: una apertura de marca",
+    "motion": "motion graphic: formas, iconos y líneas animadas que explican una idea sin mostrar la app. Lo describes "
+              "tú en el campo motion (estilo, elementos y colores) a partir del pedido; text: la frase central, "
+              "máximo 40 caracteres",
     "cta": "cierre con la marca, la llamada a la acción y la dirección de la app",
 }
 SceneType = Literal["title", "compose", "plan", "cover", "pages", "pdf", "editor_open", "editor_move", "editor_facts",
                     "editor_repaint", "editor_cover", "editor_save", "list", "versus", "number", "formats", "characters", "screen",
-                    "phone", "devices", "zoom", "kinetic", "bento", "chat", "logo", "cta"]
+                    "phone", "devices", "zoom", "kinetic", "bento", "chat", "logo", "motion", "cta"]
 # The scenes that show a text of their own, and what they show when the director left it empty.
 TEXT_SCENES = {"compose": "Quiero un libro ilustrado para mi grupo", "editor_facts": "Dato nuevo para la lámina",
                "editor_repaint": "más luz de mañana", "list": "Portada | Ilustraciones | Actividades | Solucionario",
                "versus": "Horas armando material | Minutos con Jelyx", "number": "5 min",
                "phone": "Cuento del ciclo del agua para 2.º grado", "chat": "Un libro ilustrado de los planetas para 3.º",
                "zoom": "Cada detalle, ilustrado", "kinetic": "Tu tema | Tu grupo | Tu libro",
-               "bento": "Ilustraciones únicas | Mismos personajes | Solucionario | PDF y Word"}
+               "bento": "Ilustraciones únicas | Mismos personajes | Solucionario | PDF y Word",
+               "motion": "Tu tema, tu libro"}
 BOOK_SCENES = {"cover", "pages", "pdf"}  # a video may open on the finished book instead of a title
-OPENERS = {"title", "logo", "kinetic", "chat", "phone"}  # scenes that open a video by themselves
+OPENERS = {"title", "logo", "kinetic", "chat", "phone", "motion"}  # scenes that open a video by themselves
 
 # How the story is told: without one the director falls back on the app's flow every time, and every video looks alike.
-Kind = Literal["marketing", "explainer", "tutorial"]
+Kind = Literal["marketing", "explainer", "tutorial", "motion"]
 STRUCTURES: dict[str, tuple[str, tuple[str, ...], str]] = {
     "problema": ("Problema y solución", ("marketing", "explainer"),
                  "abre nombrando un dolor concreto del docente (title o number), lo agrava en una escena (versus o "
@@ -164,6 +168,16 @@ STRUCTURES: dict[str, tuple[str, tuple[str, ...], str]] = {
     "lista": ("3 cosas que no sabías", ("tutorial", "explainer"),
               "title «3 cosas que puedes hacer en …», un list con las tres, luego una escena de la app por cada una "
               "con caption que empieza «1.», «2.», «3.», y cta."),
+    "motion_explica": ("Explicación animada", ("motion",),
+                       "abre con kinetic o un motion burst, explica la idea en 3 o 4 escenas motion de estilos distintos "
+                       "(flow para el proceso, orbit para lo que reúne, stats para los números), una sola escena del "
+                       "libro (cover o pages) como prueba y cta."),
+    "motion_datos": ("Infografía animada", ("motion",),
+                     "title con la pregunta o el dato que sorprende, motion stats con los números del pedido, un "
+                     "number, motion flow con el cómo, pages y cta."),
+    "motion_marca": ("Manifiesto de marca", ("motion", "marketing"),
+                     "logo de apertura, tres escenas motion con una idea cada una (burst, orbit, grid), un kinetic con "
+                     "el lema y cta. Ritmo rápido, sin escenas del editor."),
 }
 LOOKS = ("claro", "oscuro", "color", "noche")
 
@@ -174,6 +188,38 @@ def pick_structure(kind: str, last: str | None = None) -> str:
     return random.choice([k for k in fits if k != last] or fits)
 
 
+# Motion graphics: the director describes each one (its "prompt") and the browser draws it (frontend/src/video/motion.tsx).
+MOTION_STYLES = {
+    "flow": "los elementos en fila unidos por una línea que se dibuja, uno tras otro: un proceso o pasos",
+    "orbit": "la frase en el centro y los elementos en burbujas que giran alrededor: lo que algo reúne",
+    "burst": "formas de colores que estallan desde el centro y se ordenan alrededor de la frase: un impacto, una idea",
+    "stats": "barras que crecen con su valor (value: el número, p. ej. «85%» o «3 h») y su etiqueta: datos",
+    "grid": "los elementos en tarjetas que entran en ola, con formas que giran detrás: una lista de beneficios",
+}
+MotionStyle = Literal["flow", "orbit", "burst", "stats", "grid"]
+ICONS = ("sparkle", "book", "pencil", "clock", "star", "heart", "check", "palette", "download", "people", "idea",
+         "rocket", "puzzle", "globe", "apple", "music", "leaf", "calculator", "school", "printer")
+Icon = Annotated[Literal[ICONS], BeforeValidator(lambda v: v if v in ICONS else "sparkle")]
+
+
+class MotionItem(BaseModel):
+    icon: Icon = "sparkle"
+    label: Annotated[str, _clip(28), Field(max_length=28)] = ""
+    value: Annotated[str, _clip(12), Field(max_length=12)] = ""  # stats: the number the bar shows
+
+
+def _hexes(v):
+    """Up to three colours; anything that is not a #rrggbb is dropped, never a reason to throw the storyboard away."""
+    ok = lambda c: isinstance(c, str) and len(c) == 7 and c[0] == "#" and all(x in "0123456789abcdefABCDEF" for x in c[1:])
+    return [c for c in v if ok(c)][:3] if isinstance(v, list) else []
+
+
+class Motion(BaseModel):
+    style: Annotated[MotionStyle, BeforeValidator(lambda v: v if v in MOTION_STYLES else "burst")] = "burst"
+    items: Annotated[list[MotionItem], BeforeValidator(lambda v: v[:6] if isinstance(v, list) else [])] = Field(default_factory=list)
+    colors: Annotated[list[str], BeforeValidator(_hexes)] = Field(default_factory=list)  # empty: the look's
+
+
 class Scene(BaseModel):
     type: SceneType
     seconds: float = Field(default=4, ge=1, le=15)
@@ -182,6 +228,7 @@ class Scene(BaseModel):
     text: Annotated[str, _clip(140), Field(max_length=140)] = ""  # what the scene types (TEXT_SCENES)
     capture: str = ""  # a screen scene's capture (marketing_captures id)
     focus: int = Field(default=0, ge=0, le=20)  # and which of its marked points the camera goes to
+    motion: Motion | None = None  # a motion scene's graphic, as the director described it
 
 
 class Storyboard(BaseModel):
@@ -210,6 +257,12 @@ def tidy_storyboard(board: Storyboard) -> Storyboard:
     for s in scenes:
         if s.type in TEXT_SCENES and not s.text:
             s.text = TEXT_SCENES[s.type]
+        if s.type != "motion":
+            s.motion = None
+        elif not (s.motion and s.motion.items):  # never an empty graphic: the caption's words, each with an icon
+            words = [w.strip(".,;:¡!¿?") for w in (s.caption or board.title).split() if len(w) > 3][:4] or ["Jelyx"]
+            s.motion = Motion(style=s.motion.style if s.motion else "burst", colors=s.motion.colors if s.motion else [],
+                              items=[MotionItem(icon=ICONS[i], label=w) for i, w in enumerate(words)])
     scale = board.duration / sum(s.seconds for s in scenes)
     for s in scenes:
         s.seconds = round(max(1.5, s.seconds * scale), 2)
@@ -224,6 +277,14 @@ los mismos personajes, actividades, solucionario, PDF para imprimir) y tiene un 
 Recibes el pedido del equipo, el tipo de video, la duración y un libro real hecho con la app. Armas el storyboard
 solo con estas escenas, que ya existen animadas con la app real:
 """ + "\n".join(f"- {k}: {v}" for k, v in SCENES.items()) + """
+
+La escena motion es un motion graphic que diseñas tú a partir del pedido: lo describes en su campo motion,
+{"style", "items": [{"icon", "label", "value"}], "colors"}:
+- style, uno de: """ + "; ".join(f"{k}: {v}" for k, v in MOTION_STYLES.items()) + """.
+- items: de 3 a 5 elementos, cada uno con icon (solo uno de: """ + ", ".join(ICONS) + """) y label de máximo 24
+  caracteres que diga algo concreto del pedido (nunca «Función 1»); value solo en stats.
+- colors: de 1 a 3 colores hex que vayan con el tema del pedido (p. ej. verdes y ocres para la selva), o vacío.
+Varía el style entre escenas motion.
 
 Las escenas list, versus, number y kinetic son texto animado: úsalas para variar el ritmo entre escenas de la app.
 phone, devices, zoom, bento, chat y logo dan el acabado de los videos de lanzamiento de las startups de IA: úsalas
@@ -241,6 +302,8 @@ Tipos de video:
 - marketing: para vender. Abre con un gancho (title) que nombra un dolor o un deseo del docente, ritmo rápido
   (2 a 4 s por escena), muestra el resultado y cierra con cta.
 - explainer: explica cómo funciona la app de principio a fin, claro y sin frases de venta; cierra con cta.
+- motion: un video de motion graphics, como los de las marcas: la mayoría de las escenas son motion (y title,
+  kinetic o number), con una o dos escenas del libro real como prueba; 2 a 4 s por escena; cierra con cta.
 - tutorial: enseña a hacer algo en la app. Abre con title («Cómo …»), luego un paso por escena, en el orden en que
   se hace de verdad y con calma (4 a 7 s por paso; el código los numera «Paso 1, 2…»), y cierra con cta.
   Elige solo las escenas que enseñan lo pedido.
@@ -253,7 +316,8 @@ post: el texto para publicar (3 o 4 líneas y 4 a 6 hashtags).
 
 Responde solo con json:
 {"title": "…", "scenes": [{"type": "…", "seconds": 4, "caption": "…", "voice": "…", "text": "…", "capture": "…",
-"focus": 0}], "post": "…"}"""
+"focus": 0, "motion": {"style": "…", "items": [{"icon": "…", "label": "…", "value": ""}], "colors": ["#…"]}}],
+"post": "…"} (capture y focus solo en screen; motion solo en motion)"""
 
 
 async def director(llm: LLM, *, ask: str, kind: str, duration: int, title: str, topic: str, book_kind: str,

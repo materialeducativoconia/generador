@@ -282,3 +282,28 @@ async def test_a_voice_longer_than_its_scene_is_written_again_shorter_by_the_dir
 def pick():
     from app.marketing import pick_structure
     return pick_structure("marketing")
+
+
+async def test_a_motion_graphics_video_draws_what_deepseek_designed_from_the_request():
+    from app.marketing import director
+
+    board = {"title": "Tu selva en minutos", "post": "#docentes", "scenes": [
+        {"type": "motion", "seconds": 3, "caption": "Tu tema", "text": "De un tema a un libro", "voice": "",
+         "motion": {"style": "orbit", "colors": ["#2f8f4e", "verde", "#c98a12"],
+                    "items": [{"icon": "leaf", "label": "Selva"}, {"icon": "dragon", "label": "Animales"}]}},
+        {"type": "motion", "seconds": 3, "caption": "Cómo se hace", "voice": "", "motion": {"style": "spiral"}},
+        {"type": "pages", "seconds": 4, "caption": "Las páginas", "voice": "", "motion": {"style": "flow"}},
+        {"type": "cta", "seconds": 3, "caption": "Pruébalo", "voice": ""}]}
+    llm = ScriptedLLM(json.dumps(board))
+
+    made = (await director(llm, ask="motion graphics de la selva", kind="motion", duration=15, title="Selva",
+                           topic="selva", book_kind="Libro", audience="", sections=[], sample=None,
+                           structure="motion_explica")).value
+
+    prompt = llm.calls[0][0]["content"]
+    assert "La escena motion es un motion graphic que diseñas tú a partir del pedido" in prompt and "orbit" in prompt
+    first, second, pages = made.scenes[:3]
+    assert first.motion.style == "orbit" and first.motion.colors == ["#2f8f4e", "#c98a12"]  # a bad colour is dropped
+    assert [i.icon for i in first.motion.items] == ["leaf", "sparkle"]  # an unknown icon becomes the sparkle
+    assert second.motion.style == "burst" and second.motion.items  # never an empty graphic
+    assert pages.motion is None and made.kind == "motion"

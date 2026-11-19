@@ -8,10 +8,11 @@ import { api } from '../lib/apiClient'
 import { GENRE_LABEL } from '../lib/labels'
 import { useMe, useSeries } from '../lib/queries'
 import type { Genre, Series } from '../lib/types'
+import { MOTION_ICONS, MOTION_STYLES } from '../video/motion'
 import { StoryboardVideo } from '../video/Storyboard'
 import { TopicToBook } from '../video/TopicToBook'
 import { Voiced, withLengths, type VoiceClip } from '../video/Voiced'
-import { DURATION, FPS, LOOKS, SCENES, SIZES, TRANSITIONS, boardFrames, fontsReady, timeline, type Capture, type Look, type Scene, type SceneType,
+import { DURATION, FPS, LOOKS, SCENES, SIZES, TRANSITIONS, boardFrames, fontsReady, timeline, type Capture, type Look, type Motion, type MotionIcon, type Scene, type SceneType,
   type ShelfBook, type Storyboard, type Transition, type VideoKind, type VideoScript, type VideoTome } from '../video/spec'
 import { AdminTabs } from './AdminUsers'
 
@@ -27,11 +28,12 @@ const FIELDS: [keyof VideoScript, string, number][] = [
   ['cta', 'Cierre', 60],
 ]
 const FORMAT_LABEL: Record<Format, string> = { '9:16': 'Vertical 9:16', '1:1': 'Cuadrado 1:1', '16:9': 'Horizontal 16:9' }
-const KIND_LABEL: Record<VideoKind, string> = { marketing: 'Marketing', explainer: 'Explicativo', tutorial: 'Tutorial' }
+const KIND_LABEL: Record<VideoKind, string> = { marketing: 'Marketing', explainer: 'Explicativo', tutorial: 'Tutorial', motion: 'Motion graphics' }
 const KIND_HINT: Record<VideoKind, string> = {
   marketing: 'Ej.: anuncio para mamás que hacen homeschooling: ahorra el domingo',
   explainer: 'Ej.: cómo funciona Jelyx, de escribir el tema al PDF',
   tutorial: 'Ej.: tutorial para editar las páginas de un libro',
+  motion: 'Ej.: motion graphics de cómo ahorrar 3 horas de planeación, con colores de selva',
 }
 const headline = (v: Video) => v.template === 'storyboard' ? v.script.title : v.script.hook
 
@@ -436,6 +438,7 @@ function BoardFields({ board, onChange, captures }: { board: Storyboard; onChang
                 )}
               </div>
             )}
+            {sc.type === 'motion' && <MotionFields motion={sc.motion} onChange={(motion) => set(i, { motion })} />}
             {SCENES[sc.type].types && <input value={sc.text} onChange={(e) => set(i, { text: e.target.value })} maxLength={140} placeholder={SCENES[sc.type].types} />}
             <textarea value={sc.voice} onChange={(e) => set(i, { voice: e.target.value })} maxLength={300} rows={2} placeholder="Voz en off de esta escena" />
           </li>
@@ -449,6 +452,35 @@ function BoardFields({ board, onChange, captures }: { board: Storyboard; onChang
           scenes: [...board.scenes.slice(0, -1), { type: adding, seconds: 4, caption: '', voice: '', text: '' }, ...board.scenes.slice(-1)] })}>
           + Añadir escena</button>
       </div>
+    </div>
+  )
+}
+
+/** A motion graphic's design as DeepSeek wrote it: its style, and each item's icon, label and value. */
+function MotionFields({ motion, onChange }: { motion?: Motion | null; onChange: (m: Motion) => void }) {
+  const m: Motion = motion ?? { style: 'burst', items: [], colors: [] }
+  const setItem = (i: number, item: Partial<Motion['items'][number]>) => onChange({ ...m, items: m.items.map((it, j) => (j === i ? { ...it, ...item } : it)) })
+  return (
+    <div className="board-motion">
+      <div className="board-head">
+        <select value={m.style} onChange={(e) => onChange({ ...m, style: e.target.value as Motion['style'] })} aria-label="Estilo del motion graphic">
+          {(Object.keys(MOTION_STYLES) as Motion['style'][]).map((st) => <option key={st} value={st}>{MOTION_STYLES[st]}</option>)}
+        </select>
+        {m.colors.map((c, j) => <input key={j} type="color" value={c} aria-label={`Color ${j + 1}`}
+          onChange={(e) => onChange({ ...m, colors: m.colors.map((x, k) => (k === j ? e.target.value : x)) })} />)}
+      </div>
+      {m.items.map((it, i) => (
+        <div key={i} className="board-head">
+          <select value={it.icon} onChange={(e) => setItem(i, { icon: e.target.value as MotionIcon })} aria-label="Icono">
+            {(Object.keys(MOTION_ICONS) as MotionIcon[]).map((ic) => <option key={ic} value={ic}>{ic}</option>)}
+          </select>
+          <input value={it.label} onChange={(e) => setItem(i, { label: e.target.value })} maxLength={28} placeholder="Etiqueta" />
+          {m.style === 'stats' && <input value={it.value} onChange={(e) => setItem(i, { value: e.target.value })} maxLength={12} placeholder="Valor" className="board-value" />}
+          <button type="button" className="ghost small" onClick={() => onChange({ ...m, items: m.items.filter((_, j) => j !== i) })} aria-label="Quitar elemento">✕</button>
+        </div>
+      ))}
+      {m.items.length < 6 && <button type="button" className="ghost small"
+        onClick={() => onChange({ ...m, items: [...m.items, { icon: 'sparkle', label: '', value: '' }] })}>+ Elemento</button>}
     </div>
   )
 }

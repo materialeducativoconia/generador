@@ -1,6 +1,7 @@
 import { AbsoluteFill, Easing, interpolate, Sequence, useCurrentFrame } from 'remotion'
 import { ComposeScene, CoverScene, CtaScene, EditorCoverScene, EditorFactsScene, EditorMoveScene, EditorOpenScene, EditorRepaintScene,
   EditorSaveScene, ListScene, NumberScene, PagesScene, PdfScene, PlanScene, ScreenScene, FormatsScene, CharactersScene, TitleScene, VersusScene } from './scenes'
+import { MotionScene } from './motion'
 import { BentoScene, ChatScene, DevicesScene, KineticScene, LogoScene, PhoneScene, ZoomScene } from './startup'
 import { FONT, LOOKS, timeline, type Capture, type Look, type Scene, type ShelfBook, type StoryboardProps, type Transition, type VideoTome } from './spec'
 
@@ -85,6 +86,7 @@ function SceneView({ scene, dur, step, tome, look, capture, shelf }: { scene: Sc
     case 'bento': return <BentoScene {...p} />
     case 'chat': return <ChatScene {...p} />
     case 'logo': return <LogoScene {...p} />
+    case 'motion': return <MotionScene {...p} motion={scene.motion ?? undefined} />
     case 'cta': return <CtaScene {...p} />
   }
 }

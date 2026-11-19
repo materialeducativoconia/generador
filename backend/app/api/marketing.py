@@ -52,7 +52,7 @@ class NewVideo(BaseModel):
     # The director (any video asked for in words) or the first fixed template, «De un tema a un libro en 30 s».
     template: Literal["storyboard", "topic_to_book"] = "storyboard"
     ask: str | None = Field(default=None, max_length=500)  # what video the team needs (for the fixed one: its angle)
-    kind: Literal["marketing", "explainer", "tutorial"] = "marketing"
+    kind: Literal["marketing", "explainer", "tutorial", "motion"] = "marketing"
     duration: Literal[15, 30, 45, 60] = 30
     structure: str = "auto"  # a key of STRUCTURES, or the director picks one the last video did not use
     script: dict | None = None  # a storyboard already proposed and reviewed: saved as it is, without asking again

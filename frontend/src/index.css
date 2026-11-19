@@ -1160,6 +1160,10 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
 .board-scenes { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .board-scenes li { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
 .board-head { display: flex; align-items: center; gap: 6px; }
+.board-motion { display: grid; gap: 6px; padding: 8px; border-radius: 10px; background: var(--surface-2); }
+.board-motion .board-head input:not([type=color]) { flex: 1; min-width: 0; }
+.board-motion input[type=color] { width: 34px; height: 30px; padding: 2px; border-radius: 8px; }
+.board-motion .board-value { flex: 0 0 80px !important; }
 .board-head strong { flex: 1; font-size: 13px; }
 .board-head input { width: 56px; }
 .board-add { display: flex; gap: 8px; align-items: center; }

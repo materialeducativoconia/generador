@@ -26,12 +26,16 @@ export const fontsReady = geist.waitUntilDone
 
 // The director's storyboard (backend app/marketing.py Storyboard): any video, scene by scene.
 export type SceneType = 'title' | 'compose' | 'plan' | 'cover' | 'pages' | 'pdf' | 'editor_open' | 'editor_move' | 'editor_facts'
-  | 'editor_repaint' | 'editor_cover' | 'editor_save' | 'list' | 'versus' | 'number' | 'formats' | 'characters' | 'screen' | 'phone' | 'devices' | 'zoom' | 'kinetic' | 'bento' | 'chat' | 'logo' | 'cta'
-export type Scene = { type: SceneType; seconds: number; caption: string; voice: string; text: string; capture?: string; focus?: number }
+  | 'editor_repaint' | 'editor_cover' | 'editor_save' | 'list' | 'versus' | 'number' | 'formats' | 'characters' | 'screen' | 'phone' | 'devices' | 'zoom' | 'kinetic' | 'bento' | 'chat' | 'logo' | 'motion' | 'cta'
+export type Scene = { type: SceneType; seconds: number; caption: string; voice: string; text: string; capture?: string; focus?: number; motion?: Motion | null }
+/** A motion graphic as the director described it from the request (backend app/marketing.py Motion). */
+export type MotionIcon = 'sparkle' | 'book' | 'pencil' | 'clock' | 'star' | 'heart' | 'check' | 'palette' | 'download' | 'people' | 'idea'
+  | 'rocket' | 'puzzle' | 'globe' | 'apple' | 'music' | 'leaf' | 'calculator' | 'school' | 'printer'
+export type Motion = { style: 'burst' | 'flow' | 'orbit' | 'stats' | 'grid'; items: { icon: MotionIcon; label: string; value: string }[]; colors: string[] }
 /** A real screenshot of the app (backend marketing_captures): shown in a device, the camera zooming to its points. */
 export type Capture = { id: string; name: string; description: string; url: string | null; width: number; height: number
   focus: { x: number; y: number; label: string }[] }
-export type VideoKind = 'marketing' | 'explainer' | 'tutorial'
+export type VideoKind = 'marketing' | 'explainer' | 'tutorial' | 'motion'
 export type Look = 'claro' | 'oscuro' | 'color' | 'noche'
 export type Storyboard = { kind: VideoKind; duration: 15 | 30 | 45 | 60; title: string; scenes: Scene[]; post: string; structure?: string; look?: Look
   transition?: Transition }
@@ -59,7 +63,7 @@ export const SCENES: Record<SceneType, { label: string; types?: string }> = {
   phone: { label: 'La app en un iPhone', types: 'Pedido que se escribe' }, devices: { label: 'Laptop y iPhone' },
   zoom: { label: 'Lupa y zoom a un detalle', types: 'Etiqueta del detalle' }, kinetic: { label: 'Tipografía cinética', types: 'Frases cortas separadas por |' },
   bento: { label: 'Bento de funciones', types: 'Hasta 4 funciones separadas por |' }, chat: { label: 'Chat con la IA', types: 'Pedido que se escribe' },
-  logo: { label: 'Revelado del logo' }, cta: { label: 'Cierre' },
+  logo: { label: 'Revelado del logo' }, motion: { label: 'Motion graphic', types: 'Frase central' }, cta: { label: 'Cierre' },
 }
 
 /** Each scene's first frame and length; tutorial steps numbered (every scene but the title and the close). */
