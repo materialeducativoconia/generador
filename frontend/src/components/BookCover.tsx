@@ -22,7 +22,7 @@ export function BookCover({ title, genre, audience, cover_url, cover_status, cov
   const head = design ? (themeVars(design).style as Record<string, string>)['--t-head'] : undefined
   return (
     <div
-      className={`book ${size} l-${layout}`}
+      className={`book ${size === 'card' ? '' : size} l-${layout}`}  // never `.card`: the panels' class (full height, padding, border) stretched the cover over its row
       style={{ '--book-bg': bg, '--book-ink': ink, '--book-accent': accent, '--book-head': head } as React.CSSProperties}
     >
       {cover_url ? (
