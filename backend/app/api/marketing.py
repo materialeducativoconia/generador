@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import uuid
 from typing import Annotated, Literal
 
@@ -17,7 +18,8 @@ from app.api.admin import _staff
 from app.api.deps import current_user_id
 from app.errors import ApiError
 from app.llm import UpstreamAuthError, UpstreamError
-from app.marketing import STRUCTURES, Storyboard, VideoScript, director, pick_structure, tidy_storyboard, video_script
+from app.marketing import (MUSIC, STRUCTURES, Storyboard, VideoScript, director, pick_music, pick_structure, script_director,
+                           tidy_storyboard, video_script)
 from app.render import GENRE_LABEL
 from app.voice import seconds
 
@@ -56,6 +58,8 @@ class NewVideo(BaseModel):
     duration: Literal[15, 30, 45, 60] = 30
     structure: str = "auto"  # a key of STRUCTURES, or the director picks one the last video did not use
     script: dict | None = None  # a storyboard already proposed and reviewed: saved as it is, without asking again
+    script_text: str | None = Field(default=None, max_length=4000)  # «Desde mi guion»: the team's own words
+    music: str = "auto"  # a key of MUSIC, «auto» (the kind's) or «none»
 
 
 async def _write(request: Request, user_id: uuid.UUID, body: NewVideo) -> Storyboard | VideoScript:
@@ -94,7 +98,14 @@ async def _write(request: Request, user_id: uuid.UUID, body: NewVideo) -> Storyb
     book = dict(title=series["title"], topic=series["topic"], audience=series["audience"], sections=list(series["sections"]))
     book_kind = GENRE_LABEL.get(series["genre"] or "", "Libro")
     try:
-        if body.template == "storyboard":
+        music = pick_music(body.music, body.kind)
+        if body.template == "storyboard" and (body.script_text or "").strip():
+            try:
+                result = await script_director(llm, script=body.script_text, kind=body.kind, book_kind=book_kind,
+                                               cast=series["cast_names"], captures=captures, music=music, **book)
+            except ValueError as exc:
+                raise ApiError(422, "invalid_request", str(exc)) from exc
+        elif body.template == "storyboard":
             last = next((r["structure"] for r in recent if r["kind"] == body.kind), None)
             structure = pick_structure(body.kind, last) if body.structure == "auto" else body.structure
             result = await director(llm, ask=(body.ask or "").strip() or "Un video que muestre cómo funciona la app",
@@ -102,6 +113,8 @@ async def _write(request: Request, user_id: uuid.UUID, body: NewVideo) -> Storyb
                                     sample=series["sample"], structure=structure, cast=series["cast_names"],
                                     recent=[dict(title=r["title"], scenes=list(r["scenes"])) for r in recent],
                                     captures=captures, **book)
+            result.value.music = music
+            result.value = tidy_storyboard(result.value)
         else:
             result = await video_script(llm, kind=book_kind, angle=body.ask, **book)
     except AgentFailed as exc:
@@ -115,7 +128,8 @@ async def structures(request: Request, user_id: UserId):
     async with request.app.state.engine.connect() as conn:
         await _staff(conn, user_id)
     return {"structures": [dict(key=k, label=label, kinds=list(kinds), how=how)
-                           for k, (label, kinds, how) in STRUCTURES.items()]}
+                           for k, (label, kinds, how) in STRUCTURES.items()],
+            "music": [dict(key=k, title=title, mood=mood, bpm=bpm) for k, (title, mood, bpm, _) in MUSIC.items()]}
 
 
 @router.post("/api/admin/marketing/storyboard")
@@ -255,7 +269,7 @@ async def voice(video_id: uuid.UUID, request: Request, user_id: UserId):
         key = keys[i]
         if key not in kept:
             try:
-                audio = await tts.speak(words)
+                audio = await tts.speak(said(words))
             except (UpstreamError, UpstreamAuthError) as exc:
                 log.warning("voice failed: %s", exc)
                 raise ApiError(502, "upstream_error", "OpenRouter no pudo leer la voz; inténtalo de nuevo.") from exc
@@ -266,6 +280,11 @@ async def voice(video_id: uuid.UUID, request: Request, user_id: UserId):
 
     clips = await asyncio.gather(*(clip(i, t) for i, t in lines))
     return {"clips": list(clips)}
+
+
+def said(words: str) -> str:
+    """The line as the voice should read it: the address spelled out, as a script may write it plainly."""
+    return re.sub(r"(https?://)?docs\.jelyx\.app/?", "docs punto jelyx punto app", words, flags=re.I)
 
 
 # Real screenshots of the app: uploaded once, each with the points the camera zooms to.

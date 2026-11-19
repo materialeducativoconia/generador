@@ -301,9 +301,59 @@ async def test_a_motion_graphics_video_draws_what_deepseek_designed_from_the_req
                            structure="motion_explica")).value
 
     prompt = llm.calls[0][0]["content"]
-    assert "La escena motion es un motion graphic que diseñas tú a partir del pedido" in prompt and "orbit" in prompt
+    assert "La escena motion es un motion graphic que diseñas tú" in prompt and "Diséñalo a partir del pedido" in prompt and "orbit" in prompt
     first, second, pages = made.scenes[:3]
     assert first.motion.style == "orbit" and first.motion.colors == ["#2f8f4e", "#c98a12"]  # a bad colour is dropped
     assert [i.icon for i in first.motion.items] == ["leaf", "sparkle"]  # an unknown icon becomes the sparkle
     assert second.motion.style == "burst" and second.motion.items  # never an empty graphic
     assert pages.motion is None and made.kind == "motion"
+
+
+async def test_a_video_is_made_from_the_teams_own_script_its_words_read_as_written(raw_db, google_user, client, key,
+                                                                                    engine):  # noqa: F811
+    owner = await google_user()
+    sid = await _written(raw_db, client, key, engine, owner)
+    admin = await google_user(email="guion@jelyx.test")
+    await raw_db.execute("update public.profiles set platform_role = 'admin' where id = $1", admin)
+    script = ("Gancho: ¿Otro domingo armando material?\n\n"
+              "[portada] Escribes el tema de tu clase y en cinco minutos tienes un libro ilustrado.\n\n"
+              "[motion órbita] Mismos personajes en todas las páginas.\n\n"
+              "Pruébalo gratis en docs.jelyx.app")
+    designed = {"title": "Tu domingo libre", "post": "Tu clase lista. #docentes", "scenes": [  # one scene short
+        {"type": "title", "caption": "¿Otro domingo así?"}, {"type": "pages", "caption": "Tu libro"},
+        {"type": "motion", "caption": "Mismos personajes", "motion": {"style": "flow", "items": [{"icon": "people", "label": "Lía"}]}}]}
+    llm = ScriptedLLM(json.dumps(designed))
+    client._transport.app.state.llm = llm
+    asked = {"series_id": str(sid), "kind": "motion", "script_text": script, "music": "wallpaper"}
+
+    board = (await client.post("/api/admin/marketing/storyboard", headers=bearer(key, admin), json=asked)).json()["script"]
+
+    told = llm.calls[0][-1]["content"]
+    assert "Guion (4 escenas)" in told and "(tipo fijado: motion orbit)" in told
+    scenes = board["scenes"]
+    assert [s["voice"] for s in scenes] == ["¿Otro domingo armando material?",  # the label is not read
+                                            "Escribes el tema de tu clase y en cinco minutos tienes un libro ilustrado.",
+                                            "Mismos personajes en todas las páginas.", "Pruébalo gratis en docs.jelyx.app"]
+    assert [s["type"] for s in scenes] == ["title", "cover", "motion", "motion"]  # the marks win; a missing one is drawn
+    assert scenes[2]["motion"]["style"] == "orbit" and scenes[3]["motion"]["items"]
+    assert board["source"] == "script" and scenes[1]["seconds"] > scenes[0]["seconds"]  # as long as its words take
+    beat = 60 / 124
+    cuts, at = [], 0.0
+    for s in scenes:
+        at += s["seconds"]
+        cuts.append(at)
+    assert all(abs(((c - 0.02) / beat) - round((c - 0.02) / beat)) < 0.01 for c in cuts)  # every cut on a beat
+    assert "Kevin MacLeod" in board["post"]  # the music's credit
+
+    made = await client.post("/api/admin/marketing/videos", headers=bearer(key, admin), json={**asked, "script": board})
+    assert made.status_code == 201 and made.json()["video"]["script"]["scenes"] == scenes  # saved as it was seen
+
+    long = "\n".join(f"Línea {i}" for i in range(30))
+    too_long = await client.post("/api/admin/marketing/storyboard", headers=bearer(key, admin), json={**asked, "script_text": long})
+    assert too_long.status_code == 422 and "máximo es 24" in too_long.json()["error"]["message"]
+
+
+def test_the_voice_reads_the_address_spelled_out():
+    from app.api.marketing import said
+
+    assert said("Entra a https://docs.jelyx.app/ hoy") == "Entra a docs punto jelyx punto app hoy"

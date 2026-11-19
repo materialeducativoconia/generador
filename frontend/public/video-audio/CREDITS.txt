@@ -1,0 +1,7 @@
+Music by Kevin MacLeod (incompetech.com), licensed under Creative Commons: By Attribution 4.0
+https://creativecommons.org/licenses/by/4.0/ - cut to 100 s, faded out:
+  carefree.mp3   «Carefree»
+  wallpaper.mp3  «Wallpaper»
+  inspired.mp3   «Inspired»
+  forecast.mp3   «Local Forecast - Elevator»
+whoosh.wav, pop.wav, hit.wav: synthesized for Jelyx Docs.

@@ -37,8 +37,11 @@ export type Capture = { id: string; name: string; description: string; url: stri
   focus: { x: number; y: number; label: string }[] }
 export type VideoKind = 'marketing' | 'explainer' | 'tutorial' | 'motion'
 export type Look = 'claro' | 'oscuro' | 'color' | 'noche'
-export type Storyboard = { kind: VideoKind; duration: 15 | 30 | 45 | 60; title: string; scenes: Scene[]; post: string; structure?: string; look?: Look
-  transition?: Transition }
+export type Storyboard = { kind: VideoKind; duration: number; title: string; scenes: Scene[]; post: string; structure?: string; look?: Look
+  transition?: Transition; source?: 'ask' | 'script'; music?: string | null; sfx?: boolean }
+/** Free music for the videos (backend app/marketing.py MUSIC): Kevin MacLeod, incompetech.com, CC BY 4.0. */
+export const MUSIC: Record<string, string> = { wallpaper: 'Wallpaper · moderno', inspired: 'Inspired · inspirador', carefree: 'Carefree · alegre', forecast: 'Local Forecast · tranquilo' }
+export const audioFile = (name: string) => `/video-audio/${name}`
 export type Transition = 'mixta' | 'deslizar' | 'zoom' | 'barrido' | 'corte'
 export const TRANSITIONS: Record<Transition, string> = { mixta: 'Mixta', deslizar: 'Deslizar', zoom: 'Zoom', barrido: 'Barrido', corte: 'Fundido' }
 /** The text scenes' colours: background, ink and the accent of the key word. */

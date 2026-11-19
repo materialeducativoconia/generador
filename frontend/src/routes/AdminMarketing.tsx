@@ -12,7 +12,7 @@ import { MOTION_ICONS, MOTION_STYLES } from '../video/motion'
 import { StoryboardVideo } from '../video/Storyboard'
 import { TopicToBook } from '../video/TopicToBook'
 import { Voiced, withLengths, type VoiceClip } from '../video/Voiced'
-import { DURATION, FPS, LOOKS, SCENES, SIZES, TRANSITIONS, boardFrames, fontsReady, timeline, type Capture, type Look, type Motion, type MotionIcon, type Scene, type SceneType,
+import { DURATION, FPS, LOOKS, MUSIC, SCENES, SIZES, TRANSITIONS, boardFrames, fontsReady, timeline, type Capture, type Look, type Motion, type MotionIcon, type Scene, type SceneType,
   type ShelfBook, type Storyboard, type Transition, type VideoKind, type VideoScript, type VideoTome } from '../video/spec'
 import { AdminTabs } from './AdminUsers'
 
@@ -35,6 +35,15 @@ const KIND_HINT: Record<VideoKind, string> = {
   tutorial: 'Ej.: tutorial para editar las páginas de un libro',
   motion: 'Ej.: motion graphics de cómo ahorrar 3 horas de planeación, con colores de selva',
 }
+const SCRIPT_HINT = `¿Otro domingo armando material?
+
+[portada] Escribes el tema de tu clase y en cinco minutos tienes un libro ilustrado.
+
+[motion órbita] Los mismos personajes en todas las páginas, con actividades y solucionario.
+
+Descárgalo en PDF y llévalo a tu salón.
+
+[cierre] Pruébalo gratis en docs.jelyx.app`
 const headline = (v: Video) => v.template === 'storyboard' ? v.script.title : v.script.hook
 
 /** The tome as the video shows it: its cover, its first pictures and its sections. */
@@ -83,6 +92,9 @@ export function AdminMarketing() {
   const [kind, setKind] = useState<VideoKind>('tutorial')
   const [duration, setDuration] = useState<15 | 30 | 45 | 60>(30)
   const [structure, setStructure] = useState('auto')
+  const [mode, setMode] = useState<'ask' | 'script'>('script')
+  const [scriptText, setScriptText] = useState('')
+  const [music, setMusic] = useState('auto')
   const [draft, setDraft] = useState<Storyboard | null>(null)  // proposed, seen and changed before the video exists
   const videos = useQuery({ queryKey: ['marketing-videos'], enabled: staff,
     queryFn: () => api.get<{ videos: Video[] }>('/api/admin/marketing/videos') })
@@ -93,7 +105,9 @@ export function AdminMarketing() {
   const captures = useCaptures(staff)
   const shelf = useShelf(tomes.data?.series ?? [])
   const ways = (structures.data?.structures ?? []).filter((st) => st.kinds.includes(kind))
-  const asked = { series_id: seriesId, format, ask: ask.trim() || null, kind, duration }
+  const fromScript = mode === 'script'
+  const asked = { series_id: seriesId, format, ask: fromScript ? null : ask.trim() || null, kind, duration, music,
+    script_text: fromScript ? scriptText.trim() || null : null }
   const propose = useMutation({
     mutationFn: () => api.post<{ script: Storyboard }>('/api/admin/marketing/storyboard', { ...asked, structure }),
     onSuccess: ({ script }) => { setDraft(script); setOpen(null) },
@@ -105,6 +119,7 @@ export function AdminMarketing() {
       setOpen(video.id)
       setDraft(null)
       setAsk('')
+      setScriptText('')
     },
   })
   const fetchMp4 = useMutation({  // the kept MP4: a short-lived link, opened as a download
@@ -121,7 +136,7 @@ export function AdminMarketing() {
       <header className="page-editor-head">
         <p className="eyebrow">Marketing</p>
         <h1 className="display sm">Videos de la app</h1>
-        <p className="muted">Pide el video que necesitas: un anuncio, cómo funciona la app o un tutorial. DeepSeek dirige el storyboard con escenas de la app real y un tomo tuyo; tú lo ajustas, lo revisas y descargas el MP4.</p>
+        <p className="muted">Escribe tu guion o pide una idea. DeepSeek decide cómo se ve cada escena (la app real, tu tomo o motion graphics), con música y efectos; tú lo ajustas, lo revisas y descargas el MP4.</p>
       </header>
 
       <section className="panel marketing-new">
@@ -146,6 +161,18 @@ export function AdminMarketing() {
             ))}
           </div>
         </fieldset>
+        <fieldset className="field"><legend>¿Cómo lo armamos?</legend>
+          <div className="segmented-inline">
+            <button type="button" className={fromScript ? 'chip on' : 'chip'} onClick={() => setMode('script')}>Desde mi guion</button>
+            <button type="button" className={fromScript ? 'chip' : 'chip on'} onClick={() => setMode('ask')}>Pedir una idea</button>
+          </div>
+        </fieldset>
+        {fromScript ? (
+          <label className="field"><span>Tu guion</span>
+            <textarea value={scriptText} onChange={(e) => setScriptText(e.target.value)} maxLength={4000} rows={9} placeholder={SCRIPT_HINT} />
+            <span className="muted small">Un párrafo por escena (o una línea, si no dejas líneas en blanco). La voz lo lee tal cual y cada escena dura lo que tarda en leerse. Si quieres, fija la escena al inicio: [portada], [páginas], [pdf], [número], [lista], [chat], [teléfono], [motion órbita|proceso|estallido|datos|tarjetas], [cierre].</span>
+          </label>
+        ) : <>
         <label className="field"><span>¿Qué video necesitas?</span>
           <textarea value={ask} onChange={(e) => setAsk(e.target.value)} maxLength={500} rows={3} placeholder={KIND_HINT[kind]} /></label>
         <fieldset className="field"><legend>Duración</legend>
@@ -164,8 +191,17 @@ export function AdminMarketing() {
           </div>
           <span className="muted small">{structure === 'auto' ? 'DeepSeek elige una distinta a la del último video.' : ways.find((st) => st.key === structure)?.how}</span>
         </fieldset>
-        <button className="primary" onClick={() => propose.mutate()} disabled={!seriesId || propose.isPending}>
-          {propose.isPending ? 'DeepSeek dirige el video…' : draft ? 'Proponer otra estructura' : 'Ver la estructura'}
+        </>}
+        <label className="field"><span>Música</span>
+          <select value={music} onChange={(e) => setMusic(e.target.value)}>
+            <option value="auto">Automática (según el tipo de video)</option>
+            {Object.entries(MUSIC).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+            <option value="none">Sin música</option>
+          </select>
+          <span className="muted small">Pistas libres de Kevin MacLeod (CC BY 4.0): el crédito se añade solo al texto de la publicación. Los cortes caen en el pulso.</span>
+        </label>
+        <button className="primary" onClick={() => propose.mutate()} disabled={!seriesId || propose.isPending || (fromScript && !scriptText.trim())}>
+          {propose.isPending ? 'DeepSeek dirige el video…' : fromScript ? (draft ? 'Armarlo otra vez' : 'Armar el video con mi guion') : draft ? 'Proponer otra estructura' : 'Ver la estructura'}
         </button>
         {propose.error && <p className="error small" role="alert">{errorText(propose.error, 'No se pudo escribir el guion.')}</p>}
       </section>
@@ -218,12 +254,12 @@ function Draft({ board, seriesId, format, structure, captures, shelf, onChange, 
       </div>
       <div className="marketing-body">
         <div className="marketing-stage" style={{ aspectRatio: `${width} / ${height}` }}>
-          {tome ? <Player component={StoryboardVideo} inputProps={{ board, tome, captures, shelf }} durationInFrames={boardFrames(board)} fps={FPS}
+          {tome ? <Player component={Voiced as never} inputProps={{ Video: StoryboardVideo, props: { board, tome, captures, shelf }, board, clips: [] } as never} durationInFrames={boardFrames(board)} fps={FPS}
             compositionWidth={width} compositionHeight={height} controls loop style={{ width: '100%', height: '100%' }} />
             : <div className="page-preview-wait">Cargando el tomo…</div>}
         </div>
         <div className="page-form">
-          <p className="muted small">{KIND_LABEL[board.kind]} · {board.duration} s{structure ? ` · ${structure}` : ''} · {board.scenes.length} escenas. Aún no se guarda: revísala, cámbiala o pide otra.</p>
+          <p className="muted small">{KIND_LABEL[board.kind]} · {board.source === 'script' ? `${Math.round(boardFrames(board) / FPS)} s · desde tu guion` : `${board.duration} s`}{structure ? ` · ${structure}` : ''} · {board.scenes.length} escenas. Aún no se guarda: revísala, cámbiala o pide otra.</p>
           <ol className="board-outline">
             {timeline(board).map(({ scene, from, frames, step }, i) => (
               <li key={i}>
@@ -302,7 +338,7 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
         try {
           setProgress(0)
           // With the voice, AAC (the renderer brings its own encoder where the phone lacks one); without it, no audio track.
-          result = await web.renderMediaOnWeb({ composition: composition as never, inputProps: composition.defaultProps as never, muted: !clips.length,
+          result = await web.renderMediaOnWeb({ composition: composition as never, inputProps: composition.defaultProps as never, muted: !clips.length && !(inner.board?.music || (inner.board && inner.board.sfx !== false)),
             container: 'mp4', videoCodec: plan.codec, scale: plan.scale, outputTarget: 'arraybuffer', onProgress: (p) => setProgress(p.progress) })
           break
         } catch (e) {
@@ -341,7 +377,7 @@ function VideoEditor({ video, title, captures, shelf, onClose }: { video: Video;
           {!tome ? <div className="page-preview-wait">{series.isError ? 'No se pudo cargar el tomo.' : 'Cargando el tomo…'}</div>
             : progress !== null ? <div className="page-preview-wait">Creando el video… la vista previa vuelve al terminar.</div>
             : board ? (
-              <Player component={StoryboardVideo} inputProps={{ board, tome, captures, shelf }} durationInFrames={frames} fps={FPS}
+              <Player component={Voiced as never} inputProps={{ Video: StoryboardVideo, props: { board, tome, captures, shelf }, board, clips: [] } as never} durationInFrames={frames} fps={FPS}
                 compositionWidth={width} compositionHeight={height} controls loop style={{ width: '100%', height: '100%' }} />
             ) : (
               <Player component={TopicToBook} inputProps={{ script: fixed!, tome }} durationInFrames={DURATION} fps={FPS}
@@ -516,6 +552,13 @@ function Styling({ board, onChange }: { board: Storyboard; onChange: (b: Storybo
           ))}
         </div>
       </fieldset>
+      <label className="field"><span>Música</span>
+        <select value={board.music ?? ''} onChange={(e) => onChange({ ...board, music: e.target.value || null })}>
+          {Object.entries(MUSIC).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+          <option value="">Sin música</option>
+        </select>
+      </label>
+      <label className="check"><input type="checkbox" checked={board.sfx !== false} onChange={(e) => onChange({ ...board, sfx: e.target.checked })} /> Efectos de sonido en los cortes</label>
       <fieldset className="field"><legend>Transiciones</legend>
         <div className="segmented-inline">
           {(Object.keys(TRANSITIONS) as Transition[]).map((t) => (

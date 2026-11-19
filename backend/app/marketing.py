@@ -1,8 +1,12 @@
 """Promotional videos for /admin/marketing: DeepSeek writes the script of a template from a real tome; the video
 itself is drawn and rendered in the admin's browser (frontend/src/video)."""
 
+import math
 import random
+import re
 from typing import Annotated, Literal
+
+from dataclasses import dataclass
 
 from pydantic import BaseModel, BeforeValidator, Field
 
@@ -231,14 +235,37 @@ class Scene(BaseModel):
     motion: Motion | None = None  # a motion scene's graphic, as the director described it
 
 
+# Free music (Kevin MacLeod, incompetech.com, CC BY 4.0: free to use crediting him), cut to 100 s in
+# frontend/public/video-audio/<key>.mp3, with its tempo and its first beat so the cuts land on the beat.
+MUSIC = {
+    "wallpaper": ("Wallpaper", "Moderno, de startup", 124.0, 0.020),
+    "inspired": ("Inspired", "Inspirador", 120.0, 0.021),
+    "carefree": ("Carefree", "Alegre y ligero", 96.0, 0.026),
+    "forecast": ("Local Forecast - Elevator", "Tranquilo", 123.0, 0.325),
+}
+KIND_MUSIC = {"marketing": "wallpaper", "explainer": "carefree", "tutorial": "forecast", "motion": "inspired"}
+
+
+def music_credit(key: str) -> str:
+    return f"Música: «{MUSIC[key][0]}», Kevin MacLeod (incompetech.com), CC BY 4.0"
+
+
+def pick_music(asked: str, kind: str) -> str | None:
+    """«auto»: the kind's track; «none»: silence; else the track asked for."""
+    return None if asked == "none" else KIND_MUSIC.get(kind) if asked == "auto" else asked if asked in MUSIC else None
+
+
 class Storyboard(BaseModel):
     kind: Kind = "marketing"
-    duration: Literal[15, 30, 45, 60] = 30
+    duration: int = Field(default=30, ge=5, le=180)
+    source: Literal["ask", "script"] = "ask"  # directed from a request, or from the team's own script (its words are the voice)
+    music: Annotated[str | None, BeforeValidator(lambda v: v if v in MUSIC else None)] = None
+    sfx: bool = True  # a whoosh on each cut, a hit on the close
     structure: str = ""  # a key of STRUCTURES
     look: Literal["claro", "oscuro", "color", "noche"] = "claro"  # the colours of the text scenes
     transition: Literal["mixta", "deslizar", "zoom", "barrido", "corte"] = "mixta"  # how one scene gives way to the next
     title: Annotated[str, _clip(80), Field(min_length=2, max_length=80)]
-    scenes: list[Scene] = Field(min_length=2, max_length=16)
+    scenes: list[Scene] = Field(min_length=1, max_length=24)
     post: Annotated[str, _clip(700), Field(max_length=700)] = ""
 
     @property
@@ -248,12 +275,16 @@ class Storyboard(BaseModel):
 
 def tidy_storyboard(board: Storyboard) -> Storyboard:
     """What the code guarantees whatever the director wrote: it opens on a title (or on the finished book), ends on
-    the call to action, a scene with a text of its own has one, and the scenes fill exactly the length asked for."""
-    scenes = [s for s in board.scenes if s.type != "cta" or s is board.scenes[-1]]
-    if scenes[0].type not in OPENERS and not (scenes[0].type in BOOK_SCENES and scenes[0].caption):
-        scenes.insert(0, Scene(type="title", seconds=3, caption=board.title))
-    if scenes[-1].type != "cta":
-        scenes.append(Scene(type="cta", seconds=3, caption="Pruébalo gratis"))
+    the call to action, a scene with a text of its own has one, and the scenes fill exactly the length asked for.
+    A video from the team's script keeps its scenes as written and lasts what its voice takes. With music, every
+    cut lands on a beat."""
+    scenes = list(board.scenes)
+    if board.source == "ask":
+        scenes = [s for s in scenes if s.type != "cta" or s is board.scenes[-1]]
+        if scenes[0].type not in OPENERS and not (scenes[0].type in BOOK_SCENES and scenes[0].caption):
+            scenes.insert(0, Scene(type="title", seconds=3, caption=board.title))
+        if scenes[-1].type != "cta":
+            scenes.append(Scene(type="cta", seconds=3, caption="Pruébalo gratis"))
     for s in scenes:
         if s.type in TEXT_SCENES and not s.text:
             s.text = TEXT_SCENES[s.type]
@@ -263,12 +294,46 @@ def tidy_storyboard(board: Storyboard) -> Storyboard:
             words = [w.strip(".,;:¡!¿?") for w in (s.caption or board.title).split() if len(w) > 3][:4] or ["Jelyx"]
             s.motion = Motion(style=s.motion.style if s.motion else "burst", colors=s.motion.colors if s.motion else [],
                               items=[MotionItem(icon=ICONS[i], label=w) for i, w in enumerate(words)])
-    scale = board.duration / sum(s.seconds for s in scenes)
-    for s in scenes:
-        s.seconds = round(max(1.5, s.seconds * scale), 2)
-    board.scenes = scenes[:16]
+    if board.source == "ask":
+        scale = board.duration / sum(s.seconds for s in scenes)
+        for s in scenes:
+            s.seconds = round(max(1.5, s.seconds * scale), 2)
+    board.scenes = scenes[:24]
+    if board.music:
+        on_the_beat(board)
+        credit = music_credit(board.music)
+        if credit not in board.post:
+            board.post = (board.post.rstrip() + "\n\n" + credit).strip()[-700:]
+    if board.source == "script":
+        board.duration = max(5, min(180, round(sum(s.seconds for s in board.scenes))))
     return board
 
+
+def on_the_beat(board: Storyboard) -> None:
+    """Each cut moved to a beat of the music: the nearest one for a directed video (its length stays), the next one for
+    a script's (a scene never ends before its voice does)."""
+    _, _, bpm, first = MUSIC[board.music]
+    beat = 60 / bpm
+    planned = cut = 0.0
+    for s in board.scenes:
+        planned += s.seconds
+        want = cut + s.seconds if board.source == "script" else planned
+        n = (want - first) / beat
+        at = first + (math.ceil(n - 0.02) if board.source == "script" else round(n)) * beat  # 0.02: a saved cut stays put
+        while at - cut < 1.5 - 1e-6:  # never a scene shorter than a second and a half
+            at += beat
+        s.seconds = round(min(15.0, at - cut), 3)
+        cut += s.seconds
+
+
+SCENE_LIST = "\n".join(f"- {k}: {v}" for k, v in SCENES.items())
+MOTION_RULES = """La escena motion es un motion graphic que diseñas tú: lo describes en su campo motion,
+{"style", "items": [{"icon", "label", "value"}], "colors"}:
+- style, uno de: """ + "; ".join(f"{k}: {v}" for k, v in MOTION_STYLES.items()) + """.
+- items: de 3 a 5 elementos, cada uno con icon (solo uno de: """ + ", ".join(ICONS) + """) y label de máximo 24
+  caracteres que diga algo concreto (nunca «Función 1»); value solo en stats.
+- colors: de 1 a 3 colores hex que vayan con el tema (p. ej. verdes y ocres para la selva), o vacío.
+Varía el style entre escenas motion."""
 
 DIRECTOR_SYSTEM = """Eres director de videos cortos de producto de una startup, como los de las apps modernas en
 redes: Jelyx Docs crea en minutos libros y cuadernillos educativos ilustrados en español (portada, ilustraciones con
@@ -276,15 +341,9 @@ los mismos personajes, actividades, solucionario, PDF para imprimir) y tiene un 
 
 Recibes el pedido del equipo, el tipo de video, la duración y un libro real hecho con la app. Armas el storyboard
 solo con estas escenas, que ya existen animadas con la app real:
-""" + "\n".join(f"- {k}: {v}" for k, v in SCENES.items()) + """
+""" + SCENE_LIST + """
 
-La escena motion es un motion graphic que diseñas tú a partir del pedido: lo describes en su campo motion,
-{"style", "items": [{"icon", "label", "value"}], "colors"}:
-- style, uno de: """ + "; ".join(f"{k}: {v}" for k, v in MOTION_STYLES.items()) + """.
-- items: de 3 a 5 elementos, cada uno con icon (solo uno de: """ + ", ".join(ICONS) + """) y label de máximo 24
-  caracteres que diga algo concreto del pedido (nunca «Función 1»); value solo en stats.
-- colors: de 1 a 3 colores hex que vayan con el tema del pedido (p. ej. verdes y ocres para la selva), o vacío.
-Varía el style entre escenas motion.
+""" + MOTION_RULES + """ Diséñalo a partir del pedido.
 
 Las escenas list, versus, number y kinetic son texto animado: úsalas para variar el ritmo entre escenas de la app.
 phone, devices, zoom, bento, chat y logo dan el acabado de los videos de lanzamiento de las startups de IA: úsalas
@@ -370,6 +429,152 @@ async def director(llm: LLM, *, ask: str, kind: str, duration: int, title: str, 
 
 
 WORDS_PER_SECOND = 2.8  # what Gemini TTS reads at its natural pace
+
+
+# «Desde mi guion»: the team writes the words; the voice reads them as they are and the director only decides how
+# each one is shown.
+MARKS = {"titulo": "title", "título": "title", "portada": "cover", "paginas": "pages", "páginas": "pages", "pdf": "pdf",
+         "plan": "plan", "pedido": "compose", "escribir": "compose", "numero": "number", "número": "number",
+         "lista": "list", "versus": "versus", "antes y despues": "versus", "antes y después": "versus",
+         "frases": "kinetic", "cinetica": "kinetic", "cinética": "kinetic", "funciones": "bento", "chat": "chat",
+         "telefono": "phone", "teléfono": "phone", "iphone": "phone", "dispositivos": "devices", "lupa": "zoom",
+         "zoom": "zoom", "personajes": "characters", "formatos": "formats", "logo": "logo", "cierre": "cta",
+         "editor": "editor_open", "captura": "screen", "pantalla": "screen", "motion": "motion"}
+MARK_STYLES = {"proceso": "flow", "orbita": "orbit", "órbita": "orbit", "estallido": "burst", "datos": "stats",
+               "tarjetas": "grid", **{k: k for k in MOTION_STYLES}}
+SCRIPT_LIMIT = 24
+_MARK = re.compile(r"^\s*\[([^\]]{1,40})\]\s*")
+_LABEL = re.compile(r"^\s*(gancho|hook|cierre|escena\s*\d+)\s*[:.\-–]\s*", re.I)
+
+
+@dataclass
+class Beat:
+    words: str
+    type: str | None = None  # the scene the team fixed with a [mark]
+    style: str | None = None  # and, for [motion …], its style
+
+    @property
+    def seconds(self) -> float:
+        n = len(self.words.split())
+        return round(min(14.0, max(2.0, n / WORDS_PER_SECOND + 0.6)), 2) if n else 2.5
+
+
+def script_beats(script: str) -> list[Beat]:
+    """The script cut into scenes: its paragraphs (or its lines, when it has no blank lines), a long one cut at its
+    sentences. A line may start with a [mark] that fixes its scene: [portada], [motion órbita], [número]…"""
+    text = script.replace("\r", "").strip()
+    chunks = [" ".join(p.split()) for p in re.split(r"\n\s*\n", text)] if re.search(r"\n\s*\n", text) \
+        else [" ".join(line.split()) for line in text.split("\n")]
+    beats: list[Beat] = []
+    for chunk in filter(None, chunks):
+        kind = style = None
+        if m := _MARK.match(chunk):
+            words = m.group(1).lower().split()
+            for size in (3, 2, 1):  # «antes y después» is one mark
+                key = " ".join(words[:size])
+                if key in MARKS:
+                    kind, rest = MARKS[key], words[size:]
+                    style = next((MARK_STYLES[w] for w in rest if w in MARK_STYLES), None)
+                    break
+            chunk = chunk[m.end():]
+        chunk = _LABEL.sub("", chunk).strip()
+        parts, current = [], ""
+        for sentence in re.split(r"(?<=[.!?¿¡…])\s+", chunk) if len(chunk.split()) > 32 else [chunk]:
+            if current and len((current + " " + sentence).split()) > 32:
+                parts.append(current)
+                current = sentence
+            else:
+                current = f"{current} {sentence}".strip()
+        parts.append(current)
+        beats += [Beat(p, kind if i == 0 else None, style if i == 0 else None) for i, p in enumerate(parts)]
+    return [b for b in beats if b.words or b.type]
+
+
+class ScriptScene(BaseModel):
+    type: Annotated[SceneType, BeforeValidator(lambda v: v if v in SCENES else "motion")] = "motion"
+    caption: Annotated[str, _clip(70), Field(max_length=70)] = ""
+    text: Annotated[str, _clip(140), Field(max_length=140)] = ""
+    capture: str = ""
+    focus: int = Field(default=0, ge=0, le=20)
+    motion: Motion | None = None
+
+
+class ScriptBoard(BaseModel):
+    title: Annotated[str, _clip(80), Field(min_length=2, max_length=80)]
+    scenes: list[ScriptScene] = Field(default_factory=list)
+    post: Annotated[str, _clip(700), Field(max_length=700)] = ""
+
+
+SCRIPT_DIRECTOR_SYSTEM = """Eres director de arte de videos cortos de producto de una startup: Jelyx Docs crea en minutos
+libros y cuadernillos educativos ilustrados en español (portada, ilustraciones con los mismos personajes, actividades,
+solucionario, PDF para imprimir).
+
+El equipo ya escribió el guion, dividido en escenas numeradas; la voz en off lee cada escena tal cual y tú NO la
+cambias. Tu trabajo es decidir cómo se ve cada escena, solo con estas, que ya existen animadas con la app real:
+""" + SCENE_LIST + """
+
+""" + MOTION_RULES + """ Diséñalo a partir de lo que dice esa escena del guion.
+
+Reglas:
+- Exactamente una escena tuya por escena del guion, en el mismo orden.
+- Si una escena trae «tipo fijado», usa ese type (y ese style si lo trae).
+- Elige lo que muestra lo que dice la voz: si habla del libro, sus páginas o el PDF, usa cover, pages o pdf; si habla
+  de escribir el tema o pedirlo, compose, chat o phone; tiempo, beneficios, pasos o ideas abstractas, motion; cifras,
+  number o motion stats; la primera escena, un gancho (title, kinetic o motion); la última, si invita a probar, cta.
+- Alterna: nunca el mismo type dos veces seguidas, salvo motion con estilos distintos.
+- caption: el texto corto en pantalla, máximo 7 palabras, que resume la idea sin copiar la voz palabra por palabra. En
+  title es el texto grande (máximo 6 palabras, la palabra clave al final); en cta, la llamada a la acción.
+- text: solo en las escenas que lo piden (ver la lista).
+title: el título del video. post: el texto para publicar (3 o 4 líneas y 4 a 6 hashtags).
+
+Responde solo con json:
+{"title": "…", "scenes": [{"type": "…", "caption": "…", "text": "…", "capture": "…", "focus": 0,
+"motion": {"style": "…", "items": [{"icon": "…", "label": "…", "value": ""}], "colors": ["#…"]}}], "post": "…"}"""
+
+
+async def script_director(llm: LLM, *, script: str, kind: str, title: str, topic: str, book_kind: str, audience: str,
+                          sections: list[str], cast: str | None = None, captures: list[dict] = (),
+                          music: str | None = None) -> AgentResult[Storyboard]:
+    """The team's script as a storyboard: its words are the voice, scene by scene; DeepSeek picks and designs what
+    each one shows, and each lasts what its voice takes. ValueError: an empty script, or one too long."""
+    beats = script_beats(script)
+    if not beats:
+        raise ValueError("Escribe el guion: una línea o un párrafo por escena.")
+    if len(beats) > SCRIPT_LIMIT:
+        raise ValueError(f"El guion tiene {len(beats)} escenas; el máximo es {SCRIPT_LIMIT}. Junta algunas líneas.")
+    if sum(b.seconds for b in beats) > 175:
+        raise ValueError("El guion dura más de 3 minutos leído en voz alta; acórtalo.")
+    lines = [f"{i + 1}. «{b.words}»" + (f" (tipo fijado: {b.type}{' ' + b.style if b.style else ''})" if b.type else "")
+             for i, b in enumerate(beats)]
+    facts = (f"Tipo de video: {kind}\nLibro que se muestra: {title}\nTipo: {book_kind}\nTema: {topic}\n"
+             f"Para: {audience or 'sin indicar'}\nSecciones: {'; '.join(sections[:8]) or 'sin secciones'}\n"
+             + (f"Personajes: {cast}\n" if cast else "Este libro no tiene personajes fijos: no uses characters.\n"))
+    if captures:
+        facts += ("Capturas reales para screen (id: qué muestra; sus puntos, desde 0):\n"
+                  + "\n".join(f"- {c['id']}: {c['name']} | puntos: "
+                               f"{'; '.join(f'{i} {p}' for i, p in enumerate(c['focus'])) or '0 centro'}" for c in captures) + "\n")
+    else:
+        facts += "No hay capturas reales: no uses screen.\n"
+    facts += f"\nGuion ({len(beats)} escenas):\n" + "\n".join(lines)
+    messages = [{"role": "system", "content": SCRIPT_DIRECTOR_SYSTEM}, {"role": "user", "content": facts}]
+    result = await _json_call(llm, messages, ScriptBoard, temperature=0.7, max_tokens=4000)
+    got, known = result.value.scenes, {c["id"]: len(c["focus"]) for c in captures}
+    scenes = []
+    for i, beat in enumerate(beats):
+        made = got[i] if i < len(got) else ScriptScene()
+        kind_of = beat.type or made.type
+        if kind_of == "screen" and made.capture not in known:
+            kind_of = "motion"
+        motion = made.motion
+        if kind_of == "motion" and beat.style:
+            motion = (motion or Motion()).model_copy(update={"style": beat.style})
+        scenes.append(Scene(type=kind_of, seconds=beat.seconds, caption=made.caption, voice=beat.words, text=made.text,
+                            capture=made.capture if kind_of == "screen" else "",
+                            focus=min(made.focus, max(0, known.get(made.capture, 1) - 1)), motion=motion))
+    board = Storyboard(kind=kind, source="script", structure="guion", look=random.choice(LOOKS), title=result.value.title,
+                       post=result.value.post, music=music, scenes=scenes)
+    result.value = tidy_storyboard(board)
+    return result
 
 
 class Voices(BaseModel):
