@@ -95,3 +95,25 @@ def test_ink_saver_prints_a_light_grey_picture():
     out = Image.open(io.BytesIO(data))
     assert media == "image/jpeg" and out.mode == "L"
     assert out.getpixel((5, 10)) > 100  # black becomes a mid grey: about half the toner
+
+
+async def test_the_reviewer_judges_with_thinking_off_and_asks_again_when_it_answered_nothing():
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        if len(bodies) == 1:  # the reasoning model spent its budget thinking
+            return httpx.Response(200, json={"choices": [{"message": {"content": None}, "finish_reason": "length"}],
+                                             "usage": {"cost": 0.0001}})
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"ok": true}'}}], "usage": {"cost": 0.0002}})
+
+    vision = OpenRouterVision("k", "m", transport=httpx.MockTransport(handler))
+    review = await vision.review(png(size=(4000, 3000)), kind="illustration", subject="x")
+
+    assert review.ok is True and review.cost_usd == pytest.approx(0.0003)
+    assert bodies[0]["reasoning"] == {"enabled": False}
+    assert bodies[1]["reasoning"]["effort"] == "low" and bodies[1]["max_tokens"] > bodies[0]["max_tokens"]
+    url = bodies[0]["messages"][0]["content"][1]["image_url"]["url"]
+    assert url.startswith("data:image/jpeg;base64,")  # a 4K picture goes at the reviewer's size
+    import base64 as b64
+    assert max(Image.open(io.BytesIO(b64.b64decode(url.split(",", 1)[1]))).size) == 1280

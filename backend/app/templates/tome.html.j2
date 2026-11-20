@@ -328,6 +328,14 @@
   .plate .open { background: transparent; box-shadow: none; text-shadow: 0 0 .7mm rgba(255,255,255,.9), 0 0 2mm rgba(255,255,255,.55); }
   .plate .open.light, .plate .open.light h3, .plate .open.light p, .plate .open.light .k, .plate .open.light b,
   .plate .open.light li::marker { color: #fff; text-shadow: 0 .3mm 1.4mm rgba(0,0,0,.5); }
+  /* Over a moderately busy patch the words stay on the art over a soft wash that fades into the picture, no card
+     edge (app.textlook.veil_uri): paper under dark ink, a shade under white ink. */
+  .plate .veil { background: transparent; box-shadow: none; z-index: 1; }
+  .plate .veil > .vl { position: absolute; left: -4mm; right: -4mm; top: -4mm; bottom: -4mm; z-index: -1;
+                       background-size: 100% 100%; background-repeat: no-repeat; }
+  .plate .pn.veil > .vl { left: -6mm; right: -6mm; top: -6mm; bottom: -6mm; }
+  .plate .veil.dark, .plate .veil.dark h3, .plate .veil.dark p, .plate .veil.dark .k, .plate .veil.dark b,
+  .plate .veil.dark li::marker { color: #fff; }
   /* An exact diagram drawn by code over the picture, on a white card above the "find" strip. */
   .plate .pi { position: absolute; left: 9mm; right: 9mm; bottom: 9mm; background: rgba(255, 255, 255, .95); border-radius: 6mm;
                padding: 4mm 5mm 3mm; text-align: center; }
@@ -375,6 +383,7 @@
 </style>
 </head>
 <body{% if th.kids %} class="kids"{% endif %}>
+{% macro veil(uri) %}{% if uri %}<i class="vl" style="background-image: url({{ uri }})"></i>{% endif %}{% endmacro %}
 
 {% if print_edition %}
 <div class="title-page">
@@ -536,12 +545,12 @@
       <div class="plate{{ ' cr-light' if looks.c == 'open light' }}" data-block="{{ s.position ~ ':' ~ b.id }}">
         {% if uri %}<img src="{{ uri }}" alt="{{ b.subject }}">
         {% else %}<div class="ph">Ilustración: {{ b.subject }}</div>{% endif %}
-        <div class="pq{{ (" " ~ looks.q) if looks.q }}"{% if moved.q %} style="top: {{ moved.q.y }}%"{% elif question_low(b, tome.busy.get(b.asset_id)) %} style="top: auto; bottom: {{ 27 if b.find else 9 }}mm"{% endif %}>{{ kicker }}
+        <div class="pq{{ (" " ~ looks.q) if looks.q }}"{% if moved.q %} style="top: {{ moved.q.y }}%"{% elif question_low(b, tome.busy.get(b.asset_id)) %} style="top: auto; bottom: {{ 27 if b.find else 9 }}mm"{% endif %}>{{ veil(looks.qv) }}{{ kicker }}
           {{ head }}
           {% if carded %}<ul class="pqf">{% for n in carded %}<li>{{ n|inline }}</li>{% endfor %}</ul>{% endif %}</div>
-        {% for spot, n, at in placed %}{% set look = looks.get('n' ~ b.notes.index(n)) %}<div class="pn {{ spot }}{{ (" " ~ look) if look }}"{% if at %} style="{{ at }}"{% endif %}>{{ n|inline }}</div>{% endfor %}
+        {% for spot, n, at in placed %}{% set look = looks.get('n' ~ b.notes.index(n)) %}<div class="pn {{ spot }}{{ (" " ~ look) if look }}"{% if at %} style="{{ at }}"{% endif %}>{{ veil(looks.get('n' ~ b.notes.index(n) ~ 'v')) }}{{ n|inline }}</div>{% endfor %}
         {% if b.inset %}<div class="pi{% if b.find %} above{% endif %}">{{ render_diagram(b.inset, c, th.head) }}{% if b.inset.caption %}<div class="pic">{{ b.inset.caption|inline }}</div>{% endif %}</div>{% endif %}
-        {% if b.find %}<div class="pf{{ (" " ~ looks.f) if looks.f }}"{% if moved.f %} style="top: {{ moved.f.y }}%; bottom: auto"{% endif %}><b>Observa y encuentra:</b> {{ b.find|find|inline }}</div>{% endif %}
+        {% if b.find %}<div class="pf{{ (" " ~ looks.f) if looks.f }}"{% if moved.f %} style="top: {{ moved.f.y }}%; bottom: auto"{% endif %}>{{ veil(looks.fv) }}<b>Observa y encuentra:</b> {{ b.find|find|inline }}</div>{% endif %}
       </div>
       {% endif %}
     {% elif b.type == "image" and tome.image_uri(b.asset_id) %}

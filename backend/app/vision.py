@@ -1,6 +1,8 @@
 """The image Reviewer: a cheap vision model on OpenRouter checks each generated picture."""
 
+import asyncio
 import base64
+import io
 import json
 from dataclasses import dataclass
 
@@ -111,12 +113,29 @@ class OpenRouterVision:
         return str(verdict.get("text") or "").strip()[:400], cost
 
     async def _ask(self, image: bytes, prompt: str, max_tokens: int = 800) -> tuple[dict, float | None]:
+        image = await asyncio.to_thread(_for_review, image)
         url = f"data:{_sniff(image)};base64,{base64.b64encode(image).decode()}"
-        body = {"model": self.model, "temperature": 0, "max_tokens": max_tokens,
-                "reasoning": {"exclude": True}, "response_format": {"type": "json_object"},
-                "messages": [{"role": "user", "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": url}}]}]}
+        content = [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": url}}]
+        # The reviewer is a reasoning model: left to think, it spent the whole budget and answered nothing
+        # (content None, ~40 s a picture). It judges with thinking off; an empty answer is asked once more with
+        # a short, bounded think and room for it.
+        payload = await self._post(content, max_tokens, {"enabled": False})
+        cost = (payload.get("usage") or {}).get("cost")
+        if not _content(payload):
+            payload = await self._post(content, max_tokens + 3000, {"effort": "low", "exclude": True})
+            cost = (cost or 0) + ((payload.get("usage") or {}).get("cost") or 0)
+        try:
+            text = _content(payload)
+            # Some vision models wrap the json in prose or a ```json fence despite response_format.
+            verdict = json.loads(text[text.index("{"):text.rindex("}") + 1])
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raw = str((payload.get("choices") or [{}])[0].get("message", {}).get("content"))[:200]
+            raise UpstreamError("invalid_output", f"El revisor no devolvió un veredicto: {raw!r}") from exc
+        return verdict, cost
+
+    async def _post(self, content: list, max_tokens: int, reasoning: dict) -> dict:
+        body = {"model": self.model, "temperature": 0, "max_tokens": max_tokens, "reasoning": reasoning,
+                "response_format": {"type": "json_object"}, "messages": [{"role": "user", "content": content}]}
         try:
             async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as http:
                 response = await http.post("https://openrouter.ai/api/v1/chat/completions", json=body,
@@ -127,15 +146,35 @@ class OpenRouterVision:
             raise UpstreamAuthError(f"OpenRouter {response.status_code}")
         if response.status_code >= 400:
             raise UpstreamError("upstream_unavailable", f"El revisor respondió {response.status_code}.")
-        payload = response.json()
-        try:
-            content = payload["choices"][0]["message"]["content"] or ""
-            # Some vision models wrap the json in prose or a ```json fence despite response_format.
-            verdict = json.loads(content[content.index("{"):content.rindex("}") + 1])
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raw = str((payload.get("choices") or [{}])[0].get("message", {}).get("content"))[:200]
-            raise UpstreamError("invalid_output", f"El revisor no devolvió un veredicto: {raw!r}") from exc
-        return verdict, (payload.get("usage") or {}).get("cost")
+        return response.json()
+
+
+def _content(payload: dict) -> str:
+    try:
+        return payload["choices"][0]["message"]["content"] or ""
+    except (KeyError, IndexError, TypeError):
+        return ""
+
+
+REVIEW_PX = 1280  # what the reviewer sees: enough to read a title or spot a sixth finger
+
+
+def _for_review(image: bytes) -> bytes:
+    """A 4K cover or page sent whole is megabytes of base64 the model downsizes anyway: send it at REVIEW_PX."""
+    from PIL import Image as Picture
+
+    try:
+        picture = Picture.open(io.BytesIO(image))
+        if max(picture.size) <= REVIEW_PX:
+            return image
+        picture.draft("RGB", (REVIEW_PX, REVIEW_PX))
+        picture = picture.convert("RGB")
+        picture.thumbnail((REVIEW_PX, REVIEW_PX))
+        out = io.BytesIO()
+        picture.save(out, "JPEG", quality=88)
+        return out.getvalue()
+    except Exception:  # noqa: BLE001 - an unreadable image goes as it is; the model says what it sees
+        return image
 
 
 def _review(verdict: dict, cost: float | None) -> Review:

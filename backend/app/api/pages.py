@@ -129,7 +129,7 @@ def _render_page(series, lesson, block: dict, images: dict, busy: dict, paper: s
     geo = page_geometry(paper, print_edition=False)
     looks = text_looks(plate, tome, (geo.w, geo.h), theme_colors(design, tome.palette)[1]["ink"]) \
         if (plate.layout or "bleed") == "bleed" else {}
-    return buffer.getvalue(), looks
+    return buffer.getvalue(), {k: v for k, v in looks.items() if not k.endswith("v")}  # the washes stay in the PDF
 
 
 def _screen_size(data: bytes, px: int = SCREEN_PX) -> tuple[bytes, str]:

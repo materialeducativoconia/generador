@@ -18,7 +18,7 @@ const plain = (t: string) => t.replace(/\*\*?([^*]+)\*\*?/g, '$1')
 export function PlateStage({ picture, design, kicker, narration, question, answer, notes, find, spots, low, looks = {}, inset, place, onPlace }: {
   picture: string; design: Design | null | undefined; kicker?: string; narration?: string; question?: string; answer?: string
   notes: string[]; find?: string; spots?: Spot[]; low?: boolean; place: PlatePlace; onPlace: (p: PlatePlace) => void
-  looks?: Record<string, string>  // the saved page's texts: "open" on the picture, "open light" in white, else a card
+  looks?: Record<string, string>  // the saved page's texts: "open" on the picture, "open light" in white, "veil"/"veil dark" on a soft wash, else a card
   inset?: boolean  // an exact diagram printed at the foot (it does not move): shown as its place, to keep texts off it
 }) {
   useThemeFonts(design)
